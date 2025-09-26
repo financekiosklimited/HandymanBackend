@@ -65,12 +65,6 @@ media/
 .env*
 !.env.example
 
-# Secrets and JWT keys
-secrets/*.pem
-secrets/*.key
-secrets/jwt_private.pem
-secrets/jwt_public.pem
-
 # Database
 *.db
 *.sqlite
