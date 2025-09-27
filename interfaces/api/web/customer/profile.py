@@ -15,7 +15,7 @@ from apps.profiles.serializers import (
     CustomerProfileSerializer,
     CustomerProfileUpdateSerializer,
 )
-from apps.accounts.models import CustomerProfile
+from apps.profiles.models import CustomerProfile
 from apps.common.responses import (
     success_response,
     not_found_response,

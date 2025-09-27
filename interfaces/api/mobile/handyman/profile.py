@@ -15,7 +15,7 @@ from apps.profiles.serializers import (
     HandymanProfileSerializer,
     HandymanProfileUpdateSerializer,
 )
-from apps.accounts.models import HandymanProfile
+from apps.profiles.models import HandymanProfile
 from apps.common.responses import (
     success_response,
     not_found_response,

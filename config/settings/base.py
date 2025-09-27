@@ -40,6 +40,7 @@ AUTH_USER_MODEL = "accounts.User"
 
 # Application definition
 DJANGO_APPS = [
+    "unfold",  # Unfold admin theme - must be before django.contrib.admin
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -279,3 +280,60 @@ SPECTACULAR_SETTINGS = {
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Unfold Admin Configuration
+UNFOLD = {
+    "SITE_TITLE": "SolutionBank Admin",
+    "SITE_HEADER": "SolutionBank",
+    "SITE_URL": "/",
+    "SITE_SYMBOL": "speed",  # Material icon symbol for sidebar
+    "SHOW_HISTORY": True,
+    "SHOW_VIEW_ON_SITE": True,
+    "COLORS": {
+        "primary": {
+            "50": "239 246 255",
+            "100": "219 234 254",
+            "200": "191 219 254",
+            "300": "147 197 253",
+            "400": "96 165 250",
+            "500": "59 130 246",
+            "600": "37 99 235",
+            "700": "29 78 216",
+            "800": "30 64 175",
+            "900": "30 58 138",
+            "950": "23 37 84",
+        },
+    },
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": False,
+        "navigation": [
+            {
+                "title": "Navigation",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Dashboard",
+                        "icon": "dashboard",
+                        "link": lambda request: "/admin/",
+                    },
+                    {
+                        "title": "Users",
+                        "icon": "person",
+                        "link": lambda request: "/admin/accounts/user/",
+                    },
+                    {
+                        "title": "Customer Profiles",
+                        "icon": "person_outline",
+                        "link": lambda request: "/admin/profiles/customerprofile/",
+                    },
+                    {
+                        "title": "Handyman Profiles",
+                        "icon": "build",
+                        "link": lambda request: "/admin/profiles/handymanprofile/",
+                    },
+                ],
+            },
+        ],
+    },
+}

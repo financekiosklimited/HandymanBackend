@@ -14,12 +14,8 @@ from .models import (
     RefreshSession,
 )
 from .jwt_service import jwt_service
-from apps.accounts.models import (
-    UserRole,
-    CustomerProfile,
-    HandymanProfile,
-    AdminProfile,
-)
+from apps.accounts.models import UserRole
+from apps.profiles.models import CustomerProfile, HandymanProfile
 from apps.common.email import email_service
 
 User = get_user_model()
@@ -361,10 +357,7 @@ class AuthService:
             HandymanProfile.objects.get_or_create(
                 user=user, defaults={"display_name": user.email.split("@")[0]}
             )
-        elif role == "admin":
-            AdminProfile.objects.get_or_create(
-                user=user, defaults={"display_name": user.email.split("@")[0]}
-            )
+        # Admin role doesn't need a profile - they use Django admin interface
 
     def _has_complete_profile(self, user, role):
         """Check if user has a complete profile for the role."""
@@ -376,9 +369,12 @@ class AuthService:
                 profile = user.handyman_profile
                 return bool(profile.display_name)
             elif role == "admin":
-                profile = user.admin_profile
-                return bool(profile.display_name)
+                # Admin role doesn't require a profile - always complete
+                return True
         except AttributeError:
+            # For admin role, return True even if no profile exists
+            if role == "admin":
+                return True
             return False
 
         return False

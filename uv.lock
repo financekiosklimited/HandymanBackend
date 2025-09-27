@@ -293,6 +293,18 @@ wheels = [
 ]
 
 [[package]]
+name = "django-unfold"
+version = "0.66.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/47/ac/ff8638f22b7d03d3f291e1348995f23ac9409c0ea02a3088770fc0cd0da5/django_unfold-0.66.0.tar.gz", hash = "sha256:26d2a6886f05077d5f2e84b289acf584f07c787dc1a31fd3311152b556e42c0f", size = 1077703, upload-time = "2025-09-23T07:18:31.148Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d9/a9/97a3acbb8cee9c84ad6de06b5b088a699146875268f11a9632071458a865/django_unfold-0.66.0-py3-none-any.whl", hash = "sha256:19027523441c684774f0f22325c1f6b785552f698bff6b282dfce046aa39e3ea", size = 1186326, upload-time = "2025-09-23T07:18:29.412Z" },
+]
+
+[[package]]
 name = "djangorestframework"
 version = "3.16.1"
 source = { registry = "https://pypi.org/simple" }
@@ -720,6 +732,7 @@ dependencies = [
     { name = "django-environ" },
     { name = "django-filter" },
     { name = "django-storages" },
+    { name = "django-unfold" },
     { name = "djangorestframework" },
     { name = "drf-spectacular" },
     { name = "google-auth" },
@@ -740,6 +753,7 @@ requires-dist = [
     { name = "django-environ", specifier = ">=0.12.0" },
     { name = "django-filter", specifier = ">=25.1" },
     { name = "django-storages", specifier = ">=1.14.6" },
+    { name = "django-unfold", specifier = ">=0.66.0" },
     { name = "djangorestframework", specifier = ">=3.16.1" },
     { name = "drf-spectacular", specifier = ">=0.28.0" },
     { name = "google-auth", specifier = ">=2.40.3" },

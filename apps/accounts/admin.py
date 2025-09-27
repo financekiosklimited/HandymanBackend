@@ -1,29 +1,45 @@
 """
-Django admin configuration for accounts app.
+Admin configuration for accounts app.
 """
 
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, UserRole, AdminProfile, HandymanProfile, CustomerProfile
+from unfold.admin import ModelAdmin, TabularInline
+from unfold.decorators import display
+from .models import User, UserRole
+
+
+class UserRoleInline(TabularInline):
+    """Inline admin for user roles."""
+    model = UserRole
+    extra = 0
+    fields = ("role", "next_action")
 
 
 @admin.register(User)
-class UserAdmin(BaseUserAdmin):
+class UserAdmin(BaseUserAdmin, ModelAdmin):
     """
-    Admin interface for User model.
+    Admin interface for User model with Unfold styling.
     """
 
     list_display = (
         "email",
+        "display_name_field",
         "is_active",
         "is_staff",
-        "is_superuser",
+        "is_email_verified_display",
+        "date_joined",
+    )
+    list_filter = (
+        "is_active", 
+        "is_staff", 
+        "is_superuser", 
         "email_verified_at",
         "date_joined",
     )
-    list_filter = ("is_active", "is_staff", "is_superuser", "email_verified_at")
-    search_fields = ("email",)
+    search_fields = ("email", "first_name", "last_name")
     ordering = ("-date_joined",)
+    inlines = [UserRoleInline]
 
     fieldsets = (
         (None, {"fields": ("email", "password")}),
@@ -44,7 +60,7 @@ class UserAdmin(BaseUserAdmin):
             "Important dates",
             {"fields": ("last_login", "date_joined", "email_verified_at")},
         ),
-        ("OAuth", {"fields": ("google_sub",)}),
+        ("OAuth & System", {"fields": ("google_sub", "public_id")}),
     )
 
     add_fieldsets = (
@@ -59,48 +75,13 @@ class UserAdmin(BaseUserAdmin):
 
     readonly_fields = ("date_joined", "last_login", "public_id")
 
+    @display(description="Full Name")
+    def display_name_field(self, obj):
+        """Display user's full name or email."""
+        full_name = f"{obj.first_name} {obj.last_name}".strip()
+        return full_name if full_name else obj.email
 
-@admin.register(UserRole)
-class UserRoleAdmin(admin.ModelAdmin):
-    """
-    Admin interface for UserRole model.
-    """
-
-    list_display = ("user", "role", "next_action", "created_at")
-    list_filter = ("role", "next_action")
-    search_fields = ("user__email",)
-    ordering = ("-created_at",)
-
-
-@admin.register(AdminProfile)
-class AdminProfileAdmin(admin.ModelAdmin):
-    """
-    Admin interface for AdminProfile model.
-    """
-
-    list_display = ("user", "display_name", "created_at")
-    search_fields = ("user__email", "display_name")
-    ordering = ("-created_at",)
-
-
-@admin.register(HandymanProfile)
-class HandymanProfileAdmin(admin.ModelAdmin):
-    """
-    Admin interface for HandymanProfile model.
-    """
-
-    list_display = ("user", "display_name", "rating", "phone_number", "created_at")
-    list_filter = ("rating",)
-    search_fields = ("user__email", "display_name", "phone_number")
-    ordering = ("-created_at",)
-
-
-@admin.register(CustomerProfile)
-class CustomerProfileAdmin(admin.ModelAdmin):
-    """
-    Admin interface for CustomerProfile model.
-    """
-
-    list_display = ("user", "display_name", "phone_number", "created_at")
-    search_fields = ("user__email", "display_name", "phone_number")
-    ordering = ("-created_at",)
+    @display(description="Email Verified", boolean=True)
+    def is_email_verified_display(self, obj):
+        """Display email verification status as boolean."""
+        return obj.is_email_verified
