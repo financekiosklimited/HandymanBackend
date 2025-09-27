@@ -23,25 +23,23 @@ class EmailService:
             otp_code: 6-digit OTP code
         """
         subject = "Verify Your Email Address"
-        message = f"""
-        Hi {user.email},
+        message = f"""Hi {user.email},
 
-        Please verify your email address by entering this code:
+Please verify your email address by entering this code:
 
-        {otp_code}
+{otp_code}
 
-        This code will expire in 24 hours.
+This code will expire in 24 hours.
 
-        If you didn't request this, please ignore this email.
+If you didn't request this, please ignore this email.
 
-        Thanks,
-        The SolutionBank Team
-        """
+Thanks,
+The SolutionBank Team"""
 
         try:
             send_mail(
                 subject=subject,
-                message=message.strip(),
+                message=message,
                 from_email=self.from_email,
                 recipient_list=[user.email],
                 fail_silently=False,
@@ -61,25 +59,23 @@ class EmailService:
             reset_code: 6-digit reset code
         """
         subject = "Password Reset Code"
-        message = f"""
-        Hi {user.email},
+        message = f"""Hi {user.email},
 
-        You requested a password reset. Please enter this code to continue:
+You requested a password reset. Please enter this code to continue:
 
-        {reset_code}
+{reset_code}
 
-        This code will expire in 10 minutes.
+This code will expire in 10 minutes.
 
-        If you didn't request this, please ignore this email.
+If you didn't request this, please ignore this email.
 
-        Thanks,
-        The SolutionBank Team
-        """
+Thanks,
+The SolutionBank Team"""
 
         try:
             send_mail(
                 subject=subject,
-                message=message.strip(),
+                message=message,
                 from_email=self.from_email,
                 recipient_list=[user.email],
                 fail_silently=False,
@@ -98,21 +94,19 @@ class EmailService:
             user: User instance
         """
         subject = "Welcome to SB!"
-        message = f"""
-        Hi {user.email},
+        message = f"""Hi {user.email},
 
-        Welcome to SB! We're excited to have you on board.
+Welcome to SB! We're excited to have you on board.
 
-        You can now log in to your account and start using our platform.
+You can now log in to your account and start using our platform.
 
-        Thanks,
-        The SolutionBank Team
-        """
+Thanks,
+The SolutionBank Team"""
 
         try:
             send_mail(
                 subject=subject,
-                message=message.strip(),
+                message=message,
                 from_email=self.from_email,
                 recipient_list=[user.email],
                 fail_silently=False,
