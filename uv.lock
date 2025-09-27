@@ -751,6 +751,9 @@ requires-dist = [
     { name = "whitenoise", specifier = ">=6.11.0" },
 ]
 
+[package.metadata.requires-dev]
+dev = []
+
 [[package]]
 name = "sqlparse"
 version = "0.5.3"

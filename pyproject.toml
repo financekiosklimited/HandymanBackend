@@ -62,7 +62,6 @@ reportAssertAlwaysTrue = false
 reportSelfClsParameterName = false
 reportImplicitStringConcatenation = false
 
-# Include Django apps in analysis
 include = ["apps", "config", "manage.py", "main.py"]
 exclude = [
     "**/__pycache__",
@@ -71,3 +70,6 @@ exclude = [
     "venv",
     ".git"
 ]
+
+[dependency-groups]
+dev = []
