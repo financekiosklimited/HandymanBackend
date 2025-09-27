@@ -80,7 +80,11 @@ class EmailVerificationSerializer(serializers.Serializer):
     Serializer for email verification.
     """
 
-    email = serializers.EmailField()
+    email = serializers.EmailField(
+        required=False,
+        allow_null=True,
+        help_text="Email address (can be omitted if authenticated)",
+    )
     otp = serializers.CharField()
 
     def validate_otp(self, value):
@@ -91,7 +95,9 @@ class EmailVerificationSerializer(serializers.Serializer):
 
     def validate_email(self, value):
         """Normalize email."""
-        return value.lower()
+        if value:
+            return value.lower()
+        return value
 
 
 class EmailResendSerializer(serializers.Serializer):
@@ -198,6 +204,13 @@ class TokenResponseSerializer(serializers.Serializer):
     access_token = serializers.CharField()
     refresh_token = serializers.CharField()
     token_type = serializers.CharField(default="bearer")
+    next_action = serializers.CharField(
+        allow_null=True,
+        help_text="Next action user should take (verify_email, activate_role, fill_profile, none)",
+    )
+    email_verified = serializers.BooleanField(
+        help_text="Whether user's email is verified"
+    )
 
 
 class AuthResponseSerializer(serializers.Serializer):

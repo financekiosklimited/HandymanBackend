@@ -231,6 +231,32 @@ class AuthService:
 
         return user
 
+    def get_next_action_for_user(self, user):
+        """
+        Determine next action for a user based on current state.
+
+        Args:
+            user: User instance
+
+        Returns:
+            str: Next action needed ('verify_email', 'activate_role', 'fill_profile', 'none')
+        """
+        # If email is not verified, that's the priority
+        if not user.is_email_verified:
+            return "verify_email"
+
+        # If user has no roles, they need to activate one
+        if not user.roles.exists():
+            return "activate_role"
+
+        # If user has roles but incomplete profiles, they need to fill profile
+        for user_role in user.roles.all():
+            if not self._has_complete_profile(user, user_role.role):
+                return "fill_profile"
+
+        # Everything is complete
+        return "none"
+
     def resend_email_verification(self, user):
         """
         Resend email verification to user.

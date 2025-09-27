@@ -63,7 +63,29 @@ class RegisterView(APIView):
                     initial_role=serializer.validated_data.get("initial_role"),
                     platform="web",
                 )
-                return created_response(tokens)
+
+                # Get user for next action determination
+                try:
+                    user = User.objects.get(email=serializer.validated_data["email"])
+                    next_action = auth_service.get_next_action_for_user(user)
+                    tokens.update(
+                        {
+                            "next_action": next_action,
+                            "email_verified": user.is_email_verified,
+                        }
+                    )
+                except User.DoesNotExist:
+                    # Fallback values
+                    tokens.update(
+                        {
+                            "next_action": "verify_email",
+                            "email_verified": False,
+                        }
+                    )
+
+                return created_response(
+                    data=tokens, message="User registered successfully"
+                )
             except Exception as e:
                 return error_response(
                     errors={"registration": str(e)},
@@ -95,7 +117,26 @@ class LoginView(APIView):
             )
 
             if tokens:
-                return success_response(tokens)
+                # Get user for next action determination
+                try:
+                    user = User.objects.get(email=serializer.validated_data["email"])
+                    next_action = auth_service.get_next_action_for_user(user)
+                    tokens.update(
+                        {
+                            "next_action": next_action,
+                            "email_verified": user.is_email_verified,
+                        }
+                    )
+                except User.DoesNotExist:
+                    # This shouldn't happen if login succeeded, but fallback
+                    tokens.update(
+                        {
+                            "next_action": "none",
+                            "email_verified": False,
+                        }
+                    )
+
+                return success_response(data=tokens, message="Login successful")
             else:
                 return unauthorized_response("Invalid credentials")
 
@@ -121,7 +162,34 @@ class GoogleLoginView(APIView):
                 tokens = auth_service.google_login(
                     id_token=serializer.validated_data["id_token"], platform="web"
                 )
-                return success_response(tokens)
+
+                # For Google login, we need to extract the email from the service or find the user
+                # Since the google_login service creates/finds the user, we need to get it
+                # The service should return user info or we need to find the user
+                # For now, assuming we can get the user from the token or we need to modify the service
+
+                # Let's add next_action and email_verified to Google login response too
+                # We'll need to decode the access token to get the user info
+                try:
+                    payload = jwt_service.decode_token(tokens["access_token"])
+                    user = User.objects.get(public_id=payload["sub"])
+                    next_action = auth_service.get_next_action_for_user(user)
+                    tokens.update(
+                        {
+                            "next_action": next_action,
+                            "email_verified": user.is_email_verified,
+                        }
+                    )
+                except (User.DoesNotExist, Exception):
+                    # Fallback values for Google users (usually email verified)
+                    tokens.update(
+                        {
+                            "next_action": "none",
+                            "email_verified": True,
+                        }
+                    )
+
+                return success_response(data=tokens, message="Google login successful")
             except ValueError as e:
                 return error_response(
                     errors={"google": str(e)},
@@ -156,20 +224,27 @@ class ActivateRoleView(APIView):
                 user=request.user, platform="web", active_role=role_info["role"]
             )
 
+            # Get updated next action after role activation
+            next_action = auth_service.get_next_action_for_user(request.user)
+
             response_data = {
                 **tokens,
                 "active_role": role_info["role"],
                 "email_verified": role_info["email_verified"],
-                "next_action": role_info["next_action"],
+                "next_action": next_action,
             }
 
-            return success_response(response_data)
+            return success_response(
+                data=response_data, message="Role activated successfully"
+            )
 
         return validation_error_response(serializer.errors)
 
 
 class EmailVerifyView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [
+        AllowAny
+    ]  # Allow both authenticated and unauthenticated access
     # throttle_scope = 'web:verify_email'
 
     @extend_schema(
@@ -183,8 +258,20 @@ class EmailVerifyView(APIView):
         """Verify email with OTP."""
         serializer = EmailVerificationSerializer(data=request.data)
         if serializer.is_valid():
+            # Get email from JWT token if authenticated, otherwise from payload
+            email = serializer.validated_data.get("email")
+
+            if not email and request.user.is_authenticated:
+                email = request.user.email
+            elif not email:
+                return error_response(
+                    errors={"email": "Email is required when not authenticated"},
+                    message="Email required",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
             user = auth_service.verify_email(
-                email=serializer.validated_data["email"],
+                email=email,
                 otp=serializer.validated_data["otp"],
             )
 
@@ -193,7 +280,19 @@ class EmailVerifyView(APIView):
                 tokens = jwt_service.create_token_pair(
                     user=user, platform="web", active_role=None
                 )
-                return success_response(tokens)
+
+                # Get next action after email verification
+                next_action = auth_service.get_next_action_for_user(user)
+                tokens.update(
+                    {
+                        "next_action": next_action,
+                        "email_verified": user.is_email_verified,
+                    }
+                )
+
+                return success_response(
+                    data=tokens, message="Email verified successfully"
+                )
             else:
                 return error_response(
                     errors={"otp": "Invalid or expired OTP"},
@@ -226,7 +325,7 @@ class EmailResendView(APIView):
                 if request.user and request.user.is_authenticated:
                     if request.user.is_email_verified:
                         # Already verified, do nothing
-                        return accepted_response()
+                        return accepted_response("Email already verified")
                     email = request.user.email
                 else:
                     return error_response(
@@ -244,7 +343,7 @@ class EmailResendView(APIView):
                 # Don't reveal if email exists
                 pass
 
-            return accepted_response()
+            return accepted_response("Verification email sent if account exists")
 
         return validation_error_response(serializer.errors)
 
@@ -271,7 +370,9 @@ class RefreshTokenView(APIView):
                     user_agent=request.META.get("HTTP_USER_AGENT", ""),
                     ip_address=request.META.get("REMOTE_ADDR"),
                 )
-                return success_response(tokens)
+                return success_response(
+                    data=tokens, message="Token refreshed successfully"
+                )
             except Exception as e:
                 return unauthorized_response(str(e))
 
@@ -318,7 +419,7 @@ class ForgotPasswordView(APIView):
         serializer = ForgotPasswordSerializer(data=request.data)
         if serializer.is_valid():
             auth_service.forgot_password(email=serializer.validated_data["email"])
-            return accepted_response()
+            return accepted_response("Password reset code sent if account exists")
 
         return validation_error_response(serializer.errors)
 
@@ -344,7 +445,9 @@ class VerifyPasswordResetView(APIView):
             )
 
             if result:
-                return success_response(result)
+                return success_response(
+                    data=result, message="Reset code verified successfully"
+                )
             else:
                 return error_response(
                     errors={"otp": "Invalid or expired reset code"},
