@@ -4,9 +4,11 @@ Authentication-related models for tokens and sessions.
 
 import hashlib
 import secrets
+from datetime import timedelta
+
 from django.db import models
 from django.utils import timezone
-from datetime import timedelta
+
 from apps.common.models import BaseModel
 
 

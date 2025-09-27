@@ -3,6 +3,7 @@ Serializers for profile endpoints.
 """
 
 from rest_framework import serializers
+
 from apps.profiles.models import CustomerProfile, HandymanProfile
 
 

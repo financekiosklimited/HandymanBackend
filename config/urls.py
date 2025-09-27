@@ -3,8 +3,9 @@ URL configuration for sb project.
 """
 
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+
 from apps.common.views import health_check
 
 urlpatterns = [

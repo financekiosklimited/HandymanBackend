@@ -2,26 +2,27 @@
 Web profile views.
 """
 
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
 from drf_spectacular.utils import extend_schema
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
 
 from apps.authn.permissions import (
+    EmailVerifiedPermission,
     PlatformGuardPermission,
     RoleGuardPermission,
-    EmailVerifiedPermission,
 )
+from apps.common.responses import (
+    not_found_response,
+    success_response,
+    validation_error_response,
+)
+
+from ..models import CustomerProfile, HandymanProfile
 from ..serializers import (
     CustomerProfileSerializer,
     CustomerProfileUpdateSerializer,
     HandymanProfileSerializer,
     HandymanProfileUpdateSerializer,
-)
-from ..models import CustomerProfile, HandymanProfile
-from apps.common.responses import (
-    success_response,
-    not_found_response,
-    validation_error_response,
 )
 
 

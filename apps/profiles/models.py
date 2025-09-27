@@ -3,6 +3,7 @@ Profile models for different user types.
 """
 
 from django.db import models
+
 from apps.common.models import BaseModel
 
 

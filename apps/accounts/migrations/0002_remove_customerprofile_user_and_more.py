@@ -4,27 +4,26 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0001_initial'),
+        ("accounts", "0001_initial"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='customerprofile',
-            name='user',
+            model_name="customerprofile",
+            name="user",
         ),
         migrations.RemoveField(
-            model_name='handymanprofile',
-            name='user',
+            model_name="handymanprofile",
+            name="user",
         ),
         migrations.DeleteModel(
-            name='AdminProfile',
+            name="AdminProfile",
         ),
         migrations.DeleteModel(
-            name='CustomerProfile',
+            name="CustomerProfile",
         ),
         migrations.DeleteModel(
-            name='HandymanProfile',
+            name="HandymanProfile",
         ),
     ]

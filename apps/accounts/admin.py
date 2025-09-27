@@ -6,11 +6,13 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
+
 from .models import User, UserRole
 
 
 class UserRoleInline(TabularInline):
     """Inline admin for user roles."""
+
     model = UserRole
     extra = 0
     fields = ("role", "next_action")
@@ -44,9 +46,9 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
         "date_joined",
     )
     list_filter = (
-        "is_active", 
-        "is_staff", 
-        "is_superuser", 
+        "is_active",
+        "is_staff",
+        "is_superuser",
         "email_verified_at",
         "date_joined",
     )

@@ -3,8 +3,10 @@ User and role models for accounts app.
 """
 
 import uuid
+
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+
 from apps.common.models import BaseModel
 
 

@@ -7,7 +7,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
@@ -16,53 +15,94 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='AdminProfile',
+            name="AdminProfile",
             fields=[
-                ('id', models.BigAutoField(primary_key=True, serialize=False)),
-                ('public_id', models.UUIDField(db_index=True, default=uuid.uuid4, editable=False, unique=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True, db_index=True)),
-                ('updated_at', models.DateTimeField(auto_now=True, db_index=True)),
-                ('display_name', models.CharField(max_length=100)),
-                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='admin_profile', to=settings.AUTH_USER_MODEL)),
+                ("id", models.BigAutoField(primary_key=True, serialize=False)),
+                (
+                    "public_id",
+                    models.UUIDField(
+                        db_index=True, default=uuid.uuid4, editable=False, unique=True
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True, db_index=True)),
+                ("updated_at", models.DateTimeField(auto_now=True, db_index=True)),
+                ("display_name", models.CharField(max_length=100)),
+                (
+                    "user",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="admin_profile",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'db_table': 'admin_profiles',
-                'ordering': ['-created_at'],
+                "db_table": "admin_profiles",
+                "ordering": ["-created_at"],
             },
         ),
         migrations.CreateModel(
-            name='CustomerProfile',
+            name="CustomerProfile",
             fields=[
-                ('id', models.BigAutoField(primary_key=True, serialize=False)),
-                ('public_id', models.UUIDField(db_index=True, default=uuid.uuid4, editable=False, unique=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True, db_index=True)),
-                ('updated_at', models.DateTimeField(auto_now=True, db_index=True)),
-                ('display_name', models.CharField(max_length=100)),
-                ('phone_number', models.CharField(blank=True, max_length=20)),
-                ('address', models.TextField(blank=True)),
-                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='customer_profile', to=settings.AUTH_USER_MODEL)),
+                ("id", models.BigAutoField(primary_key=True, serialize=False)),
+                (
+                    "public_id",
+                    models.UUIDField(
+                        db_index=True, default=uuid.uuid4, editable=False, unique=True
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True, db_index=True)),
+                ("updated_at", models.DateTimeField(auto_now=True, db_index=True)),
+                ("display_name", models.CharField(max_length=100)),
+                ("phone_number", models.CharField(blank=True, max_length=20)),
+                ("address", models.TextField(blank=True)),
+                (
+                    "user",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="customer_profile",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'db_table': 'customer_profiles',
-                'ordering': ['-created_at'],
+                "db_table": "customer_profiles",
+                "ordering": ["-created_at"],
             },
         ),
         migrations.CreateModel(
-            name='HandymanProfile',
+            name="HandymanProfile",
             fields=[
-                ('id', models.BigAutoField(primary_key=True, serialize=False)),
-                ('public_id', models.UUIDField(db_index=True, default=uuid.uuid4, editable=False, unique=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True, db_index=True)),
-                ('updated_at', models.DateTimeField(auto_now=True, db_index=True)),
-                ('display_name', models.CharField(max_length=100)),
-                ('rating', models.DecimalField(blank=True, decimal_places=2, max_digits=3, null=True)),
-                ('phone_number', models.CharField(blank=True, max_length=20)),
-                ('address', models.TextField(blank=True)),
-                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='handyman_profile', to=settings.AUTH_USER_MODEL)),
+                ("id", models.BigAutoField(primary_key=True, serialize=False)),
+                (
+                    "public_id",
+                    models.UUIDField(
+                        db_index=True, default=uuid.uuid4, editable=False, unique=True
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True, db_index=True)),
+                ("updated_at", models.DateTimeField(auto_now=True, db_index=True)),
+                ("display_name", models.CharField(max_length=100)),
+                (
+                    "rating",
+                    models.DecimalField(
+                        blank=True, decimal_places=2, max_digits=3, null=True
+                    ),
+                ),
+                ("phone_number", models.CharField(blank=True, max_length=20)),
+                ("address", models.TextField(blank=True)),
+                (
+                    "user",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="handyman_profile",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'db_table': 'handyman_profiles',
-                'ordering': ['-created_at'],
+                "db_table": "handyman_profiles",
+                "ordering": ["-created_at"],
             },
         ),
     ]

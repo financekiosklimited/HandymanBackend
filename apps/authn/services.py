@@ -4,19 +4,20 @@ Authentication business logic services.
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password
-from django.utils import timezone
 from django.db import transaction
+from django.utils import timezone
 
+from apps.accounts.models import UserRole
+from apps.common.email import email_service
+from apps.profiles.models import CustomerProfile, HandymanProfile
+
+from .jwt_service import jwt_service
 from .models import (
     EmailVerificationToken,
     PasswordResetCode,
     PasswordResetToken,
     RefreshSession,
 )
-from .jwt_service import jwt_service
-from apps.accounts.models import UserRole
-from apps.profiles.models import CustomerProfile, HandymanProfile
-from apps.common.email import email_service
 
 User = get_user_model()
 

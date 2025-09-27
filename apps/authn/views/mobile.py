@@ -2,40 +2,41 @@
 Mobile authentication views.
 """
 
-from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework import status
 from django.contrib.auth import get_user_model
 from drf_spectacular.utils import extend_schema
+from rest_framework import status
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.views import APIView
 
+from apps.common.responses import (
+    accepted_response,
+    created_response,
+    error_response,
+    no_content_response,
+    success_response,
+    unauthorized_response,
+    validation_error_response,
+)
+
+from ..jwt_service import jwt_service
 from ..serializers import (
-    RegisterSerializer,
-    LoginSerializer,
-    GoogleLoginSerializer,
     ActivateRoleSerializer,
-    EmailVerificationSerializer,
-    EmailResendSerializer,
-    RefreshTokenSerializer,
-    LogoutSerializer,
-    ForgotPasswordSerializer,
-    VerifyPasswordResetSerializer,
-    ResetPasswordSerializer,
-    ChangePasswordSerializer,
-    TokenResponseSerializer,
     AuthResponseSerializer,
+    ChangePasswordSerializer,
+    EmailResendSerializer,
+    EmailVerificationSerializer,
+    ForgotPasswordSerializer,
+    GoogleLoginSerializer,
+    LoginSerializer,
+    LogoutSerializer,
     PasswordResetTokenResponseSerializer,
+    RefreshTokenSerializer,
+    RegisterSerializer,
+    ResetPasswordSerializer,
+    TokenResponseSerializer,
+    VerifyPasswordResetSerializer,
 )
 from ..services import auth_service
-from ..jwt_service import jwt_service
-from apps.common.responses import (
-    success_response,
-    created_response,
-    accepted_response,
-    no_content_response,
-    validation_error_response,
-    unauthorized_response,
-    error_response,
-)
 
 User = get_user_model()
 

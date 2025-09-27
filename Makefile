@@ -80,6 +80,27 @@ test: ## Run tests
 	@echo "$(BLUE)Running tests...$(NC)"
 	$(MANAGE) test
 
+# Linting and formatting
+.PHONY: lint
+lint: ## Run linting checks
+	@echo "$(BLUE)Running linting checks...$(NC)"
+	$(UV) run ruff check .
+
+.PHONY: lint-fix
+lint-fix: ## Run linting checks and auto-fix issues
+	@echo "$(BLUE)Running linting checks and auto-fixing...$(NC)"
+	$(UV) run ruff check --fix .
+
+.PHONY: format
+format: ## Format code with ruff
+	@echo "$(BLUE)Formatting code...$(NC)"
+	$(UV) run ruff format .
+
+.PHONY: format-check
+format-check: ## Check code formatting
+	@echo "$(BLUE)Checking code formatting...$(NC)"
+	$(UV) run ruff format --check .
+
 # Utilities
 .PHONY: clean
 clean: ## Clean temporary files

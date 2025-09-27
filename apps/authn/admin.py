@@ -4,6 +4,7 @@ Django admin configuration for authn app.
 
 from django.contrib import admin
 from unfold.admin import ModelAdmin
+
 from .models import (
     EmailVerificationToken,
     PasswordResetCode,

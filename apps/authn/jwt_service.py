@@ -2,11 +2,13 @@
 JWT service for handling RS256 token generation and verification.
 """
 
-import jwt
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+
+import jwt
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+
 from .models import RefreshSession
 
 
@@ -39,7 +41,7 @@ class JWTService:
                 hasattr(settings, "JWT_PRIVATE_KEY_PATH")
                 and settings.JWT_PRIVATE_KEY_PATH
             ):
-                with open(settings.JWT_PRIVATE_KEY_PATH, "r") as f:
+                with open(settings.JWT_PRIVATE_KEY_PATH) as f:
                     self._private_key = f.read()
             else:
                 raise ImproperlyConfigured(
@@ -58,7 +60,7 @@ class JWTService:
                 hasattr(settings, "JWT_PUBLIC_KEY_PATH")
                 and settings.JWT_PUBLIC_KEY_PATH
             ):
-                with open(settings.JWT_PUBLIC_KEY_PATH, "r") as f:
+                with open(settings.JWT_PUBLIC_KEY_PATH) as f:
                     self._public_key = f.read()
             else:
                 raise ImproperlyConfigured(
@@ -82,7 +84,7 @@ class JWTService:
         Returns:
             dict: Contains 'access_token', 'refresh_token', 'token_type'
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Generate JTI for both tokens (same JTI for the pair)
         jti = str(uuid.uuid4())

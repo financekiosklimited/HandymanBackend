@@ -3,6 +3,7 @@ Mobile profile URL configuration.
 """
 
 from django.urls import path
+
 from ..views import mobile as mobile_views
 
 urlpatterns = [

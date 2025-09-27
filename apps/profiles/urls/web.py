@@ -3,6 +3,7 @@ Web profile URL configuration.
 """
 
 from django.urls import path
+
 from ..views import web as web_views
 
 urlpatterns = [

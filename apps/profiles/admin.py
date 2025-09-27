@@ -5,7 +5,8 @@ Admin configuration for profiles app.
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
-from .models import HandymanProfile, CustomerProfile
+
+from .models import CustomerProfile, HandymanProfile
 
 
 @admin.register(HandymanProfile)
@@ -14,9 +15,21 @@ class HandymanProfileAdmin(ModelAdmin):
     Admin interface for HandymanProfile model with Unfold styling.
     """
 
-    list_display = ("user", "display_name", "rating_display", "phone_number", "created_at")
+    list_display = (
+        "user",
+        "display_name",
+        "rating_display",
+        "phone_number",
+        "created_at",
+    )
     list_filter = ("rating", "created_at")
-    search_fields = ("user__email", "display_name", "phone_number", "user__first_name", "user__last_name")
+    search_fields = (
+        "user__email",
+        "display_name",
+        "phone_number",
+        "user__first_name",
+        "user__last_name",
+    )
     ordering = ("-created_at",)
     autocomplete_fields = ("user",)
 
@@ -36,7 +49,13 @@ class CustomerProfileAdmin(ModelAdmin):
     """
 
     list_display = ("user", "display_name", "phone_number", "created_at")
-    search_fields = ("user__email", "display_name", "phone_number", "user__first_name", "user__last_name")
+    search_fields = (
+        "user__email",
+        "display_name",
+        "phone_number",
+        "user__first_name",
+        "user__last_name",
+    )
     ordering = ("-created_at",)
     autocomplete_fields = ("user",)
     list_filter = ("created_at",)

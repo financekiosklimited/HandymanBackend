@@ -3,6 +3,7 @@ Base models and common utilities.
 """
 
 import uuid
+
 from django.db import models
 
 

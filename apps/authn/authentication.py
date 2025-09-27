@@ -5,6 +5,7 @@ Custom JWT authentication for DRF.
 import jwt
 from django.contrib.auth import get_user_model
 from rest_framework import authentication, exceptions
+
 from .jwt_service import jwt_service
 
 User = get_user_model()
