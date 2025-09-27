@@ -120,6 +120,5 @@ apps/                  # Django applications
 └── common/          # Shared utilities
 
 config/              # Django configuration
-interfaces/api/      # API endpoints (web/mobile)
 secrets/            # JWT keys
 ```
