@@ -309,19 +309,36 @@ UNFOLD = {
         "show_all_applications": False,
         "navigation": [
             {
-                "title": "Navigation",
+                "title": "Dashboard",
                 "separator": True,
                 "items": [
                     {
-                        "title": "Dashboard",
+                        "title": "Overview",
                         "icon": "dashboard",
                         "link": lambda request: "/admin/",
                     },
+                ],
+            },
+            {
+                "title": "User Management",
+                "separator": True,
+                "items": [
                     {
                         "title": "Users",
                         "icon": "person",
                         "link": lambda request: "/admin/accounts/user/",
                     },
+                    {
+                        "title": "User Roles",
+                        "icon": "admin_panel_settings",
+                        "link": lambda request: "/admin/accounts/userrole/",
+                    },
+                ],
+            },
+            {
+                "title": "Profiles",
+                "separator": True,
+                "items": [
                     {
                         "title": "Customer Profiles",
                         "icon": "person_outline",
@@ -331,6 +348,43 @@ UNFOLD = {
                         "title": "Handyman Profiles",
                         "icon": "build",
                         "link": lambda request: "/admin/profiles/handymanprofile/",
+                    },
+                ],
+            },
+            {
+                "title": "Authentication & Security",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Email Verification Tokens",
+                        "icon": "mark_email_read",
+                        "link": lambda request: "/admin/authn/emailverificationtoken/",
+                    },
+                    {
+                        "title": "Password Reset Codes",
+                        "icon": "lock_reset",
+                        "link": lambda request: "/admin/authn/passwordresetcode/",
+                    },
+                    {
+                        "title": "Password Reset Tokens",
+                        "icon": "key",
+                        "link": lambda request: "/admin/authn/passwordresettoken/",
+                    },
+                    {
+                        "title": "Active Sessions",
+                        "icon": "devices",
+                        "link": lambda request: "/admin/authn/refreshsession/",
+                    },
+                ],
+            },
+            {
+                "title": "System",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Groups",
+                        "icon": "group",
+                        "link": lambda request: "/admin/auth/group/",
                     },
                 ],
             },

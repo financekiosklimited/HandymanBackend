@@ -3,6 +3,7 @@ Django admin configuration for authn app.
 """
 
 from django.contrib import admin
+from unfold.admin import ModelAdmin
 from .models import (
     EmailVerificationToken,
     PasswordResetCode,
@@ -12,7 +13,7 @@ from .models import (
 
 
 @admin.register(EmailVerificationToken)
-class EmailVerificationTokenAdmin(admin.ModelAdmin):
+class EmailVerificationTokenAdmin(ModelAdmin):
     """
     Admin interface for EmailVerificationToken model.
     """
@@ -25,7 +26,7 @@ class EmailVerificationTokenAdmin(admin.ModelAdmin):
 
 
 @admin.register(PasswordResetCode)
-class PasswordResetCodeAdmin(admin.ModelAdmin):
+class PasswordResetCodeAdmin(ModelAdmin):
     """
     Admin interface for PasswordResetCode model.
     """
@@ -38,7 +39,7 @@ class PasswordResetCodeAdmin(admin.ModelAdmin):
 
 
 @admin.register(PasswordResetToken)
-class PasswordResetTokenAdmin(admin.ModelAdmin):
+class PasswordResetTokenAdmin(ModelAdmin):
     """
     Admin interface for PasswordResetToken model.
     """
@@ -51,7 +52,7 @@ class PasswordResetTokenAdmin(admin.ModelAdmin):
 
 
 @admin.register(RefreshSession)
-class RefreshSessionAdmin(admin.ModelAdmin):
+class RefreshSessionAdmin(ModelAdmin):
     """
     Admin interface for RefreshSession model.
     """
