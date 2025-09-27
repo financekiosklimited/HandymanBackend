@@ -13,8 +13,10 @@ urlpatterns = [
     # Health check
     path("health/", health_check, name="health_check"),
     # API routes
-    path("api/v1/web/", include("interfaces.api.web.urls")),
-    path("api/v1/mobile/", include("interfaces.api.mobile.urls")),
+    path("api/v1/web/", include("apps.authn.urls.web")),
+    path("api/v1/web/", include("apps.profiles.urls.web")),
+    path("api/v1/mobile/", include("apps.authn.urls.mobile")),
+    path("api/v1/mobile/", include("apps.profiles.urls.mobile")),
     # API Schema and Documentation
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path(

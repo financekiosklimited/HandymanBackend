@@ -8,7 +8,7 @@ from rest_framework import status
 from django.contrib.auth import get_user_model
 from drf_spectacular.utils import extend_schema
 
-from apps.authn.serializers import (
+from ..serializers import (
     RegisterSerializer,
     LoginSerializer,
     GoogleLoginSerializer,
@@ -25,8 +25,8 @@ from apps.authn.serializers import (
     AuthResponseSerializer,
     PasswordResetTokenResponseSerializer,
 )
-from apps.authn.services import auth_service
-from apps.authn.jwt_service import jwt_service
+from ..services import auth_service
+from ..jwt_service import jwt_service
 from apps.common.responses import (
     success_response,
     created_response,

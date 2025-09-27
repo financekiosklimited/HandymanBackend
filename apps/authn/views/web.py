@@ -8,7 +8,7 @@ from rest_framework import status
 from django.contrib.auth import get_user_model
 from drf_spectacular.utils import extend_schema
 
-from apps.authn.serializers import (
+from ..serializers import (
     RegisterSerializer,
     LoginSerializer,
     GoogleLoginSerializer,
@@ -25,8 +25,8 @@ from apps.authn.serializers import (
     AuthResponseSerializer,
     PasswordResetTokenResponseSerializer,
 )
-from apps.authn.services import auth_service
-from apps.authn.jwt_service import jwt_service
+from ..services import auth_service
+from ..jwt_service import jwt_service
 from apps.common.responses import (
     success_response,
     created_response,
@@ -79,7 +79,7 @@ class LoginView(APIView):
     @extend_schema(
         request=LoginSerializer,
         responses={200: TokenResponseSerializer},
-        description="Login with email and password. Returns JWT tokens for authenticated access.",
+        description="Login with email and password via web app. Returns JWT tokens for authenticated access.",
         summary="User login",
         tags=["Web Authentication"],
     )
@@ -108,7 +108,7 @@ class GoogleLoginView(APIView):
     @extend_schema(
         request=GoogleLoginSerializer,
         responses={200: TokenResponseSerializer},
-        description="Login with Google OAuth ID token. Auto-verifies email and creates user if needed.",
+        description="Login with Google OAuth ID token via web app.",
         summary="Google OAuth login",
         tags=["Web Authentication"],
     )
@@ -174,7 +174,7 @@ class EmailVerifyView(APIView):
     @extend_schema(
         request=EmailVerificationSerializer,
         responses={200: TokenResponseSerializer},
-        description="Verify email address using 6-digit OTP code sent via email. Updates email verification status.",
+        description="Verify email address using 6-digit OTP code sent via email for web users.",
         summary="Verify email with OTP",
         tags=["Web Authentication"],
     )
@@ -205,7 +205,7 @@ class EmailVerifyView(APIView):
 
 class EmailResendView(APIView):
     permission_classes = [AllowAny]
-    throttle_scope = "web:resend_email"
+    # throttle_scope = 'web:resend_email'
 
     @extend_schema(
         request=EmailResendSerializer,
@@ -255,7 +255,7 @@ class RefreshTokenView(APIView):
     @extend_schema(
         request=RefreshTokenSerializer,
         responses={200: TokenResponseSerializer},
-        description="Refresh access token using refresh token. Rotates refresh session and carries forward active role if still valid.",
+        description="Refresh access token using refresh token via web app.",
         summary="Refresh access token",
         tags=["Web Authentication"],
     )
@@ -283,7 +283,7 @@ class LogoutView(APIView):
     @extend_schema(
         request=LogoutSerializer,
         responses={204: None},
-        description="Logout user and optionally revoke refresh token session. Cleans up authentication state.",
+        description="Logout user via web app.",
         summary="User logout",
         tags=["Web Authentication"],
     )
@@ -308,7 +308,7 @@ class ForgotPasswordView(APIView):
     @extend_schema(
         request=ForgotPasswordSerializer,
         responses={202: None},
-        description="Initiate password reset process. Sends 6-digit reset code to user's email (10min TTL).",
+        description="Initiate password reset process via web app.",
         summary="Forgot password",
         tags=["Web Authentication"],
     )
@@ -329,7 +329,7 @@ class VerifyPasswordResetView(APIView):
     @extend_schema(
         request=VerifyPasswordResetSerializer,
         responses={200: PasswordResetTokenResponseSerializer},
-        description="Verify password reset code and get reset token. Code must be used within 10 minutes. Returns reset token valid for 15 minutes.",
+        description="Verify password reset code via web app.",
         summary="Verify reset code",
         tags=["Web Authentication"],
     )
@@ -361,7 +361,7 @@ class ResetPasswordView(APIView):
     @extend_schema(
         request=ResetPasswordSerializer,
         responses={200: None},
-        description="Reset password using reset token from verify step. Revokes all user sessions after successful reset.",
+        description="Reset password with reset token via web app.",
         summary="Reset password",
         tags=["Web Authentication"],
     )
@@ -393,7 +393,7 @@ class ChangePasswordView(APIView):
     @extend_schema(
         request=ChangePasswordSerializer,
         responses={200: None},
-        description="Change password for authenticated user. Requires current password verification. Revokes all sessions after successful change.",
+        description="Change password for authenticated user via web app.",
         summary="Change password",
         tags=["Web Authentication"],
     )
