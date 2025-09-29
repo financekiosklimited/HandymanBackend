@@ -63,7 +63,6 @@ LOCAL_APPS = [
     "apps.authn",
     "apps.profiles",
     "apps.common",
-    "apps.storage",
     "apps.waitlist",
 ]
 

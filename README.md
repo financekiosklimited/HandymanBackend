@@ -102,7 +102,6 @@ make check-postgres    # Test database connection
 - **PostgreSQL** database
 - **RS256 JWT** authentication
 - **Unfold** modern admin theme
-- **S3** for media storage
 
 ### Key Features
 - Platform-specific APIs (`/web/`, `/mobile/`)
@@ -110,15 +109,46 @@ make check-postgres    # Test database connection
 - Email verification with OTP
 - Google OAuth integration
 - Consistent JSON response format
+- Pre-launch waitlist management
+
+### Application Architecture
+
+#### Core Apps
+- **`accounts`** - User management, authentication models, custom User model
+- **`authn`** - JWT token management, email verification, password reset flows
+- **`profiles`** - Customer and handyman profile management with role-based access
+- **`common`** - Shared utilities, BaseModel abstract class, response formatters
+- **`waitlist`** - Pre-launch waitlist signup and management
+
+#### API Structure
+```
+/api/v1/web/          # Web platform endpoints
+├── auth/            # Authentication (login, register, verify)
+├── profiles/        # Profile management
+└── waitlist/        # Waitlist signup
+
+/api/v1/mobile/      # Mobile platform endpoints
+├── auth/            # Authentication flows
+└── profiles/        # Profile management
+
+/admin/              # Django admin interface
+/health/             # Health check endpoint
+```
 
 ### Project Structure
 ```
 apps/                  # Django applications
 ├── accounts/         # User models & authentication
-├── authn/           # JWT service
-├── profiles/        # User profiles
-└── common/          # Shared utilities
+├── authn/           # JWT authentication service
+├── common/          # Shared utilities (BaseModel, responses)
+├── profiles/        # Customer & handyman profiles
+└── waitlist/        # Pre-launch waitlist functionality
 
 config/              # Django configuration
-secrets/            # JWT keys
+├── settings/        # Environment-specific settings
+├── urls.py         # URL routing
+└── asgi.py/wsgi.py # ASGI/WSGI applications
+
+secrets/            # JWT private/public keys
+staticfiles/        # Collected static files
 ```
