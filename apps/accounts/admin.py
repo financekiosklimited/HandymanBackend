@@ -18,19 +18,6 @@ class UserRoleInline(TabularInline):
     fields = ("role", "next_action")
 
 
-@admin.register(UserRole)
-class UserRoleAdmin(ModelAdmin):
-    """
-    Admin interface for UserRole model with Unfold styling.
-    """
-
-    list_display = ("user", "role", "next_action", "created_at")
-    list_filter = ("role", "next_action", "created_at")
-    search_fields = ("user__email", "user__first_name", "user__last_name")
-    ordering = ("-created_at",)
-    autocomplete_fields = ("user",)
-
-
 @admin.register(User)
 class UserAdmin(BaseUserAdmin, ModelAdmin):
     """

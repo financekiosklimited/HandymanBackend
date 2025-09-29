@@ -330,11 +330,6 @@ UNFOLD = {
                         "icon": "person",
                         "link": lambda request: "/admin/accounts/user/",
                     },
-                    {
-                        "title": "User Roles",
-                        "icon": "admin_panel_settings",
-                        "link": lambda request: "/admin/accounts/userrole/",
-                    },
                 ],
             },
             {
