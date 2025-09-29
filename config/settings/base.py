@@ -64,6 +64,7 @@ LOCAL_APPS = [
     "apps.profiles",
     "apps.common",
     "apps.storage",
+    "apps.waitlist",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -349,6 +350,17 @@ UNFOLD = {
                         "title": "Handyman Profiles",
                         "icon": "build",
                         "link": lambda request: "/admin/profiles/handymanprofile/",
+                    },
+                ],
+            },
+            {
+                "title": "Waitlist",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Entries",
+                        "icon": "hourglass_bottom",
+                        "link": lambda request: "/admin/waitlist/waitlistentry/",
                     },
                 ],
             },

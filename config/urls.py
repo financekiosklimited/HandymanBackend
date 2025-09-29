@@ -16,6 +16,7 @@ urlpatterns = [
     # API routes
     path("api/v1/web/", include("apps.authn.urls.web")),
     path("api/v1/web/", include("apps.profiles.urls.web")),
+    path("api/v1/web/", include("apps.waitlist.urls.web")),
     path("api/v1/mobile/", include("apps.authn.urls.mobile")),
     path("api/v1/mobile/", include("apps.profiles.urls.mobile")),
     # API Schema and Documentation
