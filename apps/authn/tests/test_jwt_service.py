@@ -1,7 +1,7 @@
 """Tests for JWT service."""
 
-from datetime import UTC, datetime, timedelta
 import tempfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -390,7 +390,9 @@ class JWTServiceTests(TestCase):
         """Private key is read from configured file path when not cached."""
         tmp_path = Path(self._create_temp_key_file(TEST_PRIVATE_KEY))
 
-        with override_settings(JWT_PRIVATE_KEY=None, JWT_PRIVATE_KEY_PATH=str(tmp_path)):
+        with override_settings(
+            JWT_PRIVATE_KEY=None, JWT_PRIVATE_KEY_PATH=str(tmp_path)
+        ):
             service = JWTService()
             service._private_key = None
             self.assertEqual(service.private_key.strip(), TEST_PRIVATE_KEY.strip())
@@ -429,9 +431,18 @@ class JWTServiceTests(TestCase):
         session.platform = "web"
         session.user = SimpleNamespace(has_role=lambda role: False)
 
-        with patch.object(self.jwt_service, "decode_token", return_value=payload), \
-             patch("apps.authn.jwt_service.RefreshSession.verify_session", return_value=session), \
-             patch.object(self.jwt_service, "create_token_pair", return_value={"access_token": "a", "refresh_token": "b"}) as mock_create:
+        with (
+            patch.object(self.jwt_service, "decode_token", return_value=payload),
+            patch(
+                "apps.authn.jwt_service.RefreshSession.verify_session",
+                return_value=session,
+            ),
+            patch.object(
+                self.jwt_service,
+                "create_token_pair",
+                return_value={"access_token": "a", "refresh_token": "b"},
+            ) as mock_create,
+        ):
             result = self.jwt_service.refresh_token_pair("token", platform="web")
 
         mock_create.assert_called_once()
@@ -446,14 +457,21 @@ class JWTServiceTests(TestCase):
         session.platform = "mobile"
         session.user = self.user
 
-        with patch.object(self.jwt_service, "decode_token", return_value=payload), \
-             patch("apps.authn.jwt_service.RefreshSession.verify_session", return_value=session):
+        with (
+            patch.object(self.jwt_service, "decode_token", return_value=payload),
+            patch(
+                "apps.authn.jwt_service.RefreshSession.verify_session",
+                return_value=session,
+            ),
+        ):
             with self.assertRaises(ValueError):
                 self.jwt_service.refresh_token_pair("token", platform="web")
 
     def test_revoke_refresh_token_non_refresh_payload(self):
         """Revoke ignores tokens that are not refresh tokens."""
-        with patch.object(self.jwt_service, "decode_token", return_value={"type": "access"}) as mock_decode:
+        with patch.object(
+            self.jwt_service, "decode_token", return_value={"type": "access"}
+        ) as mock_decode:
             self.jwt_service.revoke_refresh_token("token")
 
         mock_decode.assert_called_once_with("token")
@@ -465,8 +483,10 @@ class JWTServiceTests(TestCase):
         manager_mock = MagicMock()
         manager_mock.filter.return_value.first.return_value = None
 
-        with patch.object(self.jwt_service, "decode_token", return_value=payload), \
-             patch("apps.authn.jwt_service.RefreshSession.objects", manager_mock):
+        with (
+            patch.object(self.jwt_service, "decode_token", return_value=payload),
+            patch("apps.authn.jwt_service.RefreshSession.objects", manager_mock),
+        ):
             self.jwt_service.revoke_refresh_token("token")
 
         manager_mock.filter.assert_called_once()

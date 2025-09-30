@@ -490,6 +490,7 @@ class AuthServiceTests(TestCase):
 
         # Admin role doesn't require profile
         self.assertTrue(self.service._has_complete_profile(user, "admin"))
+
     def test_google_login_existing_user_sets_google_sub(self):
         """Existing user receives google_sub and verification timestamp."""
         user = User.objects.create_user(
@@ -538,8 +539,12 @@ class AuthServiceTests(TestCase):
 
     def test_google_login_errors_wrapped(self):
         """Underlying errors raise ValueError with helpful message."""
-        with patch("apps.authn.services.User.objects.get", side_effect=RuntimeError("boom")):
-            with self.assertRaisesRegex(ValueError, "Google authentication failed: boom"):
+        with patch(
+            "apps.authn.services.User.objects.get", side_effect=RuntimeError("boom")
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "Google authentication failed: boom"
+            ):
                 self.service.google_login(id_token="ignored", platform="web")
 
     @patch("apps.authn.services.EmailVerificationToken.verify_otp")
@@ -548,7 +553,9 @@ class AuthServiceTests(TestCase):
         user = User.objects.create_user(
             email="fill@example.com", password="securepass123"
         )
-        role = UserRole.objects.create(user=user, role="customer", next_action="verify_email")
+        role = UserRole.objects.create(
+            user=user, role="customer", next_action="verify_email"
+        )
         CustomerProfile.objects.create(user=user, display_name="")
         mock_verify.return_value = user
 
@@ -563,7 +570,9 @@ class AuthServiceTests(TestCase):
         user = User.objects.create_user(
             email="complete@example.com", password="securepass123"
         )
-        role = UserRole.objects.create(user=user, role="customer", next_action="verify_email")
+        role = UserRole.objects.create(
+            user=user, role="customer", next_action="verify_email"
+        )
         CustomerProfile.objects.create(user=user, display_name="Ready")
         mock_verify.return_value = user
 
@@ -578,7 +587,9 @@ class AuthServiceTests(TestCase):
         user = User.objects.create_user(
             email="other@example.com", password="securepass123"
         )
-        role = UserRole.objects.create(user=user, role="customer", next_action="fill_profile")
+        role = UserRole.objects.create(
+            user=user, role="customer", next_action="fill_profile"
+        )
         CustomerProfile.objects.create(user=user, display_name="In progress")
         mock_verify.return_value = user
 
@@ -589,44 +600,10 @@ class AuthServiceTests(TestCase):
 
     def test_create_profile_for_role_customer(self):
         """Customer profile helper creates profile when missing."""
-        user = User.objects.create_user(email="customer@example.com", password="securepass123")
-        CustomerProfile.objects.filter(user=user).delete()
-
-        self.service._create_profile_for_role(user, "customer")
-
-        self.assertTrue(CustomerProfile.objects.filter(user=user).exists())
-    def test_google_login_existing_user_retains_google_sub(self):
-        """Existing google_sub value remains when already set."""
-        user = User.objects.create_user(
-            email="demo@example.com", password="securepass123", google_sub="existing"
-        )
-
-        with patch("apps.authn.services.jwt_service.create_token_pair", return_value={"access_token": "a", "refresh_token": "r"}):
-            self.service.google_login(id_token="ignored", platform="web")
-
-        user.refresh_from_db()
-        self.assertEqual(user.google_sub, "existing")
-
-    @patch("apps.authn.services.EmailVerificationToken.verify_otp")
-    def test_verify_email_leaves_other_roles_unchanged(self, mock_verify):
-        """Roles not waiting for verification remain untouched."""
-        user = User.objects.create_user(
-            email="other@example.com", password="securepass123"
-        )
-        role = UserRole.objects.create(user=user, role="customer", next_action="fill_profile")
-        CustomerProfile.objects.create(user=user, display_name="Done")
-        mock_verify.return_value = user
-
-        self.service.verify_email(user.email, "123456")
-
-        role.refresh_from_db()
-        self.assertEqual(role.next_action, "fill_profile")
-
-    def test_create_profile_for_role_customer(self):
-        """Helper creates customer profile when missing."""
         user = User.objects.create_user(
             email="customer@example.com", password="securepass123"
         )
+        CustomerProfile.objects.filter(user=user).delete()
 
         self.service._create_profile_for_role(user, "customer")
 
@@ -634,7 +611,9 @@ class AuthServiceTests(TestCase):
 
     def test_create_profile_for_role_admin_noop(self):
         """Admin role does not create a profile."""
-        user = User.objects.create_user(email="admin@example.com", password="securepass123")
+        user = User.objects.create_user(
+            email="admin@example.com", password="securepass123"
+        )
 
         self.service._create_profile_for_role(user, "admin")
 

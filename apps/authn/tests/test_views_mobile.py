@@ -30,16 +30,34 @@ class MobileRegisterViewTests(TestCase):
         self.view = mobile_views.RegisterView.as_view()
 
     def test_register_success_user_found(self):
-        data = {"email": "new@example.com", "password": "Complex123!", "initial_role": "customer"}
+        data = {
+            "email": "new@example.com",
+            "password": "Complex123!",
+            "initial_role": "customer",
+        }
         request = self.factory.post("/auth/register", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        tokens = {"access_token": "access", "refresh_token": "refresh", "token_type": "bearer"}
+        tokens = {
+            "access_token": "access",
+            "refresh_token": "refresh",
+            "token_type": "bearer",
+        }
 
-        with patch("apps.authn.views.mobile.RegisterSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.register_user", return_value=tokens.copy()), \
-             patch("apps.authn.views.mobile.auth_service.get_next_action_for_user", return_value="fill_profile") as mock_next_action, \
-             patch.object(User.objects, "get") as mock_get:
+        with (
+            patch(
+                "apps.authn.views.mobile.RegisterSerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.register_user",
+                return_value=tokens.copy(),
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.get_next_action_for_user",
+                return_value="fill_profile",
+            ) as mock_next_action,
+            patch.object(User.objects, "get") as mock_get,
+        ):
             mock_get.return_value = SimpleNamespace(is_email_verified=True)
 
             response = self.view(request)
@@ -55,10 +73,24 @@ class MobileRegisterViewTests(TestCase):
         request = self.factory.post("/auth/register", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.RegisterSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.register_user", return_value={"access_token": "a", "refresh_token": "b", "token_type": "bearer"}), \
-             patch("apps.authn.views.mobile.auth_service.get_next_action_for_user", return_value="verify_email"), \
-             patch.object(User.objects, "get", side_effect=User.DoesNotExist):
+        with (
+            patch(
+                "apps.authn.views.mobile.RegisterSerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.register_user",
+                return_value={
+                    "access_token": "a",
+                    "refresh_token": "b",
+                    "token_type": "bearer",
+                },
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.get_next_action_for_user",
+                return_value="verify_email",
+            ),
+            patch.object(User.objects, "get", side_effect=User.DoesNotExist),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -71,8 +103,15 @@ class MobileRegisterViewTests(TestCase):
         request = self.factory.post("/auth/register", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.RegisterSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.register_user", side_effect=RuntimeError("boom")):
+        with (
+            patch(
+                "apps.authn.views.mobile.RegisterSerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.register_user",
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -82,7 +121,9 @@ class MobileRegisterViewTests(TestCase):
         serializer = make_serializer(is_valid=False)
         request = self.factory.post("/auth/register", {}, format="json")
 
-        with patch("apps.authn.views.mobile.RegisterSerializer", return_value=serializer):
+        with patch(
+            "apps.authn.views.mobile.RegisterSerializer", return_value=serializer
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -102,10 +143,18 @@ class MobileLoginViewTests(TestCase):
         serializer = make_serializer(validated_data=data)
         tokens = {"access_token": "a", "refresh_token": "r", "token_type": "bearer"}
 
-        with patch("apps.authn.views.mobile.LoginSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.login_user", return_value=tokens.copy()), \
-             patch("apps.authn.views.mobile.auth_service.get_next_action_for_user", return_value="none"), \
-             patch.object(User.objects, "get") as mock_get:
+        with (
+            patch("apps.authn.views.mobile.LoginSerializer", return_value=serializer),
+            patch(
+                "apps.authn.views.mobile.auth_service.login_user",
+                return_value=tokens.copy(),
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.get_next_action_for_user",
+                return_value="none",
+            ),
+            patch.object(User.objects, "get") as mock_get,
+        ):
             mock_get.return_value = SimpleNamespace(is_email_verified=False)
             response = self.view(request)
 
@@ -120,8 +169,10 @@ class MobileLoginViewTests(TestCase):
         request = self.factory.post("/auth/login", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.LoginSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.login_user", return_value=None):
+        with (
+            patch("apps.authn.views.mobile.LoginSerializer", return_value=serializer),
+            patch("apps.authn.views.mobile.auth_service.login_user", return_value=None),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -133,9 +184,14 @@ class MobileLoginViewTests(TestCase):
         serializer = make_serializer(validated_data=data)
         tokens = {"access_token": "a", "refresh_token": "r", "token_type": "bearer"}
 
-        with patch("apps.authn.views.mobile.LoginSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.login_user", return_value=tokens.copy()), \
-             patch.object(User.objects, "get", side_effect=User.DoesNotExist):
+        with (
+            patch("apps.authn.views.mobile.LoginSerializer", return_value=serializer),
+            patch(
+                "apps.authn.views.mobile.auth_service.login_user",
+                return_value=tokens.copy(),
+            ),
+            patch.object(User.objects, "get", side_effect=User.DoesNotExist),
+        ):
             response = self.view(request)
 
         payload = response.data["data"]
@@ -163,13 +219,30 @@ class MobileGoogleLoginViewTests(TestCase):
         data = {"id_token": "token"}
         request = self.factory.post("/auth/login/google", data, format="json")
         serializer = make_serializer(validated_data=data)
-        tokens = {"access_token": "access", "refresh_token": "refresh", "token_type": "bearer"}
+        tokens = {
+            "access_token": "access",
+            "refresh_token": "refresh",
+            "token_type": "bearer",
+        }
 
-        with patch("apps.authn.views.mobile.GoogleLoginSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.google_login", return_value=tokens.copy()), \
-             patch("apps.authn.views.mobile.jwt_service.decode_token", return_value={"sub": "public-id"}), \
-             patch.object(User.objects, "get") as mock_get, \
-             patch("apps.authn.views.mobile.auth_service.get_next_action_for_user", return_value="fill_profile"):
+        with (
+            patch(
+                "apps.authn.views.mobile.GoogleLoginSerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.google_login",
+                return_value=tokens.copy(),
+            ),
+            patch(
+                "apps.authn.views.mobile.jwt_service.decode_token",
+                return_value={"sub": "public-id"},
+            ),
+            patch.object(User.objects, "get") as mock_get,
+            patch(
+                "apps.authn.views.mobile.auth_service.get_next_action_for_user",
+                return_value="fill_profile",
+            ),
+        ):
             mock_get.return_value = SimpleNamespace(is_email_verified=True)
             response = self.view(request)
 
@@ -181,12 +254,26 @@ class MobileGoogleLoginViewTests(TestCase):
         data = {"id_token": "token"}
         request = self.factory.post("/auth/login/google", data, format="json")
         serializer = make_serializer(validated_data=data)
-        tokens = {"access_token": "access", "refresh_token": "refresh", "token_type": "bearer"}
+        tokens = {
+            "access_token": "access",
+            "refresh_token": "refresh",
+            "token_type": "bearer",
+        }
 
-        with patch("apps.authn.views.mobile.GoogleLoginSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.google_login", return_value=tokens.copy()), \
-             patch("apps.authn.views.mobile.jwt_service.decode_token", return_value={"sub": "public-id"}), \
-             patch.object(User.objects, "get", side_effect=Exception("boom")):
+        with (
+            patch(
+                "apps.authn.views.mobile.GoogleLoginSerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.google_login",
+                return_value=tokens.copy(),
+            ),
+            patch(
+                "apps.authn.views.mobile.jwt_service.decode_token",
+                return_value={"sub": "public-id"},
+            ),
+            patch.object(User.objects, "get", side_effect=Exception("boom")),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -199,8 +286,15 @@ class MobileGoogleLoginViewTests(TestCase):
         request = self.factory.post("/auth/login/google", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.GoogleLoginSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.google_login", side_effect=ValueError("bad")):
+        with (
+            patch(
+                "apps.authn.views.mobile.GoogleLoginSerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.google_login",
+                side_effect=ValueError("bad"),
+            ),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -210,7 +304,9 @@ class MobileGoogleLoginViewTests(TestCase):
         serializer = make_serializer(is_valid=False)
         request = self.factory.post("/auth/login/google", {}, format="json")
 
-        with patch("apps.authn.views.mobile.GoogleLoginSerializer", return_value=serializer):
+        with patch(
+            "apps.authn.views.mobile.GoogleLoginSerializer", return_value=serializer
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -222,7 +318,9 @@ class MobileActivateRoleViewTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
         self.view = mobile_views.ActivateRoleView.as_view()
-        self.user = User.objects.create_user(email="user@example.com", password="Complex123!")
+        self.user = User.objects.create_user(
+            email="user@example.com", password="Complex123!"
+        )
 
     def test_activate_role_success(self):
         data = {"role": "customer"}
@@ -230,10 +328,28 @@ class MobileActivateRoleViewTests(TestCase):
         force_authenticate(request, user=self.user)
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.ActivateRoleSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.activate_role", return_value={"role": "customer", "email_verified": True}), \
-             patch("apps.authn.views.mobile.jwt_service.create_token_pair", return_value={"access_token": "a", "refresh_token": "r", "token_type": "bearer"}), \
-             patch("apps.authn.views.mobile.auth_service.get_next_action_for_user", return_value="none"):
+        with (
+            patch(
+                "apps.authn.views.mobile.ActivateRoleSerializer",
+                return_value=serializer,
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.activate_role",
+                return_value={"role": "customer", "email_verified": True},
+            ),
+            patch(
+                "apps.authn.views.mobile.jwt_service.create_token_pair",
+                return_value={
+                    "access_token": "a",
+                    "refresh_token": "r",
+                    "token_type": "bearer",
+                },
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.get_next_action_for_user",
+                return_value="none",
+            ),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -246,7 +362,9 @@ class MobileActivateRoleViewTests(TestCase):
         force_authenticate(request, user=self.user)
         serializer = make_serializer(is_valid=False)
 
-        with patch("apps.authn.views.mobile.ActivateRoleSerializer", return_value=serializer):
+        with patch(
+            "apps.authn.views.mobile.ActivateRoleSerializer", return_value=serializer
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -258,7 +376,9 @@ class MobileEmailVerifyViewTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
         self.view = mobile_views.EmailVerifyView.as_view()
-        self.user = User.objects.create_user(email="user@example.com", password="Password123!")
+        self.user = User.objects.create_user(
+            email="user@example.com", password="Password123!"
+        )
 
     def test_email_verify_with_payload_email(self):
         data = {"email": "user@example.com", "otp": "123456"}
@@ -266,10 +386,24 @@ class MobileEmailVerifyViewTests(TestCase):
         serializer = make_serializer(validated_data=data)
         tokens = {"access_token": "a", "refresh_token": "r", "token_type": "bearer"}
 
-        with patch("apps.authn.views.mobile.EmailVerificationSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.verify_email", return_value=self.user), \
-             patch("apps.authn.views.mobile.jwt_service.create_token_pair", return_value=tokens.copy()), \
-             patch("apps.authn.views.mobile.auth_service.get_next_action_for_user", return_value="none"):
+        with (
+            patch(
+                "apps.authn.views.mobile.EmailVerificationSerializer",
+                return_value=serializer,
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.verify_email",
+                return_value=self.user,
+            ),
+            patch(
+                "apps.authn.views.mobile.jwt_service.create_token_pair",
+                return_value=tokens.copy(),
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.get_next_action_for_user",
+                return_value="none",
+            ),
+        ):
             self.user.email_verified_at = None
             response = self.view(request)
 
@@ -283,10 +417,28 @@ class MobileEmailVerifyViewTests(TestCase):
         force_authenticate(request, user=self.user)
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.EmailVerificationSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.verify_email", return_value=self.user), \
-             patch("apps.authn.views.mobile.jwt_service.create_token_pair", return_value={"access_token": "a", "refresh_token": "r", "token_type": "bearer"}), \
-             patch("apps.authn.views.mobile.auth_service.get_next_action_for_user", return_value="fill_profile"):
+        with (
+            patch(
+                "apps.authn.views.mobile.EmailVerificationSerializer",
+                return_value=serializer,
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.verify_email",
+                return_value=self.user,
+            ),
+            patch(
+                "apps.authn.views.mobile.jwt_service.create_token_pair",
+                return_value={
+                    "access_token": "a",
+                    "refresh_token": "r",
+                    "token_type": "bearer",
+                },
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.get_next_action_for_user",
+                return_value="fill_profile",
+            ),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -297,7 +449,10 @@ class MobileEmailVerifyViewTests(TestCase):
         request = self.factory.post("/auth/email/verify", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.EmailVerificationSerializer", return_value=serializer):
+        with patch(
+            "apps.authn.views.mobile.EmailVerificationSerializer",
+            return_value=serializer,
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -308,8 +463,15 @@ class MobileEmailVerifyViewTests(TestCase):
         request = self.factory.post("/auth/email/verify", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.EmailVerificationSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.verify_email", return_value=None):
+        with (
+            patch(
+                "apps.authn.views.mobile.EmailVerificationSerializer",
+                return_value=serializer,
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.verify_email", return_value=None
+            ),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -319,7 +481,10 @@ class MobileEmailVerifyViewTests(TestCase):
         serializer = make_serializer(is_valid=False)
         request = self.factory.post("/auth/email/verify", {}, format="json")
 
-        with patch("apps.authn.views.mobile.EmailVerificationSerializer", return_value=serializer):
+        with patch(
+            "apps.authn.views.mobile.EmailVerificationSerializer",
+            return_value=serializer,
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -331,16 +496,24 @@ class MobileEmailResendViewTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
         self.view = mobile_views.EmailResendView.as_view()
-        self.user = User.objects.create_user(email="user@example.com", password="Password123!")
+        self.user = User.objects.create_user(
+            email="user@example.com", password="Password123!"
+        )
 
     def test_resend_with_explicit_email(self):
         data = {"email": "user@example.com"}
         request = self.factory.post("/auth/email/resend", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.EmailResendSerializer", return_value=serializer), \
-             patch.object(User.objects, "get") as mock_get, \
-             patch("apps.authn.views.mobile.auth_service.resend_email_verification") as mock_resend:
+        with (
+            patch(
+                "apps.authn.views.mobile.EmailResendSerializer", return_value=serializer
+            ),
+            patch.object(User.objects, "get") as mock_get,
+            patch(
+                "apps.authn.views.mobile.auth_service.resend_email_verification"
+            ) as mock_resend,
+        ):
             mock_get.return_value = SimpleNamespace(is_email_verified=False)
             response = self.view(request)
 
@@ -354,7 +527,9 @@ class MobileEmailResendViewTests(TestCase):
         force_authenticate(request, user=self.user)
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.EmailResendSerializer", return_value=serializer):
+        with patch(
+            "apps.authn.views.mobile.EmailResendSerializer", return_value=serializer
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
@@ -366,8 +541,12 @@ class MobileEmailResendViewTests(TestCase):
         force_authenticate(request, user=self.user)
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.EmailResendSerializer", return_value=serializer), \
-             patch.object(User.objects, "get", side_effect=User.DoesNotExist):
+        with (
+            patch(
+                "apps.authn.views.mobile.EmailResendSerializer", return_value=serializer
+            ),
+            patch.object(User.objects, "get", side_effect=User.DoesNotExist),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
@@ -377,9 +556,15 @@ class MobileEmailResendViewTests(TestCase):
         request = self.factory.post("/auth/email/resend", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.EmailResendSerializer", return_value=serializer), \
-             patch.object(User.objects, "get") as mock_get, \
-             patch("apps.authn.views.mobile.auth_service.resend_email_verification") as mock_resend:
+        with (
+            patch(
+                "apps.authn.views.mobile.EmailResendSerializer", return_value=serializer
+            ),
+            patch.object(User.objects, "get") as mock_get,
+            patch(
+                "apps.authn.views.mobile.auth_service.resend_email_verification"
+            ) as mock_resend,
+        ):
             mock_get.return_value = SimpleNamespace(is_email_verified=True)
             response = self.view(request)
 
@@ -391,7 +576,9 @@ class MobileEmailResendViewTests(TestCase):
         request = self.factory.post("/auth/email/resend", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.EmailResendSerializer", return_value=serializer):
+        with patch(
+            "apps.authn.views.mobile.EmailResendSerializer", return_value=serializer
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -401,7 +588,9 @@ class MobileEmailResendViewTests(TestCase):
         serializer = make_serializer(is_valid=False)
         request = self.factory.post("/auth/email/resend", {}, format="json")
 
-        with patch("apps.authn.views.mobile.EmailResendSerializer", return_value=serializer):
+        with patch(
+            "apps.authn.views.mobile.EmailResendSerializer", return_value=serializer
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -419,8 +608,16 @@ class MobileRefreshTokenViewTests(TestCase):
         request = self.factory.post("/auth/refresh", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.RefreshTokenSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.jwt_service.refresh_token_pair", return_value={"access_token": "a"}):
+        with (
+            patch(
+                "apps.authn.views.mobile.RefreshTokenSerializer",
+                return_value=serializer,
+            ),
+            patch(
+                "apps.authn.views.mobile.jwt_service.refresh_token_pair",
+                return_value={"access_token": "a"},
+            ),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -430,8 +627,16 @@ class MobileRefreshTokenViewTests(TestCase):
         request = self.factory.post("/auth/refresh", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.RefreshTokenSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.jwt_service.refresh_token_pair", side_effect=RuntimeError("nope")):
+        with (
+            patch(
+                "apps.authn.views.mobile.RefreshTokenSerializer",
+                return_value=serializer,
+            ),
+            patch(
+                "apps.authn.views.mobile.jwt_service.refresh_token_pair",
+                side_effect=RuntimeError("nope"),
+            ),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -440,7 +645,9 @@ class MobileRefreshTokenViewTests(TestCase):
         serializer = make_serializer(is_valid=False)
         request = self.factory.post("/auth/refresh", {}, format="json")
 
-        with patch("apps.authn.views.mobile.RefreshTokenSerializer", return_value=serializer):
+        with patch(
+            "apps.authn.views.mobile.RefreshTokenSerializer", return_value=serializer
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -452,15 +659,23 @@ class MobileLogoutViewTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
         self.view = mobile_views.LogoutView.as_view()
-        self.user = User.objects.create_user(email="user@example.com", password="Pass12345!")
+        self.user = User.objects.create_user(
+            email="user@example.com", password="Pass12345!"
+        )
 
     def test_logout_with_refresh_token(self):
-        request = self.factory.post("/auth/logout", {"refresh_token": "tok"}, format="json")
+        request = self.factory.post(
+            "/auth/logout", {"refresh_token": "tok"}, format="json"
+        )
         force_authenticate(request, user=self.user)
         serializer = make_serializer(validated_data={"refresh_token": "tok"})
 
-        with patch("apps.authn.views.mobile.LogoutSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.jwt_service.revoke_refresh_token") as mock_revoke:
+        with (
+            patch("apps.authn.views.mobile.LogoutSerializer", return_value=serializer),
+            patch(
+                "apps.authn.views.mobile.jwt_service.revoke_refresh_token"
+            ) as mock_revoke,
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
@@ -471,8 +686,12 @@ class MobileLogoutViewTests(TestCase):
         force_authenticate(request, user=self.user)
         serializer = make_serializer(validated_data={"refresh_token": None})
 
-        with patch("apps.authn.views.mobile.LogoutSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.jwt_service.revoke_refresh_token") as mock_revoke:
+        with (
+            patch("apps.authn.views.mobile.LogoutSerializer", return_value=serializer),
+            patch(
+                "apps.authn.views.mobile.jwt_service.revoke_refresh_token"
+            ) as mock_revoke,
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
@@ -501,8 +720,15 @@ class MobileForgotPasswordViewTests(TestCase):
         request = self.factory.post("/auth/password/forgot", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.ForgotPasswordSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.forgot_password") as mock_forgot:
+        with (
+            patch(
+                "apps.authn.views.mobile.ForgotPasswordSerializer",
+                return_value=serializer,
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.forgot_password"
+            ) as mock_forgot,
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
@@ -512,7 +738,9 @@ class MobileForgotPasswordViewTests(TestCase):
         serializer = make_serializer(is_valid=False)
         request = self.factory.post("/auth/password/forgot", {}, format="json")
 
-        with patch("apps.authn.views.mobile.ForgotPasswordSerializer", return_value=serializer):
+        with patch(
+            "apps.authn.views.mobile.ForgotPasswordSerializer", return_value=serializer
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -531,8 +759,16 @@ class MobileVerifyPasswordResetViewTests(TestCase):
         serializer = make_serializer(validated_data=data)
         result = {"reset_token": "token", "expires_in": 10}
 
-        with patch("apps.authn.views.mobile.VerifyPasswordResetSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.verify_password_reset_code", return_value=result):
+        with (
+            patch(
+                "apps.authn.views.mobile.VerifyPasswordResetSerializer",
+                return_value=serializer,
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.verify_password_reset_code",
+                return_value=result,
+            ),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -543,8 +779,16 @@ class MobileVerifyPasswordResetViewTests(TestCase):
         request = self.factory.post("/auth/password/verify", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.VerifyPasswordResetSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.verify_password_reset_code", return_value=None):
+        with (
+            patch(
+                "apps.authn.views.mobile.VerifyPasswordResetSerializer",
+                return_value=serializer,
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.verify_password_reset_code",
+                return_value=None,
+            ),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -554,7 +798,10 @@ class MobileVerifyPasswordResetViewTests(TestCase):
         serializer = make_serializer(is_valid=False)
         request = self.factory.post("/auth/password/verify", {}, format="json")
 
-        with patch("apps.authn.views.mobile.VerifyPasswordResetSerializer", return_value=serializer):
+        with patch(
+            "apps.authn.views.mobile.VerifyPasswordResetSerializer",
+            return_value=serializer,
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -572,8 +819,15 @@ class MobileResetPasswordViewTests(TestCase):
         request = self.factory.post("/auth/password/reset", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.ResetPasswordSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.reset_password", return_value=True):
+        with (
+            patch(
+                "apps.authn.views.mobile.ResetPasswordSerializer",
+                return_value=serializer,
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.reset_password", return_value=True
+            ),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -584,8 +838,16 @@ class MobileResetPasswordViewTests(TestCase):
         request = self.factory.post("/auth/password/reset", data, format="json")
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.ResetPasswordSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.reset_password", return_value=False):
+        with (
+            patch(
+                "apps.authn.views.mobile.ResetPasswordSerializer",
+                return_value=serializer,
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.reset_password",
+                return_value=False,
+            ),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -595,7 +857,9 @@ class MobileResetPasswordViewTests(TestCase):
         serializer = make_serializer(is_valid=False)
         request = self.factory.post("/auth/password/reset", {}, format="json")
 
-        with patch("apps.authn.views.mobile.ResetPasswordSerializer", return_value=serializer):
+        with patch(
+            "apps.authn.views.mobile.ResetPasswordSerializer", return_value=serializer
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -607,7 +871,9 @@ class MobileChangePasswordViewTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
         self.view = mobile_views.ChangePasswordView.as_view()
-        self.user = User.objects.create_user(email="user@example.com", password="OldPass123!")
+        self.user = User.objects.create_user(
+            email="user@example.com", password="OldPass123!"
+        )
 
     def test_change_password_success(self):
         data = {"current_password": "old", "new_password": "NewPass123!"}
@@ -615,8 +881,16 @@ class MobileChangePasswordViewTests(TestCase):
         force_authenticate(request, user=self.user)
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.ChangePasswordSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.change_password", return_value=True):
+        with (
+            patch(
+                "apps.authn.views.mobile.ChangePasswordSerializer",
+                return_value=serializer,
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.change_password",
+                return_value=True,
+            ),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -628,8 +902,16 @@ class MobileChangePasswordViewTests(TestCase):
         force_authenticate(request, user=self.user)
         serializer = make_serializer(validated_data=data)
 
-        with patch("apps.authn.views.mobile.ChangePasswordSerializer", return_value=serializer), \
-             patch("apps.authn.views.mobile.auth_service.change_password", return_value=False):
+        with (
+            patch(
+                "apps.authn.views.mobile.ChangePasswordSerializer",
+                return_value=serializer,
+            ),
+            patch(
+                "apps.authn.views.mobile.auth_service.change_password",
+                return_value=False,
+            ),
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -640,7 +922,9 @@ class MobileChangePasswordViewTests(TestCase):
         force_authenticate(request, user=self.user)
         serializer = make_serializer(is_valid=False)
 
-        with patch("apps.authn.views.mobile.ChangePasswordSerializer", return_value=serializer):
+        with patch(
+            "apps.authn.views.mobile.ChangePasswordSerializer", return_value=serializer
+        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

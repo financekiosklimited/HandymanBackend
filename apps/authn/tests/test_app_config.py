@@ -15,7 +15,9 @@ class AuthnConfigTests(SimpleTestCase):
     def test_ready_handles_import_error(self):
         config = AuthnConfig("apps.authn", importlib.import_module("apps.authn"))
 
-        with patch("apps.authn.apps.importlib.import_module", side_effect=ImportError("boom")) as mock_import:
+        with patch(
+            "apps.authn.apps.importlib.import_module", side_effect=ImportError("boom")
+        ) as mock_import:
             config.ready()
 
         mock_import.assert_called_once_with("apps.authn.schema")

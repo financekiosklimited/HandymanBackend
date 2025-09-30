@@ -250,7 +250,9 @@ class PlatformGuardPermissionTests(TestCase):
 
     def test_extract_platform_returns_none_for_unknown(self):
         """Unknown platform segments are ignored."""
-        self.assertIsNone(self.permission._extract_platform_from_url("/api/v1/desktop/area/"))
+        self.assertIsNone(
+            self.permission._extract_platform_from_url("/api/v1/desktop/area/")
+        )
 
 
 @override_settings(
@@ -352,7 +354,9 @@ class RoleGuardPermissionTests(TestCase):
 
     def test_extract_role_returns_none_for_unknown(self):
         """Unknown role segments are ignored."""
-        self.assertIsNone(self.permission._extract_role_from_url("/api/v1/web/guests/list/"))
+        self.assertIsNone(
+            self.permission._extract_role_from_url("/api/v1/web/guests/list/")
+        )
 
     def test_extract_role_recognizes_admin(self):
         """Admin role is extracted from URL path."""

@@ -18,7 +18,9 @@ class WebViewDelegationTests(TestCase):
 
     def setUp(self):
         self.factory = APIRequestFactory()
-        self.user = User.objects.create_user(email="user@example.com", password="Password123!")
+        self.user = User.objects.create_user(
+            email="user@example.com", password="Password123!"
+        )
 
     def _assert_delegation(self, view_cls, mobile_attr, *, needs_auth=False):
         request = self.factory.post("/auth/test", {}, format="json")
@@ -27,7 +29,9 @@ class WebViewDelegationTests(TestCase):
 
         mobile_base = getattr(web_views, mobile_attr)
 
-        with patch.object(mobile_base, "_handle_post", return_value=Response({"message": "ok"})) as mock_handle:
+        with patch.object(
+            mobile_base, "_handle_post", return_value=Response({"message": "ok"})
+        ) as mock_handle:
             response = view_cls.as_view()(request)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -44,7 +48,9 @@ class WebViewDelegationTests(TestCase):
         self._assert_delegation(web_views.GoogleLoginView, "MobileGoogleLoginView")
 
     def test_activate_role_delegates(self):
-        self._assert_delegation(web_views.ActivateRoleView, "MobileActivateRoleView", needs_auth=True)
+        self._assert_delegation(
+            web_views.ActivateRoleView, "MobileActivateRoleView", needs_auth=True
+        )
 
     def test_email_verify_delegates(self):
         self._assert_delegation(web_views.EmailVerifyView, "MobileEmailVerifyView")
@@ -56,16 +62,24 @@ class WebViewDelegationTests(TestCase):
         self._assert_delegation(web_views.RefreshTokenView, "MobileRefreshTokenView")
 
     def test_logout_delegates(self):
-        self._assert_delegation(web_views.LogoutView, "MobileLogoutView", needs_auth=True)
+        self._assert_delegation(
+            web_views.LogoutView, "MobileLogoutView", needs_auth=True
+        )
 
     def test_forgot_password_delegates(self):
-        self._assert_delegation(web_views.ForgotPasswordView, "MobileForgotPasswordView")
+        self._assert_delegation(
+            web_views.ForgotPasswordView, "MobileForgotPasswordView"
+        )
 
     def test_verify_reset_delegates(self):
-        self._assert_delegation(web_views.VerifyPasswordResetView, "MobileVerifyPasswordResetView")
+        self._assert_delegation(
+            web_views.VerifyPasswordResetView, "MobileVerifyPasswordResetView"
+        )
 
     def test_reset_password_delegates(self):
         self._assert_delegation(web_views.ResetPasswordView, "MobileResetPasswordView")
 
     def test_change_password_delegates(self):
-        self._assert_delegation(web_views.ChangePasswordView, "MobileChangePasswordView", needs_auth=True)
+        self._assert_delegation(
+            web_views.ChangePasswordView, "MobileChangePasswordView", needs_auth=True
+        )

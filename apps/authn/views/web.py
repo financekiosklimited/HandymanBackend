@@ -20,16 +20,38 @@ from ..serializers import (
 )
 from .mobile import (
     ActivateRoleView as MobileActivateRoleView,
+)
+from .mobile import (
     ChangePasswordView as MobileChangePasswordView,
+)
+from .mobile import (
     EmailResendView as MobileEmailResendView,
+)
+from .mobile import (
     EmailVerifyView as MobileEmailVerifyView,
+)
+from .mobile import (
     ForgotPasswordView as MobileForgotPasswordView,
+)
+from .mobile import (
     GoogleLoginView as MobileGoogleLoginView,
+)
+from .mobile import (
     LoginView as MobileLoginView,
+)
+from .mobile import (
     LogoutView as MobileLogoutView,
+)
+from .mobile import (
     RefreshTokenView as MobileRefreshTokenView,
+)
+from .mobile import (
     RegisterView as MobileRegisterView,
+)
+from .mobile import (
     ResetPasswordView as MobileResetPasswordView,
+)
+from .mobile import (
     VerifyPasswordResetView as MobileVerifyPasswordResetView,
 )
 
