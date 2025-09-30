@@ -22,6 +22,7 @@ class WaitlistEntrySerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         entry, created = WaitlistEntry.objects.update_or_create(
+            user_name=validated_data["user_name"],
             email=validated_data["email"],
             user_type=validated_data["user_type"],
             defaults={"email": validated_data["email"]},
