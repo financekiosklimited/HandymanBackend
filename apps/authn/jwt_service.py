@@ -239,11 +239,13 @@ class JWTService:
         try:
             payload = self.decode_token(refresh_token)
             if payload.get("type") == "refresh":
-                # Find and revoke session
+                # Find and revoke session by JTI
+                import hashlib
+
+                jti_hash = hashlib.sha256(str(payload["jti"]).encode()).hexdigest()
+
                 session = RefreshSession.objects.filter(
-                    jti_hash=RefreshSession.objects.model._meta.get_field(
-                        "jti_hash"
-                    ).get_prep_value(payload["jti"]),
+                    jti_hash=jti_hash,
                     revoked_at__isnull=True,
                 ).first()
 

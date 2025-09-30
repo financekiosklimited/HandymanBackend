@@ -75,6 +75,7 @@ exclude = [
 [dependency-groups]
 dev = [
     "ruff>=0.13.2",
+    "coverage>=7.6.0",
 ]
 
 [tool.ruff]
@@ -112,3 +113,38 @@ section-order = ["future", "standard-library", "third-party", "first-party", "lo
 quote-style = "double"
 indent-style = "space"
 line-ending = "auto"
+
+[tool.coverage.run]
+source = ["apps", "config"]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/test_*.py",
+    "*/admin.py",
+    "config/*",
+    ".venv/*",
+    "venv/*",
+    "manage.py",
+    "main.py",
+]
+branch = true
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "def __str__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"

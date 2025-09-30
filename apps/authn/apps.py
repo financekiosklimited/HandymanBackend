@@ -1,3 +1,7 @@
+"""App configuration for authn app."""
+
+import importlib
+
 from django.apps import AppConfig
 
 
@@ -6,8 +10,9 @@ class AuthnConfig(AppConfig):
     name = "apps.authn"
 
     def ready(self):
-        # Import schema extensions to register them
+        """Import schema extensions to register them with Spectacular."""
         try:
-            from . import schema  # noqa: F401
+            importlib.import_module("apps.authn.schema")
         except ImportError:
+            # Schema extras are optional in certain runtimes (e.g., stripped migrations)
             pass

@@ -78,7 +78,40 @@ createsuperuser: ## Create superuser
 .PHONY: test
 test: ## Run tests
 	@echo "$(BLUE)Running tests...$(NC)"
-	$(MANAGE) test
+	DJANGO_SETTINGS_MODULE=config.settings.test $(MANAGE) test
+
+.PHONY: coverage
+coverage: ## Run tests with coverage report
+	@echo "$(BLUE)Running tests with coverage...$(NC)"
+	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run coverage run --source='apps,config' manage.py test
+	@echo "$(GREEN)Generating coverage report...$(NC)"
+	$(UV) run coverage report
+
+.PHONY: coverage-html
+coverage-html: ## Generate HTML coverage report
+	@echo "$(BLUE)Running tests with coverage...$(NC)"
+	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run coverage run --source='apps,config' manage.py test
+	@echo "$(GREEN)Generating HTML coverage report...$(NC)"
+	$(UV) run coverage html
+	@echo "$(GREEN)✅ Coverage report generated in htmlcov/index.html$(NC)"
+
+.PHONY: coverage-xml
+coverage-xml: ## Generate XML coverage report (for CI)
+	@echo "$(BLUE)Running tests with coverage...$(NC)"
+	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run coverage run --source='apps,config' manage.py test
+	@echo "$(GREEN)Generating XML coverage report...$(NC)"
+	$(UV) run coverage xml
+	@echo "$(GREEN)✅ Coverage report generated in coverage.xml$(NC)"
+
+.PHONY: coverage-erase
+coverage-erase: ## Erase coverage data
+	@echo "$(BLUE)Erasing coverage data...$(NC)"
+	$(UV) run coverage erase
+
+.PHONY: coverage-report
+coverage-report: ## Show coverage report (no test run)
+	@echo "$(BLUE)Displaying coverage report...$(NC)"
+	$(UV) run coverage report --sort=cover
 
 # Linting and formatting
 .PHONY: lint
@@ -107,7 +140,7 @@ clean: ## Clean temporary files
 	@echo "$(BLUE)Cleaning temporary files...$(NC)"
 	@find . -type f -name "*.pyc" -delete
 	@find . -type d -name "__pycache__" -delete
-	@rm -rf .pytest_cache/ .coverage htmlcov/
+	@rm -rf .pytest_cache/ .coverage .coverage.* htmlcov/ coverage.xml
 
 # Setup commands
 .PHONY: setup

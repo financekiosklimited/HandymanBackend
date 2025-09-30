@@ -77,6 +77,18 @@ make createsuperuser
 uv run python manage.py createsuperuser
 ```
 
+## 🧪 Testing & Coverage
+
+The project uses Django's test framework with Coverage.py for measuring test coverage.
+
+### Running Tests
+```bash
+make test              # Run all tests
+make coverage          # Run tests with coverage report
+make coverage-html     # Generate interactive HTML coverage report
+make coverage-xml      # Generate XML coverage report (for CI)
+```
+
 ## 🛠 Development
 
 ### Common Commands
@@ -85,6 +97,8 @@ make help              # Show all available commands
 make run               # Start development server
 make shell             # Django shell
 make test              # Run tests
+make coverage          # Run tests with coverage report
+make coverage-html     # Generate HTML coverage report
 make migrate           # Apply database migrations
 make makemigrations    # Create new migrations
 make check-postgres    # Test database connection

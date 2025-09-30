@@ -1,0 +1,39 @@
+# Coverage.py configuration
+# This is a legacy format - main config is in pyproject.toml
+# Some CI tools may prefer this format
+
+[run]
+source = apps,config
+omit = 
+    */migrations/*
+    */tests/*
+    */__pycache__/*
+    */test_*.py
+    */admin.py
+    config/*
+    .venv/*
+    venv/*
+    manage.py
+    main.py
+branch = True
+
+[report]
+precision = 2
+show_missing = True
+skip_covered = False
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    def __str__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    class .*\bProtocol\):
+    @(abc\.)?abstractmethod
+
+[html]
+directory = htmlcov
+
+[xml]
+output = coverage.xml

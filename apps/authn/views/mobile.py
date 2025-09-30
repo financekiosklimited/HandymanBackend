@@ -43,6 +43,7 @@ User = get_user_model()
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
+    platform = "mobile"
     # throttle_scope = 'mobile:register'
 
     @extend_schema(
@@ -54,6 +55,9 @@ class RegisterView(APIView):
     )
     def post(self, request):
         """Register a new user."""
+        return self._handle_post(request)
+
+    def _handle_post(self, request):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             try:
@@ -61,7 +65,7 @@ class RegisterView(APIView):
                     email=serializer.validated_data["email"],
                     password=serializer.validated_data["password"],
                     initial_role=serializer.validated_data.get("initial_role"),
-                    platform="mobile",
+                    platform=self.platform,
                 )
 
                 # Get user for next action determination
@@ -97,6 +101,7 @@ class RegisterView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    platform = "mobile"
     # # throttle_scope = 'mobile:login'
 
     @extend_schema(
@@ -108,12 +113,15 @@ class LoginView(APIView):
     )
     def post(self, request):
         """Login with email and password."""
+        return self._handle_post(request)
+
+    def _handle_post(self, request):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
             tokens = auth_service.login_user(
                 email=serializer.validated_data["email"],
                 password=serializer.validated_data["password"],
-                platform="mobile",
+                platform=self.platform,
             )
 
             if tokens:
@@ -145,6 +153,7 @@ class LoginView(APIView):
 
 class GoogleLoginView(APIView):
     permission_classes = [AllowAny]
+    platform = "mobile"
     # throttle_scope = 'mobile:login_google'
 
     @extend_schema(
@@ -156,11 +165,15 @@ class GoogleLoginView(APIView):
     )
     def post(self, request):
         """Login with Google OAuth."""
+        return self._handle_post(request)
+
+    def _handle_post(self, request):
         serializer = GoogleLoginSerializer(data=request.data)
         if serializer.is_valid():
             try:
                 tokens = auth_service.google_login(
-                    id_token=serializer.validated_data["id_token"], platform="mobile"
+                    id_token=serializer.validated_data["id_token"],
+                    platform=self.platform,
                 )
 
                 # Add next_action and email_verified to Google login response
@@ -196,6 +209,7 @@ class GoogleLoginView(APIView):
 
 class ActivateRoleView(APIView):
     permission_classes = [IsAuthenticated]
+    platform = "mobile"
     # throttle_scope = 'mobile:activate_role'
 
     @extend_schema(
@@ -207,6 +221,9 @@ class ActivateRoleView(APIView):
     )
     def post(self, request):
         """Activate a role for the user."""
+        return self._handle_post(request)
+
+    def _handle_post(self, request):
         serializer = ActivateRoleSerializer(data=request.data)
         if serializer.is_valid():
             role_info = auth_service.activate_role(
@@ -215,7 +232,9 @@ class ActivateRoleView(APIView):
 
             # Generate new token pair with active role
             tokens = jwt_service.create_token_pair(
-                user=request.user, platform="mobile", active_role=role_info["role"]
+                user=request.user,
+                platform=self.platform,
+                active_role=role_info["role"],
             )
 
             # Get updated next action after role activation
@@ -237,6 +256,7 @@ class ActivateRoleView(APIView):
 
 class EmailVerifyView(APIView):
     permission_classes = [AllowAny]
+    platform = "mobile"
     # # throttle_scope = 'mobile:verify_email'
 
     @extend_schema(
@@ -248,6 +268,9 @@ class EmailVerifyView(APIView):
     )
     def post(self, request):
         """Verify email with OTP."""
+        return self._handle_post(request)
+
+    def _handle_post(self, request):
         serializer = EmailVerificationSerializer(data=request.data)
         if serializer.is_valid():
             # Get email from JWT token if authenticated, otherwise from payload
@@ -270,7 +293,7 @@ class EmailVerifyView(APIView):
             if user:
                 # Generate new token pair with updated email verification status
                 tokens = jwt_service.create_token_pair(
-                    user=user, platform="mobile", active_role=None
+                    user=user, platform=self.platform, active_role=None
                 )
 
                 # Get next action after email verification
@@ -297,6 +320,7 @@ class EmailVerifyView(APIView):
 
 class EmailResendView(APIView):
     permission_classes = [AllowAny]
+    platform = "mobile"
     # throttle_scope = 'mobile:resend_email'
 
     @extend_schema(
@@ -308,6 +332,9 @@ class EmailResendView(APIView):
     )
     def post(self, request):
         """Resend email verification."""
+        return self._handle_post(request)
+
+    def _handle_post(self, request):
         serializer = EmailResendSerializer(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data.get("email")
@@ -342,6 +369,7 @@ class EmailResendView(APIView):
 
 class RefreshTokenView(APIView):
     permission_classes = [AllowAny]
+    platform = "mobile"
     # throttle_scope = 'mobile:refresh'
 
     @extend_schema(
@@ -353,12 +381,15 @@ class RefreshTokenView(APIView):
     )
     def post(self, request):
         """Refresh access token."""
+        return self._handle_post(request)
+
+    def _handle_post(self, request):
         serializer = RefreshTokenSerializer(data=request.data)
         if serializer.is_valid():
             try:
                 tokens = jwt_service.refresh_token_pair(
                     refresh_token=serializer.validated_data["refresh_token"],
-                    platform="mobile",
+                    platform=self.platform,
                     user_agent=request.META.get("HTTP_USER_AGENT", ""),
                     ip_address=request.META.get("REMOTE_ADDR"),
                 )
@@ -373,6 +404,7 @@ class RefreshTokenView(APIView):
 
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
+    platform = "mobile"
 
     @extend_schema(
         request=LogoutSerializer,
@@ -383,6 +415,9 @@ class LogoutView(APIView):
     )
     def post(self, request):
         """Logout user and optionally revoke refresh token."""
+        return self._handle_post(request)
+
+    def _handle_post(self, request):
         serializer = LogoutSerializer(data=request.data)
         if serializer.is_valid():
             refresh_token = serializer.validated_data.get("refresh_token")
@@ -397,6 +432,7 @@ class LogoutView(APIView):
 
 class ForgotPasswordView(APIView):
     permission_classes = [AllowAny]
+    platform = "mobile"
     # throttle_scope = 'mobile:forgot_password'
 
     @extend_schema(
@@ -408,6 +444,9 @@ class ForgotPasswordView(APIView):
     )
     def post(self, request):
         """Initiate password reset process."""
+        return self._handle_post(request)
+
+    def _handle_post(self, request):
         serializer = ForgotPasswordSerializer(data=request.data)
         if serializer.is_valid():
             auth_service.forgot_password(email=serializer.validated_data["email"])
@@ -418,6 +457,7 @@ class ForgotPasswordView(APIView):
 
 class VerifyPasswordResetView(APIView):
     permission_classes = [AllowAny]
+    platform = "mobile"
     # throttle_scope = 'mobile:verify_password_reset'
 
     @extend_schema(
@@ -429,6 +469,9 @@ class VerifyPasswordResetView(APIView):
     )
     def post(self, request):
         """Verify password reset code."""
+        return self._handle_post(request)
+
+    def _handle_post(self, request):
         serializer = VerifyPasswordResetSerializer(data=request.data)
         if serializer.is_valid():
             result = auth_service.verify_password_reset_code(
@@ -452,6 +495,7 @@ class VerifyPasswordResetView(APIView):
 
 class ResetPasswordView(APIView):
     permission_classes = [AllowAny]
+    platform = "mobile"
     # throttle_scope = 'mobile:reset_password'
 
     @extend_schema(
@@ -463,6 +507,9 @@ class ResetPasswordView(APIView):
     )
     def post(self, request):
         """Reset password with reset token."""
+        return self._handle_post(request)
+
+    def _handle_post(self, request):
         serializer = ResetPasswordSerializer(data=request.data)
         if serializer.is_valid():
             success = auth_service.reset_password(
@@ -484,6 +531,7 @@ class ResetPasswordView(APIView):
 
 class ChangePasswordView(APIView):
     permission_classes = [IsAuthenticated]
+    platform = "mobile"
     # throttle_scope = 'mobile:change_password'
 
     @extend_schema(
@@ -495,6 +543,9 @@ class ChangePasswordView(APIView):
     )
     def post(self, request):
         """Change user password."""
+        return self._handle_post(request)
+
+    def _handle_post(self, request):
         serializer = ChangePasswordSerializer(data=request.data)
         if serializer.is_valid():
             success = auth_service.change_password(

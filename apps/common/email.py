@@ -1,9 +1,11 @@
-"""
-Email service for sending various types of emails.
-"""
+"""Email service for sending various types of emails."""
+
+import logging
 
 from django.conf import settings
 from django.core.mail import send_mail
+
+logger = logging.getLogger(__name__)
 
 
 class EmailService:
@@ -46,8 +48,7 @@ The SolutionBank Team"""
             )
             return True
         except Exception as e:
-            # Log the error in a real application
-            print(f"Failed to send email verification: {e}")
+            logger.warning("Failed to send email verification: %s", e)
             return False
 
     def send_password_reset_code(self, user, reset_code):
@@ -82,8 +83,7 @@ The SolutionBank Team"""
             )
             return True
         except Exception as e:
-            # Log the error in a real application
-            print(f"Failed to send password reset code: {e}")
+            logger.warning("Failed to send password reset code: %s", e)
             return False
 
     def send_welcome_email(self, user):
@@ -113,8 +113,7 @@ The SolutionBank Team"""
             )
             return True
         except Exception as e:
-            # Log the error in a real application
-            print(f"Failed to send welcome email: {e}")
+            logger.warning("Failed to send welcome email: %s", e)
             return False
 
 
