@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        run: uv python install 3.13
+      
+      - name: Install dependencies
+        run: uv sync
+      
+      - name: Check code formatting
+        run: uv run ruff format --check .
+      
+      - name: Run linting
+        run: uv run ruff check .
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.test
+      DJANGO_SECRET_KEY: test-secret-key-for-ci
+      DEBUG: False
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: test_solutionbank
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up PostgreSQL
+        uses: ankane/setup-postgres@v1
+        with:
+          postgres-version: 16
+          database: test_solutionbank
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        run: uv python install 3.13
+      
+      - name: Install dependencies
+        run: uv sync
+      
+      - name: Run migrations
+        run: uv run python manage.py migrate
+      
+      - name: Run tests with coverage
+        run: |
+          uv run coverage run --source='apps,config' manage.py test
+          uv run coverage report
+          uv run coverage xml
+      
+      - name: Coverage Report
+        uses: orgoro/coverage@v3.2
+        with:
+          coverageFile: coverage.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          thresholdAll: 0.75
+          thresholdNew: 0.90
+          thresholdModified: 0.0
+
+  build:
+    name: Build Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        run: uv python install 3.13
+      
+      - name: Install dependencies
+        run: uv sync
+      
+      - name: Check for missing migrations
+        run: |
+          uv run python manage.py makemigrations --check --dry-run
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.test
+          DJANGO_SECRET_KEY: test-secret-key-for-ci
+      
+      - name: Collect static files
+        run: uv run python manage.py collectstatic --noinput
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.test
+          DJANGO_SECRET_KEY: test-secret-key-for-ci
