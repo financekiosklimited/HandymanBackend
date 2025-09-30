@@ -75,8 +75,20 @@ jobs:
           uv run coverage run --source='apps,config' manage.py test
           uv run coverage report
           uv run coverage xml
+          uv run coverage json
       
-      - name: Coverage Report
+      - name: Generate Coverage Summary
+        run: |
+          echo "# Coverage Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          uv run coverage report --format=markdown >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Get overall coverage percentage
+          COVERAGE=$(uv run coverage json -o - | python -c "import sys, json; print(f\"{json.load(sys.stdin)['totals']['percent_covered']:.2f}%\")")
+          echo "**Overall Coverage: $COVERAGE**" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Coverage Report (PR Comment)
         uses: orgoro/coverage@v3.2
         with:
           coverageFile: coverage.xml
