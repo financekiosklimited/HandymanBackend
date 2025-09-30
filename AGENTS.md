@@ -1,23 +1,35 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-SolutionBank is a Django 5 project rooted in `manage.py`. Core domain logic lives under `apps/`, with each app (e.g., `accounts`, `authn`, `profiles`, `storage`) exposing Django models, serializers, and REST views. Shared utilities sit in `apps/common`. Runtime configuration resides in `config/` (`settings/dev.py` for local work, `settings/prod.py` for deployment). Static assets are collected into `staticfiles/`, and `main.py` offers the `uvicorn` entrypoint for ASGI hosting.
+- Django 5 entrypoint is `manage.py`; reusable apps live under `apps/` (e.g., `accounts`, `authn`, `profiles`, `storage`).
+- Shared utilities (email, mixins, enums) sit in `apps/common/`; ASGI startup is in `main.py`.
+- Tests live beside their feature code (e.g., `apps/authn/tests/test_services.py`); settings variants are under `config/settings/` (`dev.py`, `prod.py`, `test.py`).
+- Static assets collect into `staticfiles/`; runtime scripts and infra helpers stay at the project root.
 
 ## Build, Test, and Development Commands
-- `make setup` — create the virtualenv, install dependencies with `uv`, create the database, and run migrations.
-- `make run` — start the Django development server against `config.settings.dev`.
-- `make migrate` / `make makemigrations` — apply or generate schema changes after updating models.
-- `make test` — run the Django test suite via `uv run python manage.py test`.
-- `make check-postgres` — quickly confirm credentials in `.env` before running database tasks.
+- `make setup` — bootstrap the `uv` virtualenv, install dependencies, and run migrations.
+- `make run` — start the local server with `config.settings.dev`.
+- `make test` — run the full Django test suite using the SQLite-backed test settings.
+- `make migrate` / `make makemigrations` — generate and apply schema changes.
+- `make check-postgres` — verify `.env` credentials before talking to Postgres services.
 
 ## Coding Style & Naming Conventions
-Follow idiomatic Django + PEP 8 style: four-space indentation, `snake_case` for modules/functions, `CamelCase` for models and serializers, and descriptive `snake_case` field names. Keep view names aligned with route purpose (e.g., `ProfileDetailView`). Prefer explicit imports within each app. Optional type hints are welcome but keep them practical; Pyright runs with relaxed settings, so lint proactively before raising PRs.
+- Follow PEP 8 with four-space indentation and `snake_case` for modules, functions, and fields.
+- Use `CamelCase` for models, serializers, and class-based views (e.g., `ProfileDetailView`).
+- Run `make lint` (Ruff) before committing; prefer explicit imports within each app and keep business logic out of views when possible.
+- Rely on structured logging via `logging.getLogger(__name__)` (see `apps/common/email.py`); avoid bare `print` in production code.
 
 ## Testing Guidelines
-Locate or create tests alongside the relevant app (`apps/<app>/tests.py`). Name methods `test_<condition>_<expected>` and group related cases inside `Test` classes. Use Django’s `APITestCase` or `TestCase` helpers for database interaction, and mock external services (e.g., S3, auth providers). Run `make test` before every PR; add targeted tests for new views, signals, and serializers to guard regressions.
+- Use Django `TestCase` or DRF `APITestCase`; name tests `test_<condition>_<expected>` inside `Test...` classes.
+- Mock external systems (auth providers, S3, SMTP) and cover serializers, services, signals, and REST endpoints.
+- The default test settings disable logging noise and use an in-memory database; run `make test` before every commit.
 
 ## Commit & Pull Request Guidelines
-Use Conventional Commit prefixes observed in history (`feat:`, `fix:`, `chore:`) and keep summaries under ~70 characters. Reference ticket IDs or issue numbers where available. For pull requests, include: purpose, key changes, migration notes, deployment considerations, and screenshots for admin/UI tweaks. Confirm `make test` passes and mention any follow-up work in the description.
+- Adopt Conventional Commit prefixes (`feat:`, `fix:`, `chore:`) with subjects under ~70 characters.
+- Reference tickets where available, describe migrations or breaking changes, and confirm `make test`/`make lint` results.
+- PRs should outline purpose, key changes, data/backfill steps, and include screenshots for any UI/admin impact.
 
-## Environment & Configuration Tips
-Store secrets in `.env`; never commit them. Local development assumes PostgreSQL credentials from `.env`. Toggle runtime modes via `DJANGO_SETTINGS_MODULE` if you need non-default settings. For ASGI deployments, point your process manager at `main.py` or `config.asgi:application`, ensure static files are collected, and configure S3 credentials for `django-storages` before enabling file uploads.
+## Security & Configuration Tips
+- Keep secrets in `.env`; never commit credentials or generated keys.
+- Switch environments by exporting `DJANGO_SETTINGS_MODULE` (e.g., `config.settings.dev`).
+- Collect static files prior to deployment and configure S3 credentials for `django-storages` when targeting production.
