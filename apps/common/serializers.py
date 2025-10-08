@@ -14,10 +14,10 @@ class ResponseEnvelopeSerializer(serializers.Serializer):
     data = serializers.JSONField(
         allow_null=True, required=False, help_text="Response data"
     )
-    errors = serializers.JSONField(
+    errors = serializers.DictField(
         allow_null=True, required=False, help_text="Error details if any"
     )
-    meta = serializers.JSONField(
+    meta = serializers.DictField(
         allow_null=True, required=False, help_text="Additional metadata"
     )
 
@@ -42,10 +42,10 @@ def create_response_serializer(data_serializer, serializer_name=None):
     attrs = {
         "message": serializers.CharField(help_text="Response message"),
         "data": data_serializer(help_text="Response data"),
-        "errors": serializers.JSONField(
+        "errors": serializers.DictField(
             allow_null=True, required=False, help_text="Error details if any"
         ),
-        "meta": serializers.JSONField(
+        "meta": serializers.DictField(
             allow_null=True, required=False, help_text="Additional metadata"
         ),
         "Meta": Meta,
@@ -74,10 +74,10 @@ def create_list_response_serializer(data_serializer, serializer_name=None):
     attrs = {
         "message": serializers.CharField(help_text="Response message"),
         "data": data_serializer(many=True, help_text="List of response data"),
-        "errors": serializers.JSONField(
+        "errors": serializers.DictField(
             allow_null=True, required=False, help_text="Error details if any"
         ),
-        "meta": serializers.JSONField(
+        "meta": serializers.DictField(
             allow_null=True, required=False, help_text="Additional metadata"
         ),
         "Meta": Meta,

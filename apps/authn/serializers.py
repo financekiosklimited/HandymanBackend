@@ -244,8 +244,8 @@ class SuccessMessageResponseSerializer(serializers.Serializer):
 
     message = serializers.CharField()
     data = serializers.JSONField(allow_null=True, default=None)
-    errors = serializers.JSONField(allow_null=True, default=None)
-    meta = serializers.JSONField(allow_null=True, required=False)
+    errors = serializers.DictField(allow_null=True, default=None)
+    meta = serializers.DictField(allow_null=True, required=False)
 
 
 # Response wrappers for authentication endpoints
