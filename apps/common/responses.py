@@ -60,18 +60,24 @@ def created_response(data=None, message="Created", meta=None):
     return success_response(data, message, meta, status.HTTP_201_CREATED)
 
 
-def accepted_response(message="Accepted"):
+def accepted_response(message="Accepted", meta=None):
     """
-    Create a 202 Accepted response with no body.
+    Create a 202 Accepted response with JSON body.
     """
-    return Response(status=status.HTTP_202_ACCEPTED)
+    return Response(
+        {"message": message, "data": None, "errors": None, "meta": meta},
+        status=status.HTTP_202_ACCEPTED,
+    )
 
 
-def no_content_response():
+def no_content_response(message="Success", meta=None):
     """
-    Create a 204 No Content response.
+    Create a 200 OK response with JSON body (changed from 204 to include message).
     """
-    return Response(status=status.HTTP_204_NO_CONTENT)
+    return Response(
+        {"message": message, "data": None, "errors": None, "meta": meta},
+        status=status.HTTP_200_OK,
+    )
 
 
 def validation_error_response(errors, message="Validation failed"):

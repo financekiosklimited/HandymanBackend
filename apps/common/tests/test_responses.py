@@ -77,16 +77,22 @@ class TestResponseUtilities(TestCase):
         self.assertEqual(response.data["data"], data)
 
     def test_accepted_response(self):
-        """Test accepted response has no body."""
+        """Test accepted response has JSON body with message."""
         response = accepted_response()
 
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(response.data["message"], "Accepted")
+        self.assertIsNone(response.data["data"])
+        self.assertIsNone(response.data["errors"])
 
     def test_no_content_response(self):
         """Test no content response."""
         response = no_content_response()
 
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Success")
+        self.assertIsNone(response.data["data"])
+        self.assertIsNone(response.data["errors"])
 
     def test_validation_error_response(self):
         """Test validation error response."""

@@ -33,6 +33,7 @@ from ..serializers import (
     RefreshTokenSerializer,
     RegisterSerializer,
     ResetPasswordSerializer,
+    SuccessMessageResponseSerializer,
     TokenResponseSerializer,
     VerifyPasswordResetSerializer,
 )
@@ -325,7 +326,7 @@ class EmailResendView(APIView):
 
     @extend_schema(
         request=EmailResendSerializer,
-        responses={202: None},
+        responses={200: SuccessMessageResponseSerializer},
         description="Resend email verification OTP via mobile app.",
         summary="Resend verification email",
         tags=["Mobile Authentication"],
@@ -344,7 +345,7 @@ class EmailResendView(APIView):
                 if request.user and request.user.is_authenticated:
                     if request.user.is_email_verified:
                         # Already verified, do nothing
-                        return accepted_response("Email already verified")
+                        return accepted_response(message="Email already verified")
                     email = request.user.email
                 else:
                     return error_response(
@@ -362,7 +363,9 @@ class EmailResendView(APIView):
                 # Don't reveal if email exists
                 pass
 
-            return accepted_response("Verification email sent if account exists")
+            return accepted_response(
+                message="Verification email sent if account exists"
+            )
 
         return validation_error_response(serializer.errors)
 
@@ -408,7 +411,7 @@ class LogoutView(APIView):
 
     @extend_schema(
         request=LogoutSerializer,
-        responses={204: None},
+        responses={200: SuccessMessageResponseSerializer},
         description="Logout user via mobile app.",
         summary="User logout",
         tags=["Mobile Authentication"],
@@ -425,7 +428,7 @@ class LogoutView(APIView):
             if refresh_token:
                 jwt_service.revoke_refresh_token(refresh_token)
 
-            return no_content_response()
+            return no_content_response(message="Logout successful")
 
         return validation_error_response(serializer.errors)
 
@@ -437,7 +440,7 @@ class ForgotPasswordView(APIView):
 
     @extend_schema(
         request=ForgotPasswordSerializer,
-        responses={202: None},
+        responses={200: SuccessMessageResponseSerializer},
         description="Initiate password reset process via mobile app.",
         summary="Forgot password",
         tags=["Mobile Authentication"],
@@ -450,7 +453,9 @@ class ForgotPasswordView(APIView):
         serializer = ForgotPasswordSerializer(data=request.data)
         if serializer.is_valid():
             auth_service.forgot_password(email=serializer.validated_data["email"])
-            return accepted_response("Password reset code sent if account exists")
+            return accepted_response(
+                message="Password reset code sent if account exists"
+            )
 
         return validation_error_response(serializer.errors)
 
@@ -500,7 +505,7 @@ class ResetPasswordView(APIView):
 
     @extend_schema(
         request=ResetPasswordSerializer,
-        responses={200: None},
+        responses={200: SuccessMessageResponseSerializer},
         description="Reset password with reset token via mobile app.",
         summary="Reset password",
         tags=["Mobile Authentication"],
@@ -536,7 +541,7 @@ class ChangePasswordView(APIView):
 
     @extend_schema(
         request=ChangePasswordSerializer,
-        responses={200: None},
+        responses={200: SuccessMessageResponseSerializer},
         description="Change password for authenticated user via mobile app.",
         summary="Change password",
         tags=["Mobile Authentication"],

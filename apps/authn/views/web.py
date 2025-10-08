@@ -15,6 +15,7 @@ from ..serializers import (
     RefreshTokenSerializer,
     RegisterSerializer,
     ResetPasswordSerializer,
+    SuccessMessageResponseSerializer,
     TokenResponseSerializer,
     VerifyPasswordResetSerializer,
 )
@@ -143,7 +144,7 @@ class EmailResendView(MobileEmailResendView):
 
     @extend_schema(
         request=EmailResendSerializer,
-        responses={202: None},
+        responses={200: SuccessMessageResponseSerializer},
         description="Resend email verification OTP via web app.",
         summary="Resend verification email",
         tags=["Web Authentication"],
@@ -175,7 +176,7 @@ class LogoutView(MobileLogoutView):
 
     @extend_schema(
         request=LogoutSerializer,
-        responses={204: None},
+        responses={200: SuccessMessageResponseSerializer},
         description="Logout user via web app.",
         summary="User logout",
         tags=["Web Authentication"],
@@ -191,7 +192,7 @@ class ForgotPasswordView(MobileForgotPasswordView):
 
     @extend_schema(
         request=ForgotPasswordSerializer,
-        responses={202: None},
+        responses={200: SuccessMessageResponseSerializer},
         description="Initiate password reset process via web app.",
         summary="Forgot password",
         tags=["Web Authentication"],
@@ -223,7 +224,7 @@ class ResetPasswordView(MobileResetPasswordView):
 
     @extend_schema(
         request=ResetPasswordSerializer,
-        responses={200: None},
+        responses={200: SuccessMessageResponseSerializer},
         description="Reset password with reset token via web app.",
         summary="Reset password",
         tags=["Web Authentication"],
@@ -239,7 +240,7 @@ class ChangePasswordView(MobileChangePasswordView):
 
     @extend_schema(
         request=ChangePasswordSerializer,
-        responses={200: None},
+        responses={200: SuccessMessageResponseSerializer},
         description="Change password for authenticated user via web app.",
         summary="Change password",
         tags=["Web Authentication"],

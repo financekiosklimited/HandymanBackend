@@ -233,3 +233,14 @@ class PasswordResetTokenResponseSerializer(serializers.Serializer):
 
     reset_token = serializers.CharField()
     expires_in = serializers.IntegerField(help_text="Expiry time in seconds")
+
+
+class SuccessMessageResponseSerializer(serializers.Serializer):
+    """
+    Serializer for success responses with just a message.
+    """
+
+    message = serializers.CharField()
+    data = serializers.JSONField(allow_null=True, default=None)
+    errors = serializers.JSONField(allow_null=True, default=None)
+    meta = serializers.JSONField(allow_null=True, required=False)

@@ -533,7 +533,9 @@ class MobileEmailResendViewTests(TestCase):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
-        self.assertIsNone(response.data)
+        self.assertEqual(response.data["message"], "Email already verified")
+        self.assertIsNone(response.data["data"])
+        self.assertIsNone(response.data["errors"])
 
     def test_resend_authenticated_user_without_existing_record(self):
         data = {"email": None}
@@ -678,7 +680,9 @@ class MobileLogoutViewTests(TestCase):
         ):
             response = self.view(request)
 
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Logout successful")
+        self.assertIsNone(response.data["data"])
         mock_revoke.assert_called_once_with("tok")
 
     def test_logout_without_refresh_token(self):
@@ -694,7 +698,9 @@ class MobileLogoutViewTests(TestCase):
         ):
             response = self.view(request)
 
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Logout successful")
+        self.assertIsNone(response.data["data"])
         mock_revoke.assert_not_called()
 
     def test_logout_invalid_serializer(self):
