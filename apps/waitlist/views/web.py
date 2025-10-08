@@ -20,7 +20,10 @@ class WaitlistSignupView(APIView):
 
     @extend_schema(
         request=WaitlistEntrySerializer,
-        responses={201: WaitlistEntryResponseSerializer, 200: WaitlistEntryResponseSerializer},
+        responses={
+            201: WaitlistEntryResponseSerializer,
+            200: WaitlistEntryResponseSerializer,
+        },
         summary="Join waitlist",
         description="Create or update a waitlist entry for the provided email and user type.",
         tags=["Waitlist"],

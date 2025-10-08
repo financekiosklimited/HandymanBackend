@@ -47,7 +47,9 @@ class CustomerProfileView(APIView):
         try:
             profile = request.user.customer_profile
             serializer = CustomerProfileSerializer(profile)
-            return success_response(serializer.data, message="Profile retrieved successfully")
+            return success_response(
+                serializer.data, message="Profile retrieved successfully"
+            )
         except CustomerProfile.DoesNotExist:
             return not_found_response("Profile not found")
 
@@ -69,7 +71,9 @@ class CustomerProfileView(APIView):
         if serializer.is_valid():
             serializer.save()
             response_serializer = CustomerProfileSerializer(profile)
-            return success_response(response_serializer.data, message="Profile updated successfully")
+            return success_response(
+                response_serializer.data, message="Profile updated successfully"
+            )
 
         return validation_error_response(serializer.errors)
 
@@ -93,7 +97,9 @@ class HandymanProfileView(APIView):
         try:
             profile = request.user.handyman_profile
             serializer = HandymanProfileSerializer(profile)
-            return success_response(serializer.data, message="Profile retrieved successfully")
+            return success_response(
+                serializer.data, message="Profile retrieved successfully"
+            )
         except HandymanProfile.DoesNotExist:
             return not_found_response("Profile not found")
 
@@ -115,6 +121,8 @@ class HandymanProfileView(APIView):
         if serializer.is_valid():
             serializer.save()
             response_serializer = HandymanProfileSerializer(profile)
-            return success_response(response_serializer.data, message="Profile updated successfully")
+            return success_response(
+                response_serializer.data, message="Profile updated successfully"
+            )
 
         return validation_error_response(serializer.errors)
