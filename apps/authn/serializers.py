@@ -9,6 +9,8 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from rest_framework import serializers
 
+from apps.common.serializers import create_response_serializer
+
 User = get_user_model()
 
 
@@ -244,3 +246,17 @@ class SuccessMessageResponseSerializer(serializers.Serializer):
     data = serializers.JSONField(allow_null=True, default=None)
     errors = serializers.JSONField(allow_null=True, default=None)
     meta = serializers.JSONField(allow_null=True, required=False)
+
+
+# Response wrappers for authentication endpoints
+TokenResponseEnvelope = create_response_serializer(
+    TokenResponseSerializer, "TokenResponseEnvelope"
+)
+
+AuthResponseEnvelope = create_response_serializer(
+    AuthResponseSerializer, "AuthResponseEnvelope"
+)
+
+PasswordResetTokenResponseEnvelope = create_response_serializer(
+    PasswordResetTokenResponseSerializer, "PasswordResetTokenResponseEnvelope"
+)

@@ -39,7 +39,7 @@ class WebCustomerProfileViewTests(APITestCase):
         self.client.force_authenticate(user=self.user)
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["message"], "Success")
+        self.assertEqual(response.data["message"], "Profile retrieved successfully")
         self.assertEqual(response.data["data"]["display_name"], "Test Customer")
         self.assertEqual(response.data["data"]["phone_number"], "+1234567890")
 
@@ -157,7 +157,7 @@ class WebHandymanProfileViewTests(APITestCase):
         self.client.force_authenticate(user=self.user)
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["message"], "Success")
+        self.assertEqual(response.data["message"], "Profile retrieved successfully")
         self.assertEqual(response.data["data"]["display_name"], "Test Handyman")
         self.assertEqual(response.data["data"]["phone_number"], "+1234567890")
 

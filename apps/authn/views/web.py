@@ -11,12 +11,12 @@ from ..serializers import (
     GoogleLoginSerializer,
     LoginSerializer,
     LogoutSerializer,
-    PasswordResetTokenResponseSerializer,
+    PasswordResetTokenResponseEnvelope,
     RefreshTokenSerializer,
     RegisterSerializer,
     ResetPasswordSerializer,
     SuccessMessageResponseSerializer,
-    TokenResponseSerializer,
+    TokenResponseEnvelope,
     VerifyPasswordResetSerializer,
 )
 from .mobile import (
@@ -64,7 +64,7 @@ class RegisterView(MobileRegisterView):
 
     @extend_schema(
         request=RegisterSerializer,
-        responses={201: TokenResponseSerializer},
+        responses={201: TokenResponseEnvelope},
         description="Register a new user account for the web app. Creates user with optional initial role and sends email verification.",
         summary="Register new user",
         tags=["Web Authentication"],
@@ -80,7 +80,7 @@ class LoginView(MobileLoginView):
 
     @extend_schema(
         request=LoginSerializer,
-        responses={200: TokenResponseSerializer},
+        responses={200: TokenResponseEnvelope},
         description="Login with email and password via web app. Returns JWT tokens for authenticated access.",
         summary="User login",
         tags=["Web Authentication"],
@@ -96,7 +96,7 @@ class GoogleLoginView(MobileGoogleLoginView):
 
     @extend_schema(
         request=GoogleLoginSerializer,
-        responses={200: TokenResponseSerializer},
+        responses={200: TokenResponseEnvelope},
         description="Login with Google OAuth ID token via web app.",
         summary="Google OAuth login",
         tags=["Web Authentication"],
@@ -112,7 +112,7 @@ class ActivateRoleView(MobileActivateRoleView):
 
     @extend_schema(
         request=ActivateRoleSerializer,
-        responses={200: TokenResponseSerializer},
+        responses={200: TokenResponseEnvelope},
         description="Activate a role for authenticated user via web app and receive updated tokens.",
         summary="Activate user role",
         tags=["Web Authentication"],
@@ -128,7 +128,7 @@ class EmailVerifyView(MobileEmailVerifyView):
 
     @extend_schema(
         request=EmailVerificationSerializer,
-        responses={200: TokenResponseSerializer},
+        responses={200: TokenResponseEnvelope},
         description="Verify email address using 6-digit OTP code sent via email for web users.",
         summary="Verify email with OTP",
         tags=["Web Authentication"],
@@ -160,7 +160,7 @@ class RefreshTokenView(MobileRefreshTokenView):
 
     @extend_schema(
         request=RefreshTokenSerializer,
-        responses={200: TokenResponseSerializer},
+        responses={200: TokenResponseEnvelope},
         description="Refresh access token using refresh token via web app.",
         summary="Refresh access token",
         tags=["Web Authentication"],
@@ -208,7 +208,7 @@ class VerifyPasswordResetView(MobileVerifyPasswordResetView):
 
     @extend_schema(
         request=VerifyPasswordResetSerializer,
-        responses={200: PasswordResetTokenResponseSerializer},
+        responses={200: PasswordResetTokenResponseEnvelope},
         description="Verify password reset code via web app.",
         summary="Verify reset code",
         tags=["Web Authentication"],

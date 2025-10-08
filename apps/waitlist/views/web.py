@@ -10,7 +10,7 @@ from apps.common.responses import (
     validation_error_response,
 )
 
-from ..serializers import WaitlistEntrySerializer
+from ..serializers import WaitlistEntryResponseSerializer, WaitlistEntrySerializer
 
 
 class WaitlistSignupView(APIView):
@@ -20,7 +20,7 @@ class WaitlistSignupView(APIView):
 
     @extend_schema(
         request=WaitlistEntrySerializer,
-        responses={201: WaitlistEntrySerializer, 200: WaitlistEntrySerializer},
+        responses={201: WaitlistEntryResponseSerializer, 200: WaitlistEntryResponseSerializer},
         summary="Join waitlist",
         description="Create or update a waitlist entry for the provided email and user type.",
         tags=["Waitlist"],
@@ -32,13 +32,16 @@ class WaitlistSignupView(APIView):
         if not serializer.is_valid():
             return validation_error_response(serializer.errors)
 
-        serializer.save()
+        entry = serializer.save()
+        response_serializer = WaitlistEntrySerializer(entry)
 
         if getattr(serializer, "_created", False):
             return created_response(
+                data=response_serializer.data,
                 message="Joined waitlist successfully",
             )
 
         return success_response(
+            data=response_serializer.data,
             message="Waitlist entry updated",
         )

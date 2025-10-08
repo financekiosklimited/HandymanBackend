@@ -21,7 +21,7 @@ from apps.common.responses import (
 from ..jwt_service import jwt_service
 from ..serializers import (
     ActivateRoleSerializer,
-    AuthResponseSerializer,
+    AuthResponseEnvelope,
     ChangePasswordSerializer,
     EmailResendSerializer,
     EmailVerificationSerializer,
@@ -29,12 +29,12 @@ from ..serializers import (
     GoogleLoginSerializer,
     LoginSerializer,
     LogoutSerializer,
-    PasswordResetTokenResponseSerializer,
+    PasswordResetTokenResponseEnvelope,
     RefreshTokenSerializer,
     RegisterSerializer,
     ResetPasswordSerializer,
     SuccessMessageResponseSerializer,
-    TokenResponseSerializer,
+    TokenResponseEnvelope,
     VerifyPasswordResetSerializer,
 )
 from ..services import auth_service
@@ -49,7 +49,7 @@ class RegisterView(APIView):
 
     @extend_schema(
         request=RegisterSerializer,
-        responses={201: TokenResponseSerializer},
+        responses={201: TokenResponseEnvelope},
         description="Register a new user account. Creates user with optional initial role and sends email verification.",
         summary="Register new user",
         tags=["Mobile Authentication"],
@@ -107,7 +107,7 @@ class LoginView(APIView):
 
     @extend_schema(
         request=LoginSerializer,
-        responses={200: TokenResponseSerializer},
+        responses={200: TokenResponseEnvelope},
         description="Login with email and password via mobile app. Returns JWT tokens for authenticated access.",
         summary="User login",
         tags=["Mobile Authentication"],
@@ -159,7 +159,7 @@ class GoogleLoginView(APIView):
 
     @extend_schema(
         request=GoogleLoginSerializer,
-        responses={200: TokenResponseSerializer},
+        responses={200: TokenResponseEnvelope},
         description="Login with Google OAuth ID token via mobile app.",
         summary="Google OAuth login",
         tags=["Mobile Authentication"],
@@ -215,7 +215,7 @@ class ActivateRoleView(APIView):
 
     @extend_schema(
         request=ActivateRoleSerializer,
-        responses={200: AuthResponseSerializer},
+        responses={200: AuthResponseEnvelope},
         description="Activate a role for authenticated user. Issues new tokens with active role and determines next action.",
         summary="Activate user role",
         tags=["Mobile Authentication"],
@@ -262,7 +262,7 @@ class EmailVerifyView(APIView):
 
     @extend_schema(
         request=EmailVerificationSerializer,
-        responses={200: TokenResponseSerializer},
+        responses={200: TokenResponseEnvelope},
         description="Verify email address using 6-digit OTP code sent via email for mobile users.",
         summary="Verify email with OTP",
         tags=["Mobile Authentication"],
@@ -377,7 +377,7 @@ class RefreshTokenView(APIView):
 
     @extend_schema(
         request=RefreshTokenSerializer,
-        responses={200: TokenResponseSerializer},
+        responses={200: TokenResponseEnvelope},
         description="Refresh access token using refresh token via mobile app.",
         summary="Refresh access token",
         tags=["Mobile Authentication"],
@@ -467,7 +467,7 @@ class VerifyPasswordResetView(APIView):
 
     @extend_schema(
         request=VerifyPasswordResetSerializer,
-        responses={200: PasswordResetTokenResponseSerializer},
+        responses={200: PasswordResetTokenResponseEnvelope},
         description="Verify password reset code via mobile app.",
         summary="Verify reset code",
         tags=["Mobile Authentication"],

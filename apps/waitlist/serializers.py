@@ -2,6 +2,8 @@
 
 from rest_framework import serializers
 
+from apps.common.serializers import create_response_serializer
+
 from .models import WaitlistEntry
 
 
@@ -29,3 +31,9 @@ class WaitlistEntrySerializer(serializers.ModelSerializer):
         )
         self._created = created
         return entry
+
+
+# Response wrapper
+WaitlistEntryResponseSerializer = create_response_serializer(
+    WaitlistEntrySerializer, "WaitlistEntryResponse"
+)

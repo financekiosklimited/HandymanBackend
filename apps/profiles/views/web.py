@@ -19,8 +19,10 @@ from apps.common.responses import (
 
 from ..models import CustomerProfile, HandymanProfile
 from ..serializers import (
+    CustomerProfileResponseSerializer,
     CustomerProfileSerializer,
     CustomerProfileUpdateSerializer,
+    HandymanProfileResponseSerializer,
     HandymanProfileSerializer,
     HandymanProfileUpdateSerializer,
 )
@@ -35,7 +37,7 @@ class CustomerProfileView(APIView):
     ]
 
     @extend_schema(
-        responses={200: CustomerProfileSerializer},
+        responses={200: CustomerProfileResponseSerializer},
         description="Get customer profile information for web app. Requires authenticated user with customer role and verified email.",
         summary="Get customer profile",
         tags=["Web Customer Profile"],
@@ -45,13 +47,13 @@ class CustomerProfileView(APIView):
         try:
             profile = request.user.customer_profile
             serializer = CustomerProfileSerializer(profile)
-            return success_response(serializer.data)
+            return success_response(serializer.data, message="Profile retrieved successfully")
         except CustomerProfile.DoesNotExist:
             return not_found_response("Profile not found")
 
     @extend_schema(
         request=CustomerProfileUpdateSerializer,
-        responses={200: None},
+        responses={200: CustomerProfileResponseSerializer},
         description="Update customer profile information via web app. All fields are optional and will only update provided values.",
         summary="Update customer profile",
         tags=["Web Customer Profile"],
@@ -66,7 +68,8 @@ class CustomerProfileView(APIView):
         serializer = CustomerProfileUpdateSerializer(profile, data=request.data)
         if serializer.is_valid():
             serializer.save()
-            return success_response(message="Profile updated successfully")
+            response_serializer = CustomerProfileSerializer(profile)
+            return success_response(response_serializer.data, message="Profile updated successfully")
 
         return validation_error_response(serializer.errors)
 
@@ -80,7 +83,7 @@ class HandymanProfileView(APIView):
     ]
 
     @extend_schema(
-        responses={200: HandymanProfileSerializer},
+        responses={200: HandymanProfileResponseSerializer},
         description="Get handyman profile information including rating for web app. Requires authenticated user with handyman role and verified email.",
         summary="Get handyman profile",
         tags=["Web Handyman Profile"],
@@ -90,13 +93,13 @@ class HandymanProfileView(APIView):
         try:
             profile = request.user.handyman_profile
             serializer = HandymanProfileSerializer(profile)
-            return success_response(serializer.data)
+            return success_response(serializer.data, message="Profile retrieved successfully")
         except HandymanProfile.DoesNotExist:
             return not_found_response("Profile not found")
 
     @extend_schema(
         request=HandymanProfileUpdateSerializer,
-        responses={200: None},
+        responses={200: HandymanProfileResponseSerializer},
         description="Update handyman profile information via web app including rating, contact details and address. All fields are optional.",
         summary="Update handyman profile",
         tags=["Web Handyman Profile"],
@@ -111,6 +114,7 @@ class HandymanProfileView(APIView):
         serializer = HandymanProfileUpdateSerializer(profile, data=request.data)
         if serializer.is_valid():
             serializer.save()
-            return success_response(message="Profile updated successfully")
+            response_serializer = HandymanProfileSerializer(profile)
+            return success_response(response_serializer.data, message="Profile updated successfully")
 
         return validation_error_response(serializer.errors)
