@@ -34,3 +34,13 @@ LOGGING = {
         "handlers": ["null"],
     },
 }
+
+# Use a simple static files storage for tests (avoids WhiteNoise manifest requirement)
+STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
+
+# Remove WhiteNoiseMiddleware for tests since we don't need static file serving in test environment
+MIDDLEWARE = [
+    mw
+    for mw in MIDDLEWARE  # noqa: F405
+    if mw != "whitenoise.middleware.WhiteNoiseMiddleware"
+]
