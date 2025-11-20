@@ -26,6 +26,22 @@ RUN uv sync --no-group dev
 # Copy the rest of the application code into the container
 COPY . .
 
+# Accept build arguments from Coolify
+ARG DJANGO_SECRET_KEY
+ARG DJANGO_ENVIRONMENT=production
+ARG DEBUG=False
+ARG DJANGO_ALLOWED_HOSTS
+ARG DATABASE_URL
+ARG CSRF_TRUSTED_ORIGINS
+ARG CORS_ALLOWED_ORIGINS
+
+# Set environment variables needed for collectstatic
+ENV DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+ENV DJANGO_ENVIRONMENT=${DJANGO_ENVIRONMENT}
+ENV DEBUG=${DEBUG}
+ENV DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost}
+ENV DATABASE_URL=${DATABASE_URL:-sqlite:///tmp/db.sqlite3}
+
 # Collect the static files
 RUN uv run --no-sync python manage.py collectstatic --noinput
 
