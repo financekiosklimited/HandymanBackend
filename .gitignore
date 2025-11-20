@@ -106,7 +106,7 @@ dmypy.json
 .ipynb_checkpoints
 
 # pyenv
-.python-version
+# .python-version - Commented out because we use uv which needs this file
 
 # Celery
 celerybeat-schedule
