@@ -11,10 +11,11 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 SECURE_HSTS_SECONDS = 31536000  # 1 year
 
-# Only use HTTPS in production
-SECURE_SSL_REDIRECT = True
+# Only use HTTPS in production (can be toggled via env for mixed HTTP/HTTPS setups)
+SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Logging configuration
 LOGGING = {
