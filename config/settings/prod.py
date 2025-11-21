@@ -13,9 +13,12 @@ SECURE_HSTS_SECONDS = 31536000  # 1 year
 
 # Only use HTTPS in production (can be toggled via env for mixed HTTP/HTTPS setups)
 SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = env.bool("SESSION_COOKIE_SECURE", default=True)
+CSRF_COOKIE_SECURE = env.bool("CSRF_COOKIE_SECURE", default=True)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_REDIRECT_EXEMPT = [
+    r"^health/?$",
+]
 
 # Logging configuration
 LOGGING = {
