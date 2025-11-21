@@ -3,6 +3,7 @@ Production settings for sb project.
 """
 
 from .base import *  # noqa: F401, F403
+from .base import env
 
 # Security settings for production
 SECURE_BROWSER_XSS_FILTER = True
