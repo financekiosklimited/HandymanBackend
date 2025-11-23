@@ -52,8 +52,11 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    curl \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=builder /root/.local/share/uv /root/.local/share/uv
 COPY --from=builder /app /app
 
 ENV PATH="/app/.venv/bin:${PATH}"
