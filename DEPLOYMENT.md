@@ -21,8 +21,8 @@ Production deployment guide for SolutionBank Django application on Coolify.
 
 | Component | Technology | Notes |
 |-----------|-----------|-------|
-| Base Image | `debian:bookworm-slim` | Lightweight Debian base |
-| Python | 3.13.7 | Installed via uv |
+| Base Image | `ghcr.io/astral-sh/uv:python3.13-bookworm-slim` | Official uv image with Python 3.13 bundled |
+| Python | 3.13.7 | Comes preinstalled via the uv image (`uv sync --frozen` keeps it locked) |
 | Package Manager | uv | Fast Python package manager |
 | WSGI Server | Gunicorn | Workers: `2*CPU+1` (auto-scaled) |
 | Static Files | WhiteNoise | Compressed manifest storage |
@@ -223,10 +223,10 @@ MEDIA_URL=https://bucket.s3.amazonaws.com/
 
 1. Click **Deploy** in Coolify
 2. Monitor build logs for:
-   - Python installation via uv
-   - Dependency installation
-   - Static file collection
-   - Container startup
+   - Builder stage using the uv image (system packages + `uv sync --frozen --no-group dev`)
+   - Static file collection executed in the builder stage
+   - Runtime stage export and container startup (smaller final image)
+3. Multi-stage builds are faster now because uv and Python ship with the base image—Coolify does not require extra variables for this switch.
 
 ### Step 3: Verify Build
 
@@ -250,7 +250,7 @@ Migrations are handled automatically using Coolify's Post-Deployment Commands.
 2. Add the following command:
 
 ```bash
-uv run --no-sync python manage.py migrate --noinput
+UV_NO_SYNC=1 uv run --frozen python manage.py migrate --noinput
 ```
 
 This will run migrations automatically after every deployment.
@@ -263,7 +263,7 @@ This will run migrations automatically after every deployment.
 
 **Interactive method (via Terminal):**
 ```bash
-docker exec -it <container-id> uv run --no-sync python manage.py createsuperuser
+docker exec -it <container-id> UV_NO_SYNC=1 uv run --frozen python manage.py createsuperuser
 ```
 
 **Non-interactive (via environment variables):**
@@ -271,7 +271,7 @@ docker exec -it <container-id> uv run --no-sync python manage.py createsuperuser
 DJANGO_SUPERUSER_USERNAME=admin \
 DJANGO_SUPERUSER_EMAIL=admin@example.com \
 DJANGO_SUPERUSER_PASSWORD=secure-password \
-uv run --no-sync python manage.py createsuperuser --noinput
+UV_NO_SYNC=1 uv run --frozen python manage.py createsuperuser --noinput
 ```
 
 **Warning:** Never hardcode passwords. Use Coolify secrets for non-interactive creation.
@@ -362,7 +362,7 @@ DATABASES['default']['CONN_MAX_AGE'] = 600  # 10 minutes
 DEBUG_TOOLBAR = True  # Only in development!
 
 # Analyze slow queries
-docker exec -it <container-id> uv run --no-sync python manage.py shell
+docker exec -it <container-id> UV_NO_SYNC=1 uv run --frozen python manage.py shell
 ```
 ```python
 from django.db import connection
