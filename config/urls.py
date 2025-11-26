@@ -19,6 +19,7 @@ urlpatterns = [
     path("api/v1/web/", include("apps.waitlist.urls.web")),
     path("api/v1/mobile/", include("apps.authn.urls.mobile")),
     path("api/v1/mobile/", include("apps.profiles.urls.mobile")),
+    path("api/v1/mobile/", include("apps.jobs.urls.mobile")),
     # API Schema and Documentation
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path(

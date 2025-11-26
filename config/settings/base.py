@@ -64,6 +64,7 @@ LOCAL_APPS = [
     "apps.profiles",
     "apps.common",
     "apps.waitlist",
+    "apps.jobs",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -146,26 +147,50 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
-# Static files (CSS, JavaScript, Images)
+# Static and media storage
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+# Django 5+ uses STORAGES; configure both static and media explicitly so uploads
+# use Cloudflare R2/S3 via the custom backend instead of the local filesystem.
+STORAGES = {
+    "default": {
+        "BACKEND": "apps.common.storage.MediaStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
-# Media files (S3)
-DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+# S3/R2 Configuration
 AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID", default=None)
 AWS_SECRET_ACCESS_KEY = env("AWS_SECRET_ACCESS_KEY", default=None)
 AWS_STORAGE_BUCKET_NAME = env("AWS_STORAGE_BUCKET_NAME", default=None)
-AWS_S3_REGION_NAME = env("AWS_S3_REGION_NAME", default=None)
+AWS_S3_REGION_NAME = env("AWS_S3_REGION_NAME", default="auto")  # 'auto' for R2
 AWS_S3_ENDPOINT_URL = env("AWS_S3_ENDPOINT_URL", default=None)
 AWS_S3_CUSTOM_DOMAIN = env("AWS_S3_CUSTOM_DOMAIN", default=None)
-AWS_S3_SIGNATURE_VERSION = env("AWS_S3_SIGNATURE_VERSION")
-MEDIA_URL = env(
-    "MEDIA_URL",
-    default=f"https://{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com/"
-    if AWS_STORAGE_BUCKET_NAME
-    else "/media/",
-)
+AWS_S3_SIGNATURE_VERSION = env("AWS_S3_SIGNATURE_VERSION", default="s3v4")
+
+# File upload settings
+AWS_DEFAULT_ACL = None  # R2 doesn't support ACLs by default
+AWS_S3_OBJECT_PARAMETERS = {
+    "CacheControl": "max-age=86400",  # 1 day cache
+}
+AWS_QUERYSTRING_AUTH = False  # Don't add auth query params to URLs
+
+# Media URL
+# For Cloudflare R2, use the custom domain or public bucket URL
+# For AWS S3, use the standard S3 URL
+if AWS_S3_CUSTOM_DOMAIN:
+    MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+elif AWS_STORAGE_BUCKET_NAME and AWS_S3_ENDPOINT_URL:
+    # Extract account ID from R2 endpoint or use bucket name
+    MEDIA_URL = env(
+        "MEDIA_URL", default=f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/"
+    )
+elif AWS_STORAGE_BUCKET_NAME:
+    MEDIA_URL = f"https://{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com/"
+else:
+    MEDIA_URL = "/media/"
 
 # CORS/CSRF
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")

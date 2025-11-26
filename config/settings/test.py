@@ -3,6 +3,8 @@
 Uses SQLite for faster test execution and no PostgreSQL dependency.
 """
 
+import tempfile
+
 from .base import *  # noqa: F403
 
 # Override database to use SQLite for testing
@@ -35,8 +37,19 @@ LOGGING = {
     },
 }
 
-# Use a simple static files storage for tests (avoids WhiteNoise manifest requirement)
-STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
+# Use local filesystem storage for tests to avoid hitting external S3/R2 services
+TEST_MEDIA_ROOT = tempfile.mkdtemp()
+MEDIA_ROOT = TEST_MEDIA_ROOT
+MEDIA_URL = "/media/"
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "OPTIONS": {"location": TEST_MEDIA_ROOT},
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
 
 # Remove WhiteNoiseMiddleware for tests since we don't need static file serving in test environment
 MIDDLEWARE = [
