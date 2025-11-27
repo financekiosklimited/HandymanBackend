@@ -82,7 +82,7 @@ class Job(BaseModel):
     )
     title = models.CharField(max_length=200)
     description = models.TextField()
-    estimated_budget_per_hour = models.DecimalField(max_digits=10, decimal_places=2)
+    estimated_budget = models.DecimalField(max_digits=10, decimal_places=2)
     category = models.ForeignKey(
         "JobCategory", on_delete=models.PROTECT, related_name="jobs"
     )
@@ -119,10 +119,10 @@ class Job(BaseModel):
         super().clean()
 
         # Validate budget is positive
-        if self.estimated_budget_per_hour is not None:
-            if self.estimated_budget_per_hour <= Decimal("0"):
+        if self.estimated_budget is not None:
+            if self.estimated_budget <= Decimal("0"):
                 raise ValidationError(
-                    {"estimated_budget_per_hour": "Budget must be greater than 0."}
+                    {"estimated_budget": "Budget must be greater than 0."}
                 )
 
         # Validate category is active

@@ -160,7 +160,7 @@ class MobileJobListCreateViewTests(APITestCase):
             customer=self.user,
             title="Fix faucet",
             description="Test",
-            estimated_budget_per_hour=Decimal("50.00"),
+            estimated_budget=Decimal("50.00"),
             category=self.category,
             city=self.city,
             address="123 Main St",
@@ -169,7 +169,7 @@ class MobileJobListCreateViewTests(APITestCase):
             customer=self.user,
             title="Fix door",
             description="Test",
-            estimated_budget_per_hour=Decimal("40.00"),
+            estimated_budget=Decimal("40.00"),
             category=self.category,
             city=self.city,
             address="456 Oak Ave",
@@ -180,7 +180,7 @@ class MobileJobListCreateViewTests(APITestCase):
             customer=self.other_user,
             title="Other user job",
             description="Test",
-            estimated_budget_per_hour=Decimal("30.00"),
+            estimated_budget=Decimal("30.00"),
             category=self.category,
             city=self.city,
             address="789 Pine St",
@@ -203,7 +203,7 @@ class MobileJobListCreateViewTests(APITestCase):
             customer=self.user,
             title="Plumbing job",
             description="Test",
-            estimated_budget_per_hour=Decimal("50.00"),
+            estimated_budget=Decimal("50.00"),
             category=self.category,
             city=self.city,
             address="123 Main St",
@@ -212,7 +212,7 @@ class MobileJobListCreateViewTests(APITestCase):
             customer=self.user,
             title="Electrical job",
             description="Test",
-            estimated_budget_per_hour=Decimal("60.00"),
+            estimated_budget=Decimal("60.00"),
             category=category2,
             city=self.city,
             address="456 Oak Ave",
@@ -230,7 +230,7 @@ class MobileJobListCreateViewTests(APITestCase):
             customer=self.user,
             title="Draft job",
             description="Test",
-            estimated_budget_per_hour=Decimal("50.00"),
+            estimated_budget=Decimal("50.00"),
             category=self.category,
             city=self.city,
             address="123 Main St",
@@ -240,7 +240,7 @@ class MobileJobListCreateViewTests(APITestCase):
             customer=self.user,
             title="Open job",
             description="Test",
-            estimated_budget_per_hour=Decimal("60.00"),
+            estimated_budget=Decimal("60.00"),
             category=self.category,
             city=self.city,
             address="456 Oak Ave",
@@ -261,7 +261,7 @@ class MobileJobListCreateViewTests(APITestCase):
                 customer=self.user,
                 title=f"Job {i}",
                 description="Test",
-                estimated_budget_per_hour=Decimal("50.00"),
+                estimated_budget=Decimal("50.00"),
                 category=self.category,
                 city=self.city,
                 address="123 Main St",
@@ -282,7 +282,7 @@ class MobileJobListCreateViewTests(APITestCase):
         data = {
             "title": "Fix leaking faucet",
             "description": "Kitchen faucet is leaking",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
@@ -306,7 +306,7 @@ class MobileJobListCreateViewTests(APITestCase):
         data = {
             "title": "Test job",
             "description": "Test description",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
@@ -336,7 +336,7 @@ class MobileJobListCreateViewTests(APITestCase):
         data = {
             "title": "Test job",
             "description": "Test description",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
@@ -355,7 +355,7 @@ class MobileJobListCreateViewTests(APITestCase):
         data = {
             "title": "Test",
             "description": "Test",
-            "estimated_budget_per_hour": "-10.00",  # Invalid: negative
+            "estimated_budget": "-10.00",  # Invalid: negative
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
@@ -364,14 +364,14 @@ class MobileJobListCreateViewTests(APITestCase):
         self.client.force_authenticate(user=self.user)
         response = self.client.post(self.url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("estimated_budget_per_hour", response.data["errors"])
+        self.assertIn("estimated_budget", response.data["errors"])
 
     def test_create_job_unauthenticated(self):
         """Test creating job without authentication fails."""
         data = {
             "title": "Test",
             "description": "Test",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
@@ -429,7 +429,7 @@ class MobileJobDetailViewTests(APITestCase):
             customer=self.user,
             title="Fix leaking faucet",
             description="Kitchen faucet is leaking",
-            estimated_budget_per_hour=Decimal("50.00"),
+            estimated_budget=Decimal("50.00"),
             category=self.category,
             city=self.city,
             address="123 Main St",
@@ -452,7 +452,7 @@ class MobileJobDetailViewTests(APITestCase):
             customer=self.other_user,
             title="Other user job",
             description="Test",
-            estimated_budget_per_hour=Decimal("30.00"),
+            estimated_budget=Decimal("30.00"),
             category=self.category,
             city=self.city,
             address="456 Oak Ave",

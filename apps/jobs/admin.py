@@ -103,7 +103,7 @@ class JobAdmin(ModelAdmin):
         ),
         (
             "Budget",
-            {"fields": ("estimated_budget_per_hour",)},
+            {"fields": ("estimated_budget",)},
         ),
         (
             "Timestamps",
@@ -129,10 +129,10 @@ class JobAdmin(ModelAdmin):
         icon = status_colors.get(obj.status, "")
         return f"{icon} {obj.get_status_display()}"
 
-    @display(description="Budget/Hour")
+    @display(description="Budget")
     def budget_display(self, obj):
-        """Display budget per hour."""
-        return f"${obj.estimated_budget_per_hour}/hr"
+        """Display budget."""
+        return f"${obj.estimated_budget}"
 
 
 @admin.register(JobImage)

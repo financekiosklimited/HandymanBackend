@@ -83,7 +83,7 @@ class JobImageSerializerTests(TestCase):
             customer=self.user,
             title="Test",
             description="Test",
-            estimated_budget_per_hour=Decimal("50.00"),
+            estimated_budget=Decimal("50.00"),
             category=self.category,
             city=self.city,
             address="123 Main St",
@@ -137,7 +137,7 @@ class JobListSerializerTests(TestCase):
             customer=self.user,
             title="Fix leaking faucet",
             description="Kitchen faucet is leaking",
-            estimated_budget_per_hour=Decimal("50.00"),
+            estimated_budget=Decimal("50.00"),
             category=self.category,
             city=self.city,
             address="123 Main St",
@@ -149,7 +149,7 @@ class JobListSerializerTests(TestCase):
 
         self.assertEqual(data["title"], "Fix leaking faucet")
         self.assertEqual(data["description"], "Kitchen faucet is leaking")
-        self.assertEqual(float(data["estimated_budget_per_hour"]), 50.00)
+        self.assertEqual(float(data["estimated_budget"]), 50.00)
         self.assertEqual(data["status"], "open")
 
         # Check nested category
@@ -193,7 +193,7 @@ class JobDetailSerializerTests(TestCase):
             customer=self.user,
             title="Fix door",
             description="Broken door",
-            estimated_budget_per_hour=Decimal("40.00"),
+            estimated_budget=Decimal("40.00"),
             category=self.category,
             city=self.city,
             address="456 Oak Ave",
@@ -206,7 +206,7 @@ class JobDetailSerializerTests(TestCase):
         data = serializer.data
 
         self.assertEqual(data["title"], "Fix door")
-        self.assertEqual(float(data["estimated_budget_per_hour"]), 40.00)
+        self.assertEqual(float(data["estimated_budget"]), 40.00)
         self.assertEqual(data["address"], "456 Oak Ave")
         self.assertEqual(float(data["latitude"]), 43.651070)
         self.assertEqual(float(data["longitude"]), -79.347015)
@@ -243,7 +243,7 @@ class JobCreateSerializerTests(TestCase):
         data = {
             "title": "Fix leaking faucet",
             "description": "Kitchen faucet is leaking",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
@@ -265,7 +265,7 @@ class JobCreateSerializerTests(TestCase):
         data = {
             "title": "Test",
             "description": "Test",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
@@ -285,7 +285,7 @@ class JobCreateSerializerTests(TestCase):
         data = {
             "title": "Test",
             "description": "Test",
-            "estimated_budget_per_hour": "-10.00",
+            "estimated_budget": "-10.00",
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
@@ -293,14 +293,14 @@ class JobCreateSerializerTests(TestCase):
 
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
-        self.assertIn("estimated_budget_per_hour", serializer.errors)
+        self.assertIn("estimated_budget", serializer.errors)
 
     def test_create_job_invalid_category_validation(self):
         """Test job with invalid category fails."""
         data = {
             "title": "Test",
             "description": "Test",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": "00000000-0000-0000-0000-000000000000",
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
@@ -318,7 +318,7 @@ class JobCreateSerializerTests(TestCase):
         data = {
             "title": "Test",
             "description": "Test",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": str(inactive_category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
@@ -333,7 +333,7 @@ class JobCreateSerializerTests(TestCase):
         data = {
             "title": "Test",
             "description": "Test",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": str(self.category.public_id),
             "city_id": "00000000-0000-0000-0000-000000000000",
             "address": "123 Main St",
@@ -355,7 +355,7 @@ class JobCreateSerializerTests(TestCase):
         data = {
             "title": "Test",
             "description": "Test",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": str(self.category.public_id),
             "city_id": str(inactive_city.public_id),
             "address": "123 Main St",
@@ -370,7 +370,7 @@ class JobCreateSerializerTests(TestCase):
         data = {
             "title": "Test",
             "description": "Test",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
@@ -386,7 +386,7 @@ class JobCreateSerializerTests(TestCase):
         data = {
             "title": "Test",
             "description": "Test",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
@@ -403,7 +403,7 @@ class JobCreateSerializerTests(TestCase):
         data = {
             "title": "Test",
             "description": "Test",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
@@ -437,7 +437,7 @@ class JobCreateSerializerTests(TestCase):
         data = {
             "title": "Test",
             "description": "Test",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
@@ -470,7 +470,7 @@ class JobCreateSerializerTests(TestCase):
         data = {
             "title": "Test",
             "description": "Test",
-            "estimated_budget_per_hour": "50.00",
+            "estimated_budget": "50.00",
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",

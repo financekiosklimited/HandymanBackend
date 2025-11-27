@@ -212,7 +212,7 @@ class JobListCreateView(APIView):
                 value={
                     "title": "Fix leaking kitchen faucet",
                     "description": "Kitchen faucet has been leaking for a few days. Need someone to fix it.",
-                    "estimated_budget_per_hour": 50.00,
+                    "estimated_budget": 50.00,
                     "category_id": "123e4567-e89b-12d3-a456-426614174000",
                     "city_id": "123e4567-e89b-12d3-a456-426614174001",
                     "address": "123 Main St, Toronto",

@@ -53,7 +53,7 @@ class JobListSerializer(serializers.ModelSerializer):
     category = JobCategorySerializer(read_only=True)
     city = CitySerializer(read_only=True)
     images = JobImageSerializer(many=True, read_only=True)
-    estimated_budget_per_hour = serializers.DecimalField(
+    estimated_budget = serializers.DecimalField(
         max_digits=10, decimal_places=2, coerce_to_string=False
     )
 
@@ -63,7 +63,7 @@ class JobListSerializer(serializers.ModelSerializer):
             "public_id",
             "title",
             "description",
-            "estimated_budget_per_hour",
+            "estimated_budget",
             "category",
             "city",
             "address",
@@ -100,12 +100,12 @@ class JobCreateSerializer(serializers.Serializer):
         required=True,
         help_text="Job description",
     )
-    estimated_budget_per_hour = serializers.DecimalField(
+    estimated_budget = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
         required=True,
         coerce_to_string=False,
-        help_text="Hourly rate customer is willing to pay",
+        help_text="Budget customer is willing to pay",
     )
     category_id = serializers.UUIDField(
         required=True,
@@ -149,7 +149,7 @@ class JobCreateSerializer(serializers.Serializer):
         help_text="Job images (max 10 files, each max 5MB, JPEG/PNG only)",
     )
 
-    def validate_estimated_budget_per_hour(self, value):
+    def validate_estimated_budget(self, value):
         """Validate budget is positive."""
         if value <= Decimal("0"):
             raise serializers.ValidationError("Budget must be greater than 0.")
