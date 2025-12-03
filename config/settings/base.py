@@ -217,6 +217,11 @@ JWT_NBF_LEEWAY = env("JWT_NBF_LEEWAY")
 ACCESS_TOKEN_EXPIRE_MINUTES = env("ACCESS_TOKEN_EXPIRE_MIN")
 REFRESH_TOKEN_EXPIRE_MINUTES = env("REFRESH_TOKEN_EXPIRE_MIN")
 
+# Twilio Configuration (Phone Verification via Verify API)
+TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default=None)
+TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default=None)
+TWILIO_VERIFY_SERVICE_SID = env("TWILIO_VERIFY_SERVICE_SID", default=None)
+
 # DRF Configuration
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -229,28 +234,31 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.ScopedRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        # Web throttles - using proper DRF format: rate/period
-        "web:register": "5/300s",
-        "web:login": "10/60s",
-        "web:login_google": "10/60s",
-        "web:verify_email": "10/300s",
-        "web:resend_email": "3/600s",
-        "web:refresh": "30/120s",
-        "web:forgot_password": "5/300s",
-        "web:verify_password_reset": "5/300s",
-        "web:reset_password": "5/300s",
-        "web:change_password": "5/300s",
+        # Web throttles - DRF format: num/period (s=second, m=minute, h=hour, d=day)
+        "web:register": "5/min",
+        "web:login": "10/min",
+        "web:login_google": "10/min",
+        "web:verify_email": "10/min",
+        "web:resend_email": "3/min",
+        "web:refresh": "30/min",
+        "web:forgot_password": "5/min",
+        "web:verify_password_reset": "5/min",
+        "web:reset_password": "5/min",
+        "web:change_password": "5/min",
         # Mobile throttles (same rates)
-        "mobile:register": "5/300s",
-        "mobile:login": "10/60s",
-        "mobile:login_google": "10/60s",
-        "mobile:verify_email": "10/300s",
-        "mobile:resend_email": "3/600s",
-        "mobile:refresh": "30/120s",
-        "mobile:forgot_password": "5/300s",
-        "mobile:verify_password_reset": "5/300s",
-        "mobile:reset_password": "5/300s",
-        "mobile:change_password": "5/300s",
+        "mobile:register": "5/min",
+        "mobile:login": "10/min",
+        "mobile:login_google": "10/min",
+        "mobile:verify_email": "10/min",
+        "mobile:resend_email": "3/min",
+        "mobile:refresh": "30/min",
+        "mobile:forgot_password": "5/min",
+        "mobile:verify_password_reset": "5/min",
+        "mobile:reset_password": "5/min",
+        "mobile:change_password": "5/min",
+        # Phone verification throttles
+        "mobile:phone_send": "3/min",
+        "mobile:phone_verify": "10/min",
     },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,

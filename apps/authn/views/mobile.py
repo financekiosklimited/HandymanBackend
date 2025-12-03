@@ -3,6 +3,7 @@ Mobile authentication views.
 """
 
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -30,6 +31,10 @@ from ..serializers import (
     LoginSerializer,
     LogoutSerializer,
     PasswordResetTokenResponseEnvelope,
+    PhoneSendResponseEnvelope,
+    PhoneSendSerializer,
+    PhoneVerifyResponseEnvelope,
+    PhoneVerifySerializer,
     RefreshTokenSerializer,
     RegisterSerializer,
     ResetPasswordSerializer,
@@ -38,6 +43,7 @@ from ..serializers import (
     VerifyPasswordResetSerializer,
 )
 from ..services import auth_service
+from ..twilio_service import twilio_service
 
 User = get_user_model()
 
@@ -565,6 +571,137 @@ class ChangePasswordView(APIView):
                 return error_response(
                     errors={"current_password": "Current password is incorrect"},
                     message="Password change failed",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+        return validation_error_response(serializer.errors)
+
+
+class PhoneSendView(APIView):
+    """Send phone verification OTP."""
+
+    permission_classes = [IsAuthenticated]
+    platform = "mobile"
+    throttle_scope = "mobile:phone_send"
+
+    @extend_schema(
+        request=PhoneSendSerializer,
+        responses={200: PhoneSendResponseEnvelope},
+        description="Send OTP code to phone number for verification via SMS.",
+        summary="Send phone verification OTP",
+        tags=["Mobile Authentication"],
+    )
+    def post(self, request):
+        """Send phone verification OTP."""
+        return self._handle_post(request)
+
+    def _handle_post(self, request):
+        serializer = PhoneSendSerializer(data=request.data)
+        if serializer.is_valid():
+            phone_number = serializer.validated_data["phone_number"]
+
+            # Send verification via Twilio Verify API
+            result = twilio_service.send_verification(phone_number)
+
+            if result.success:
+                return success_response(
+                    data={
+                        "masked_phone": twilio_service.mask_phone_number(phone_number),
+                        "expires_in": 600,  # Twilio Verify codes expire in 10 minutes
+                    },
+                    message="Verification code sent",
+                )
+            else:
+                return error_response(
+                    errors={
+                        "phone_number": result.error or "Failed to send verification"
+                    },
+                    message="Failed to send verification code",
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+
+        return validation_error_response(serializer.errors)
+
+
+class PhoneVerifyView(APIView):
+    """Verify phone number with OTP."""
+
+    permission_classes = [IsAuthenticated]
+    platform = "mobile"
+    throttle_scope = "mobile:phone_verify"
+
+    @extend_schema(
+        request=PhoneVerifySerializer,
+        responses={200: PhoneVerifyResponseEnvelope},
+        description="Verify phone number using the OTP code sent via SMS.",
+        summary="Verify phone OTP",
+        tags=["Mobile Authentication"],
+    )
+    def post(self, request):
+        """Verify phone number with OTP."""
+        return self._handle_post(request)
+
+    def _handle_post(self, request):
+        serializer = PhoneVerifySerializer(data=request.data)
+        if serializer.is_valid():
+            phone_number = serializer.validated_data["phone_number"]
+            otp = serializer.validated_data["otp"]
+
+            # Verify code via Twilio Verify API
+            result = twilio_service.check_verification(phone_number, otp)
+
+            if result.success and result.status == "approved":
+                # Update the user's active profile phone_verified_at
+                user = request.user
+                profile = None
+
+                # Get the active profile based on active_role
+                if hasattr(user, "active_role") and user.active_role:
+                    if user.active_role == "customer" and hasattr(
+                        user, "customer_profile"
+                    ):
+                        profile = user.customer_profile
+                    elif user.active_role == "handyman" and hasattr(
+                        user, "handyman_profile"
+                    ):
+                        profile = user.handyman_profile
+
+                # Fallback: try customer_profile then handyman_profile
+                if profile is None:
+                    if hasattr(user, "customer_profile"):
+                        profile = user.customer_profile
+                    elif hasattr(user, "handyman_profile"):
+                        profile = user.handyman_profile
+
+                if profile:
+                    # Update phone number and verified timestamp
+                    profile.phone_number = phone_number
+                    profile.phone_verified_at = timezone.now()
+                    profile.save(
+                        update_fields=[
+                            "phone_number",
+                            "phone_verified_at",
+                            "updated_at",
+                        ]
+                    )
+
+                    return success_response(
+                        data={
+                            "phone_verified": True,
+                            "phone_number": phone_number,
+                        },
+                        message="Phone number verified successfully",
+                    )
+                else:
+                    return error_response(
+                        errors={"profile": "No profile found to update"},
+                        message="Phone verification failed",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
+            else:
+                return error_response(
+                    errors={"otp": result.error or "Invalid or expired OTP"},
+                    message="Phone verification failed",
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
 

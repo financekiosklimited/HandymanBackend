@@ -245,3 +245,67 @@ class RefreshSession(BaseModel):
     def is_active(self):
         """Check if session is still active."""
         return self.revoked_at is None and self.expires_at > timezone.now()
+
+
+class PhoneVerificationCode(BaseModel):
+    """
+    Phone verification codes (6-digit OTP via SMS).
+    """
+
+    user = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="phone_verification_codes",
+    )
+    phone_number = models.CharField(max_length=20)  # E.164 format
+    code_hash = models.CharField(max_length=64)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "phone_verification_codes"
+        ordering = ["-created_at"]
+
+    @classmethod
+    def create_for_user(cls, user, phone_number, ttl_minutes=10):
+        """Create a new phone verification code for user."""
+        # Generate 6-digit OTP
+        otp = f"{secrets.randbelow(1000000):06d}"
+        code_hash = hashlib.sha256(otp.encode()).hexdigest()
+
+        # Create code
+        code = cls.objects.create(
+            user=user,
+            phone_number=phone_number,
+            code_hash=code_hash,
+            expires_at=timezone.now() + timedelta(minutes=ttl_minutes),
+        )
+
+        # Return both code object and plain OTP
+        return code, otp
+
+    @classmethod
+    def verify_code(cls, user, phone_number, otp):
+        """Verify code for phone number and mark as used."""
+        code_hash = hashlib.sha256(otp.encode()).hexdigest()
+
+        try:
+            code = cls.objects.get(
+                user=user,
+                phone_number=phone_number,
+                code_hash=code_hash,
+                used_at__isnull=True,
+                expires_at__gt=timezone.now(),
+            )
+
+            # Mark as used
+            code.used_at = timezone.now()
+            code.save()
+
+            return code
+        except cls.DoesNotExist:
+            return None
+
+    def is_valid(self):
+        """Check if code is still valid."""
+        return self.used_at is None and self.expires_at > timezone.now()

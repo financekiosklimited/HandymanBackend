@@ -127,12 +127,13 @@ class MobileJobListCreateViewTests(APITestCase):
         UserRole.objects.create(user=self.user, role="customer")
         self.user.email_verified_at = "2024-01-01T00:00:00Z"
         self.user.save()
-        # Mock token payload for permissions
+        # Mock token payload for permissions (with phone_verified for POST)
         self.user.token_payload = {
             "plat": "mobile",
             "active_role": "customer",
             "roles": ["customer"],
             "email_verified": True,
+            "phone_verified": True,
         }
 
         # Create another user to test isolation
@@ -384,6 +385,38 @@ class MobileJobListCreateViewTests(APITestCase):
         """Test listing jobs without authentication fails."""
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_create_job_requires_phone_verification(self):
+        """Test creating job without phone verification fails."""
+        # User without phone verification
+        user_no_phone = User.objects.create_user(
+            email="nophone@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=user_no_phone, role="customer")
+        user_no_phone.email_verified_at = "2024-01-01T00:00:00Z"
+        user_no_phone.save()
+        user_no_phone.token_payload = {
+            "plat": "mobile",
+            "active_role": "customer",
+            "roles": ["customer"],
+            "email_verified": True,
+            "phone_verified": False,
+        }
+
+        data = {
+            "title": "Test job",
+            "description": "Test description",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+        }
+
+        self.client.force_authenticate(user=user_no_phone)
+        response = self.client.post(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("phone", str(response.data["errors"]).lower())
 
 
 class MobileJobDetailViewTests(APITestCase):

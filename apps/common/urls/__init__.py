@@ -1,0 +1,3 @@
+"""
+Common URL configuration.
+"""

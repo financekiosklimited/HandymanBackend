@@ -9,6 +9,7 @@ from .models import (
     EmailVerificationToken,
     PasswordResetCode,
     PasswordResetToken,
+    PhoneVerificationCode,
     RefreshSession,
 )
 
@@ -63,3 +64,16 @@ class RefreshSessionAdmin(ModelAdmin):
     search_fields = ("user__email", "ip_address")
     ordering = ("-created_at",)
     readonly_fields = ("jti_hash", "created_at")
+
+
+@admin.register(PhoneVerificationCode)
+class PhoneVerificationCodeAdmin(ModelAdmin):
+    """
+    Admin interface for PhoneVerificationCode model.
+    """
+
+    list_display = ("user", "phone_number", "expires_at", "used_at", "created_at")
+    list_filter = ("used_at", "expires_at")
+    search_fields = ("user__email", "phone_number")
+    ordering = ("-created_at",)
+    readonly_fields = ("code_hash", "created_at")

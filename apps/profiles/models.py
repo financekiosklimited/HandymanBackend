@@ -18,6 +18,7 @@ class HandymanProfile(BaseModel):
     display_name = models.CharField(max_length=100)
     rating = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True)
     phone_number = models.CharField(max_length=20, blank=True)
+    phone_verified_at = models.DateTimeField(null=True, blank=True)
     address = models.TextField(blank=True)
 
     class Meta:
@@ -26,6 +27,11 @@ class HandymanProfile(BaseModel):
 
     def __str__(self):
         return f"Handyman: {self.display_name}"
+
+    @property
+    def is_phone_verified(self):
+        """Check if phone number is verified."""
+        return self.phone_verified_at is not None
 
 
 class CustomerProfile(BaseModel):
@@ -38,6 +44,7 @@ class CustomerProfile(BaseModel):
     )
     display_name = models.CharField(max_length=100)
     phone_number = models.CharField(max_length=20, blank=True)
+    phone_verified_at = models.DateTimeField(null=True, blank=True)
     address = models.TextField(blank=True)
 
     class Meta:
@@ -46,3 +53,8 @@ class CustomerProfile(BaseModel):
 
     def __str__(self):
         return f"Customer: {self.display_name}"
+
+    @property
+    def is_phone_verified(self):
+        """Check if phone number is verified."""
+        return self.phone_verified_at is not None

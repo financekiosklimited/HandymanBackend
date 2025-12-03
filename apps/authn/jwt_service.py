@@ -92,12 +92,16 @@ class JWTService:
         # Get user roles
         user_roles = list(user.roles.values_list("role", flat=True))
 
+        # Get phone verification status based on active role
+        phone_verified = self._get_phone_verified(user, active_role)
+
         # Base claims
         base_claims = {
             "sub": str(user.public_id),
             "roles": user_roles,
             "plat": platform,
             "email_verified": user.is_email_verified,
+            "phone_verified": phone_verified,
             "jti": jti,
             "iat": now,
             "nbf": now - timedelta(seconds=self._nbf_leeway),
@@ -144,6 +148,35 @@ class JWTService:
             "refresh_token": refresh_token,
             "token_type": "bearer",
         }
+
+    def _get_phone_verified(self, user, active_role):
+        """
+        Get phone verification status based on user's active role profile.
+
+        Args:
+            user: User instance
+            active_role: Active role ('customer', 'handyman', or None)
+
+        Returns:
+            bool: Whether the phone is verified for the active profile
+        """
+        profile = None
+
+        # Get profile based on active role
+        if active_role == "customer":
+            profile = getattr(user, "customer_profile", None)
+        elif active_role == "handyman":
+            profile = getattr(user, "handyman_profile", None)
+        else:
+            # Fallback: try customer_profile then handyman_profile
+            profile = getattr(user, "customer_profile", None) or getattr(
+                user, "handyman_profile", None
+            )
+
+        if profile:
+            return profile.is_phone_verified
+
+        return False
 
     def decode_token(self, token):
         """

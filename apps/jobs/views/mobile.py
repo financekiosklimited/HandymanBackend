@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 
 from apps.authn.permissions import (
     EmailVerifiedPermission,
+    PhoneVerifiedPermission,
     PlatformGuardPermission,
     RoleGuardPermission,
 )
@@ -105,6 +106,16 @@ class JobListCreateView(APIView):
         RoleGuardPermission,
         EmailVerifiedPermission,
     ]
+
+    def get_permissions(self):
+        """
+        Return different permissions for GET vs POST.
+        POST (create job) requires phone verification.
+        """
+        permissions = super().get_permissions()
+        if self.request.method == "POST":
+            permissions.append(PhoneVerifiedPermission())
+        return permissions
 
     @extend_schema(
         responses={200: JobListResponseSerializer},

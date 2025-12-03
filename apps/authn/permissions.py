@@ -183,3 +183,38 @@ class ActiveRoleRequiredPermission(permissions.BasePermission):
             )
 
         return True
+
+
+class PhoneVerifiedPermission(permissions.BasePermission):
+    """
+    Permission to ensure user's phone number is verified.
+    Required for certain actions like creating job listings.
+    """
+
+    def has_permission(self, request, view):
+        """
+        Check if user's phone is verified from token claims.
+        """
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        # Get token payload
+        token_payload = getattr(request.user, "token_payload", None)
+        if not token_payload:
+            return False
+
+        phone_verified = token_payload.get("phone_verified", False)
+
+        if not phone_verified:
+            raise PermissionDenied(
+                {
+                    "message": "Phone verification required",
+                    "data": None,
+                    "errors": {
+                        "phone": "Phone number must be verified to access this endpoint"
+                    },
+                    "meta": None,
+                }
+            )
+
+        return True

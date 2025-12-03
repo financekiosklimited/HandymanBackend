@@ -197,6 +197,52 @@ class ChangePasswordSerializer(serializers.Serializer):
         return value
 
 
+class PhoneSendSerializer(serializers.Serializer):
+    """
+    Serializer for sending phone verification OTP.
+    """
+
+    phone_number = serializers.CharField(
+        max_length=20,
+        help_text="Phone number in E.164 format (e.g., +6281234567890)",
+    )
+
+    def validate_phone_number(self, value):
+        """Validate phone number format (E.164)."""
+        # Basic E.164 validation: starts with +, followed by 7-15 digits
+        if not re.match(r"^\+[1-9]\d{6,14}$", value):
+            raise serializers.ValidationError(
+                "Phone number must be in E.164 format (e.g., +6281234567890)"
+            )
+        return value
+
+
+class PhoneVerifySerializer(serializers.Serializer):
+    """
+    Serializer for verifying phone OTP.
+    """
+
+    phone_number = serializers.CharField(
+        max_length=20,
+        help_text="Phone number in E.164 format (e.g., +6281234567890)",
+    )
+    otp = serializers.CharField(help_text="6-digit OTP code")
+
+    def validate_phone_number(self, value):
+        """Validate phone number format (E.164)."""
+        if not re.match(r"^\+[1-9]\d{6,14}$", value):
+            raise serializers.ValidationError(
+                "Phone number must be in E.164 format (e.g., +6281234567890)"
+            )
+        return value
+
+    def validate_otp(self, value):
+        """Validate OTP format."""
+        if not re.match(r"^[0-9]{6}$", value):
+            raise serializers.ValidationError("OTP must be exactly 6 digits.")
+        return value
+
+
 # Response serializers
 class TokenResponseSerializer(serializers.Serializer):
     """
@@ -248,6 +294,26 @@ class SuccessMessageResponseSerializer(serializers.Serializer):
     meta = serializers.DictField(allow_null=True, required=False)
 
 
+class PhoneSendResponseSerializer(serializers.Serializer):
+    """
+    Serializer for phone OTP send response.
+    """
+
+    masked_phone = serializers.CharField(
+        help_text="Masked phone number (e.g., +62****7890)"
+    )
+    expires_in = serializers.IntegerField(help_text="OTP expiry time in seconds")
+
+
+class PhoneVerifyResponseSerializer(serializers.Serializer):
+    """
+    Serializer for phone verification response.
+    """
+
+    phone_verified = serializers.BooleanField()
+    phone_number = serializers.CharField()
+
+
 # Response wrappers for authentication endpoints
 TokenResponseEnvelope = create_response_serializer(
     TokenResponseSerializer, "TokenResponseEnvelope"
@@ -259,4 +325,12 @@ AuthResponseEnvelope = create_response_serializer(
 
 PasswordResetTokenResponseEnvelope = create_response_serializer(
     PasswordResetTokenResponseSerializer, "PasswordResetTokenResponseEnvelope"
+)
+
+PhoneSendResponseEnvelope = create_response_serializer(
+    PhoneSendResponseSerializer, "PhoneSendResponseEnvelope"
+)
+
+PhoneVerifyResponseEnvelope = create_response_serializer(
+    PhoneVerifyResponseSerializer, "PhoneVerifyResponseEnvelope"
 )

@@ -8,7 +8,9 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIRequestFactory, force_authenticate
 
+from apps.authn.twilio_service import VerificationResult
 from apps.authn.views import mobile as mobile_views
+from apps.profiles.models import CustomerProfile
 
 User = get_user_model()
 
@@ -934,3 +936,186 @@ class MobileChangePasswordViewTests(TestCase):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class MobilePhoneSendViewTests(TestCase):
+    """Tests for PhoneSendView."""
+
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.view = mobile_views.PhoneSendView.as_view()
+        self.user = User.objects.create_user(
+            email="user@example.com", password="Pass12345!"
+        )
+
+    def test_phone_send_success(self):
+        data = {"phone_number": "+6281234567890"}
+        request = self.factory.post("/auth/phone/send", data, format="json")
+        force_authenticate(request, user=self.user)
+        serializer = make_serializer(validated_data=data)
+
+        with (
+            patch(
+                "apps.authn.views.mobile.PhoneSendSerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.twilio_service.send_verification",
+                return_value=VerificationResult(success=True, status="pending"),
+            ),
+            patch(
+                "apps.authn.views.mobile.twilio_service.mask_phone_number",
+                return_value="+6281****7890",
+            ),
+        ):
+            response = self.view(request)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Verification code sent")
+        self.assertEqual(response.data["data"]["masked_phone"], "+6281****7890")
+        self.assertIn("expires_in", response.data["data"])
+
+    def test_phone_send_twilio_failure(self):
+        data = {"phone_number": "+6281234567890"}
+        request = self.factory.post("/auth/phone/send", data, format="json")
+        force_authenticate(request, user=self.user)
+        serializer = make_serializer(validated_data=data)
+
+        with (
+            patch(
+                "apps.authn.views.mobile.PhoneSendSerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.twilio_service.send_verification",
+                return_value=VerificationResult(
+                    success=False, error="Invalid phone number"
+                ),
+            ),
+        ):
+            response = self.view(request)
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data["message"], "Failed to send verification code")
+
+    def test_phone_send_invalid_serializer(self):
+        request = self.factory.post("/auth/phone/send", {}, format="json")
+        force_authenticate(request, user=self.user)
+        serializer = make_serializer(is_valid=False)
+
+        with patch(
+            "apps.authn.views.mobile.PhoneSendSerializer", return_value=serializer
+        ):
+            response = self.view(request)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_phone_send_unauthenticated(self):
+        data = {"phone_number": "+6281234567890"}
+        request = self.factory.post("/auth/phone/send", data, format="json")
+        response = self.view(request)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class MobilePhoneVerifyViewTests(TestCase):
+    """Tests for PhoneVerifyView."""
+
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.view = mobile_views.PhoneVerifyView.as_view()
+        self.user = User.objects.create_user(
+            email="user@example.com", password="Pass12345!"
+        )
+
+    def test_phone_verify_success(self):
+        # Create a real CustomerProfile for the user
+        profile = CustomerProfile.objects.create(
+            user=self.user,
+            display_name="Test User",
+            phone_number="",
+        )
+
+        data = {"phone_number": "+6281234567890", "otp": "123456"}
+        request = self.factory.post("/auth/phone/verify", data, format="json")
+        force_authenticate(request, user=self.user)
+        serializer = make_serializer(validated_data=data)
+
+        with (
+            patch(
+                "apps.authn.views.mobile.PhoneVerifySerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.twilio_service.check_verification",
+                return_value=VerificationResult(success=True, status="approved"),
+            ),
+        ):
+            response = self.view(request)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Phone number verified successfully")
+        self.assertTrue(response.data["data"]["phone_verified"])
+        self.assertEqual(response.data["data"]["phone_number"], "+6281234567890")
+
+        # Verify the profile was updated
+        profile.refresh_from_db()
+        self.assertEqual(profile.phone_number, "+6281234567890")
+        self.assertIsNotNone(profile.phone_verified_at)
+
+    def test_phone_verify_invalid_otp(self):
+        data = {"phone_number": "+6281234567890", "otp": "000000"}
+        request = self.factory.post("/auth/phone/verify", data, format="json")
+        force_authenticate(request, user=self.user)
+        serializer = make_serializer(validated_data=data)
+
+        with (
+            patch(
+                "apps.authn.views.mobile.PhoneVerifySerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.twilio_service.check_verification",
+                return_value=VerificationResult(
+                    success=False, status="pending", error="Invalid or expired code"
+                ),
+            ),
+        ):
+            response = self.view(request)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["message"], "Phone verification failed")
+        self.assertIn("otp", response.data["errors"])
+
+    def test_phone_verify_no_profile(self):
+        data = {"phone_number": "+6281234567890", "otp": "123456"}
+        request = self.factory.post("/auth/phone/verify", data, format="json")
+        force_authenticate(request, user=self.user)
+        serializer = make_serializer(validated_data=data)
+
+        with (
+            patch(
+                "apps.authn.views.mobile.PhoneVerifySerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.twilio_service.check_verification",
+                return_value=VerificationResult(success=True, status="approved"),
+            ),
+        ):
+            response = self.view(request)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("profile", response.data["errors"])
+
+    def test_phone_verify_invalid_serializer(self):
+        request = self.factory.post("/auth/phone/verify", {}, format="json")
+        force_authenticate(request, user=self.user)
+        serializer = make_serializer(is_valid=False)
+
+        with patch(
+            "apps.authn.views.mobile.PhoneVerifySerializer", return_value=serializer
+        ):
+            response = self.view(request)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_phone_verify_unauthenticated(self):
+        data = {"phone_number": "+6281234567890", "otp": "123456"}
+        request = self.factory.post("/auth/phone/verify", data, format="json")
+        response = self.view(request)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

@@ -60,4 +60,15 @@ urlpatterns = [
         mobile_views.ChangePasswordView.as_view(),
         name="mobile_auth_change_password",
     ),
+    # Phone verification endpoints
+    path(
+        "auth/phone/send",
+        mobile_views.PhoneSendView.as_view(),
+        name="mobile_auth_phone_send",
+    ),
+    path(
+        "auth/phone/verify",
+        mobile_views.PhoneVerifyView.as_view(),
+        name="mobile_auth_phone_verify",
+    ),
 ]

@@ -4,6 +4,8 @@ Common serializers for API responses with envelope format.
 
 from rest_framework import serializers
 
+from apps.common.models import CountryPhoneCode
+
 
 class ResponseEnvelopeSerializer(serializers.Serializer):
     """
@@ -84,3 +86,24 @@ def create_list_response_serializer(data_serializer, serializer_name=None):
     }
 
     return type(serializer_name, (serializers.Serializer,), attrs)
+
+
+class CountryPhoneCodeSerializer(serializers.ModelSerializer):
+    """
+    Serializer for country phone codes.
+    """
+
+    class Meta:
+        model = CountryPhoneCode
+        fields = [
+            "country_code",
+            "country_name",
+            "dial_code",
+            "flag_emoji",
+        ]
+
+
+# Response envelope for country codes list
+CountryPhoneCodeListResponseEnvelope = create_list_response_serializer(
+    CountryPhoneCodeSerializer, "CountryPhoneCodeListResponse"
+)
