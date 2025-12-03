@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal
 
 from django.db import transaction
@@ -67,6 +68,7 @@ class JobListSerializer(serializers.ModelSerializer):
             "category",
             "city",
             "address",
+            "postal_code",
             "latitude",
             "longitude",
             "status",
@@ -118,6 +120,12 @@ class JobCreateSerializer(serializers.Serializer):
     address = serializers.CharField(
         required=True,
         help_text="Street address",
+    )
+    postal_code = serializers.CharField(
+        max_length=7,
+        required=False,
+        allow_blank=True,
+        help_text="Postal code (e.g., A1A 1A1)",
     )
     latitude = serializers.DecimalField(
         max_digits=9,
@@ -198,6 +206,26 @@ class JobCreateSerializer(serializers.Serializer):
                     f"Image '{image.name}' must be a JPEG or PNG file."
                 )
 
+        return value
+
+    def validate_postal_code(self, value):
+        """Validate Canadian postal code format."""
+        if value:
+            # Remove spaces and convert to uppercase
+            cleaned = value.replace(" ", "").upper()
+            # Canadian postal code format: A1A1A1 (letter-number-letter-number-letter-number)
+            if len(cleaned) != 6:
+                raise serializers.ValidationError(
+                    "Postal code must be 6 characters (e.g., A1A 1A1)."
+                )
+            # Check format: letter-number-letter-number-letter-number
+            pattern = r"^[A-Z]\d[A-Z]\d[A-Z]\d$"
+            if not re.match(pattern, cleaned):
+                raise serializers.ValidationError(
+                    "Invalid postal code format. Must be like A1A 1A1."
+                )
+            # Return formatted value with space
+            return f"{cleaned[:3]} {cleaned[3:]}"
         return value
 
     def validate(self, attrs):

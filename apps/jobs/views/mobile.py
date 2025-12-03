@@ -216,6 +216,7 @@ class JobListCreateView(APIView):
                     "category_id": "123e4567-e89b-12d3-a456-426614174000",
                     "city_id": "123e4567-e89b-12d3-a456-426614174001",
                     "address": "123 Main St, Toronto",
+                    "postal_code": "M5H 2N2",
                     "latitude": 43.651070,
                     "longitude": -79.347015,
                     "status": "open",
