@@ -55,6 +55,7 @@ THIRD_PARTY_APPS = [
     "corsheaders",
     "drf_spectacular",
     "django_filters",
+    "django_jsonform",
     "storages",
 ]
 
@@ -402,11 +403,6 @@ UNFOLD = {
                         "title": "Job Listings",
                         "icon": "work",
                         "link": lambda request: "/admin/jobs/job/",
-                    },
-                    {
-                        "title": "Job Images",
-                        "icon": "image",
-                        "link": lambda request: "/admin/jobs/jobimage/",
                     },
                 ],
             },

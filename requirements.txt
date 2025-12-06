@@ -285,6 +285,7 @@ django==5.2.7 \
     # via
     #   django-cors-headers
     #   django-filter
+    #   django-jsonform
     #   django-storages
     #   django-unfold
     #   djangorestframework
@@ -301,6 +302,10 @@ django-environ==0.12.0 \
 django-filter==25.1 \
     --hash=sha256:1ec9eef48fa8da1c0ac9b411744b16c3f4c31176c867886e4c48da369c407153 \
     --hash=sha256:4fa48677cf5857b9b1347fed23e355ea792464e0fe07244d1fdfb8a806215b80
+    # via solutionbank
+django-jsonform==2.23.2 \
+    --hash=sha256:1b7f94c5a2bd22c844e035a9940a9c8586f7b8fc3346ef2a6a13ba608e0059d7 \
+    --hash=sha256:6fa2ba7c082be51d738e6c66e35075a3cb9ebc2f941e3a477c988900a7fe3269
     # via solutionbank
 django-storages==1.14.6 \
     --hash=sha256:11b7b6200e1cb5ffcd9962bd3673a39c7d6a6109e8096f0e03d46fab3d3aabd9 \
