@@ -66,7 +66,7 @@ class City(BaseModel):
 
 class Job(BaseModel):
     """
-    Job listing model for customers to post jobs.
+    Job listing model for homeowners to post jobs.
     """
 
     STATUS_CHOICES = [
@@ -77,7 +77,7 @@ class Job(BaseModel):
         ("cancelled", "Cancelled"),
     ]
 
-    customer = models.ForeignKey(
+    homeowner = models.ForeignKey(
         "accounts.User", on_delete=models.CASCADE, related_name="jobs"
     )
     title = models.CharField(max_length=200)
@@ -103,7 +103,7 @@ class Job(BaseModel):
         verbose_name = "Job"
         verbose_name_plural = "Jobs"
         indexes = [
-            models.Index(fields=["customer"]),
+            models.Index(fields=["homeowner"]),
             models.Index(fields=["category"]),
             models.Index(fields=["city"]),
             models.Index(fields=["status"]),
@@ -111,7 +111,7 @@ class Job(BaseModel):
         ]
 
     def __str__(self):
-        return f"{self.title} - {self.customer.email}"
+        return f"{self.title} - {self.homeowner.email}"
 
     def clean(self):
         """

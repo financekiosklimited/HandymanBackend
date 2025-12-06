@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from apps.accounts.models import UserRole
 from apps.common.email import email_service
-from apps.profiles.models import CustomerProfile, HandymanProfile
+from apps.profiles.models import HandymanProfile, HomeownerProfile
 
 from .jwt_service import jwt_service
 from .models import (
@@ -35,7 +35,7 @@ class AuthService:
         Args:
             email: User email
             password: User password
-            initial_role: Initial role to create ('handyman' or 'customer')
+            initial_role: Initial role to create ('handyman' or 'homeowner')
             platform: Platform for token generation
 
         Returns:
@@ -135,14 +135,14 @@ class AuthService:
                 user.email_verified_at = timezone.now()
                 user.save()
 
-                # Create default customer role and profile
+                # Create default homeowner role and profile
                 UserRole.objects.create(
                     user=user,
-                    role="customer",
+                    role="homeowner",
                     next_action="none",  # No need to verify email
                 )
 
-                CustomerProfile.objects.create(
+                HomeownerProfile.objects.create(
                     user=user,
                     display_name=email.split("@")[0],  # Default display name
                 )
@@ -376,8 +376,8 @@ class AuthService:
 
     def _create_profile_for_role(self, user, role):
         """Create profile for user role if it doesn't exist."""
-        if role == "customer":
-            CustomerProfile.objects.get_or_create(
+        if role == "homeowner":
+            HomeownerProfile.objects.get_or_create(
                 user=user, defaults={"display_name": user.email.split("@")[0]}
             )
         elif role == "handyman":
@@ -389,8 +389,8 @@ class AuthService:
     def _has_complete_profile(self, user, role):
         """Check if user has a complete profile for the role."""
         try:
-            if role == "customer":
-                profile = user.customer_profile
+            if role == "homeowner":
+                profile = user.homeowner_profile
                 return bool(profile.display_name)
             elif role == "handyman":
                 profile = user.handyman_profile

@@ -77,7 +77,7 @@ class JWTService:
         Args:
             user: User instance
             platform: 'admin', 'web', or 'mobile'
-            active_role: Active role ('admin', 'handyman', 'customer', or None)
+            active_role: Active role ('admin', 'handyman', 'homeowner', or None)
             user_agent: User agent string
             ip_address: Client IP address
 
@@ -155,7 +155,7 @@ class JWTService:
 
         Args:
             user: User instance
-            active_role: Active role ('customer', 'handyman', or None)
+            active_role: Active role ('homeowner', 'handyman', or None)
 
         Returns:
             bool: Whether the phone is verified for the active profile
@@ -163,13 +163,13 @@ class JWTService:
         profile = None
 
         # Get profile based on active role
-        if active_role == "customer":
-            profile = getattr(user, "customer_profile", None)
+        if active_role == "homeowner":
+            profile = getattr(user, "homeowner_profile", None)
         elif active_role == "handyman":
             profile = getattr(user, "handyman_profile", None)
         else:
-            # Fallback: try customer_profile then handyman_profile
-            profile = getattr(user, "customer_profile", None) or getattr(
+            # Fallback: try homeowner_profile then handyman_profile
+            profile = getattr(user, "homeowner_profile", None) or getattr(
                 user, "handyman_profile", None
             )
 

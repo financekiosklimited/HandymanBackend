@@ -31,7 +31,7 @@ class RegisterSerializerTests(TestCase):
         data = {
             "email": "test@example.com",
             "password": "securepass123",
-            "initial_role": "customer",
+            "initial_role": "homeowner",
         }
         serializer = RegisterSerializer(data=data)
 
@@ -95,7 +95,7 @@ class RegisterSerializerTests(TestCase):
 
     def test_initial_role_choices(self):
         """Test initial_role accepts valid choices."""
-        for role in ["handyman", "customer"]:
+        for role in ["handyman", "homeowner"]:
             data = {
                 "email": f"test{role}@example.com",
                 "password": "securepass123",
@@ -175,7 +175,7 @@ class ActivateRoleSerializerTests(TestCase):
 
     def test_serializer_valid_data(self):
         """Test serializer with valid role."""
-        for role in ["handyman", "customer"]:
+        for role in ["handyman", "homeowner"]:
             data = {"role": role}
             serializer = ActivateRoleSerializer(data=data)
 

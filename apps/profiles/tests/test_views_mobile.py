@@ -4,43 +4,43 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import User, UserRole
-from apps.profiles.models import CustomerProfile, HandymanProfile
+from apps.profiles.models import HandymanProfile, HomeownerProfile
 
 
-class MobileCustomerProfileViewTests(APITestCase):
-    """Test cases for mobile CustomerProfileView."""
+class MobileHomeownerProfileViewTests(APITestCase):
+    """Test cases for mobile HomeownerProfileView."""
 
     def setUp(self):
         """Set up test data."""
-        self.url = "/api/v1/mobile/customer/profile"
+        self.url = "/api/v1/mobile/homeowner/profile"
         self.user = User.objects.create_user(
-            email="customer@example.com",
+            email="homeowner@example.com",
             password="testpass123",
         )
-        UserRole.objects.create(user=self.user, role="customer")
+        UserRole.objects.create(user=self.user, role="homeowner")
         self.user.email_verified_at = "2024-01-01T00:00:00Z"
         self.user.save()
         # Mock token payload for permissions
         self.user.token_payload = {
             "plat": "mobile",
-            "active_role": "customer",
-            "roles": ["customer"],
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
             "email_verified": True,
         }
-        self.profile = CustomerProfile.objects.create(
+        self.profile = HomeownerProfile.objects.create(
             user=self.user,
-            display_name="Test Customer",
+            display_name="Test Homeowner",
             phone_number="+1234567890",
             address="123 Main St",
         )
 
     def test_get_profile_success(self):
-        """Test successfully getting customer profile."""
+        """Test successfully getting homeowner profile."""
         self.client.force_authenticate(user=self.user)
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["message"], "Profile retrieved successfully")
-        self.assertEqual(response.data["data"]["display_name"], "Test Customer")
+        self.assertEqual(response.data["data"]["display_name"], "Test Homeowner")
         self.assertEqual(response.data["data"]["phone_number"], "+1234567890")
 
     def test_get_profile_unauthenticated(self):
@@ -49,7 +49,7 @@ class MobileCustomerProfileViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_update_profile_success(self):
-        """Test successfully updating customer profile."""
+        """Test successfully updating homeowner profile."""
         self.client.force_authenticate(user=self.user)
         data = {
             "display_name": "Updated Name",
@@ -67,7 +67,7 @@ class MobileCustomerProfileViewTests(APITestCase):
         self.assertEqual(self.profile.address, "456 Oak Ave")
 
     def test_update_profile_partial(self):
-        """Test partial update of customer profile."""
+        """Test partial update of homeowner profile."""
         self.client.force_authenticate(user=self.user)
         data = {"display_name": "Only Name Updated"}
         response = self.client.put(self.url, data, format="json")

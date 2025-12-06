@@ -17,7 +17,7 @@ class MobileJobCategoryListViewTests(APITestCase):
         """Set up test data."""
         self.url = "/api/v1/mobile/job-categories/"
         self.user = User.objects.create_user(
-            email="customer@example.com",
+            email="homeowner@example.com",
             password="testpass123",
         )
         self.user.email_verified_at = "2024-01-01T00:00:00Z"
@@ -25,8 +25,8 @@ class MobileJobCategoryListViewTests(APITestCase):
         # Mock token payload for permissions
         self.user.token_payload = {
             "plat": "mobile",
-            "active_role": "customer",
-            "roles": ["customer"],
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
             "email_verified": True,
         }
 
@@ -56,7 +56,7 @@ class MobileCityListViewTests(APITestCase):
         """Set up test data."""
         self.url = "/api/v1/mobile/cities/"
         self.user = User.objects.create_user(
-            email="customer@example.com",
+            email="homeowner@example.com",
             password="testpass123",
         )
         self.user.email_verified_at = "2024-01-01T00:00:00Z"
@@ -64,8 +64,8 @@ class MobileCityListViewTests(APITestCase):
         # Mock token payload for permissions
         self.user.token_payload = {
             "plat": "mobile",
-            "active_role": "customer",
-            "roles": ["customer"],
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
             "email_verified": True,
         }
 
@@ -119,19 +119,19 @@ class MobileJobListCreateViewTests(APITestCase):
 
     def setUp(self):
         """Set up test data."""
-        self.url = "/api/v1/mobile/customer/jobs/"
+        self.url = "/api/v1/mobile/homeowner/jobs/"
         self.user = User.objects.create_user(
-            email="customer@example.com",
+            email="homeowner@example.com",
             password="testpass123",
         )
-        UserRole.objects.create(user=self.user, role="customer")
+        UserRole.objects.create(user=self.user, role="homeowner")
         self.user.email_verified_at = "2024-01-01T00:00:00Z"
         self.user.save()
         # Mock token payload for permissions (with phone_verified for POST)
         self.user.token_payload = {
             "plat": "mobile",
-            "active_role": "customer",
-            "roles": ["customer"],
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
             "email_verified": True,
             "phone_verified": True,
         }
@@ -155,10 +155,10 @@ class MobileJobListCreateViewTests(APITestCase):
         )
 
     def test_list_jobs_success(self):
-        """Test successfully listing customer's jobs."""
+        """Test successfully listing homeowner's jobs."""
         # Create jobs for the authenticated user
         Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Fix faucet",
             description="Test",
             estimated_budget=Decimal("50.00"),
@@ -167,7 +167,7 @@ class MobileJobListCreateViewTests(APITestCase):
             address="123 Main St",
         )
         Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Fix door",
             description="Test",
             estimated_budget=Decimal("40.00"),
@@ -178,7 +178,7 @@ class MobileJobListCreateViewTests(APITestCase):
 
         # Create job for another user
         Job.objects.create(
-            customer=self.other_user,
+            homeowner=self.other_user,
             title="Other user job",
             description="Test",
             estimated_budget=Decimal("30.00"),
@@ -201,7 +201,7 @@ class MobileJobListCreateViewTests(APITestCase):
         )
 
         Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Plumbing job",
             description="Test",
             estimated_budget=Decimal("50.00"),
@@ -210,7 +210,7 @@ class MobileJobListCreateViewTests(APITestCase):
             address="123 Main St",
         )
         Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Electrical job",
             description="Test",
             estimated_budget=Decimal("60.00"),
@@ -228,7 +228,7 @@ class MobileJobListCreateViewTests(APITestCase):
     def test_list_jobs_with_status_filter(self):
         """Test listing jobs with status filter."""
         Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Draft job",
             description="Test",
             estimated_budget=Decimal("50.00"),
@@ -238,7 +238,7 @@ class MobileJobListCreateViewTests(APITestCase):
             status="draft",
         )
         Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Open job",
             description="Test",
             estimated_budget=Decimal("60.00"),
@@ -259,7 +259,7 @@ class MobileJobListCreateViewTests(APITestCase):
         # Create 25 jobs
         for i in range(25):
             Job.objects.create(
-                customer=self.user,
+                homeowner=self.user,
                 title=f"Job {i}",
                 description="Test",
                 estimated_budget=Decimal("50.00"),
@@ -299,7 +299,7 @@ class MobileJobListCreateViewTests(APITestCase):
         # Verify in database
         self.assertEqual(Job.objects.count(), 1)
         job = Job.objects.first()
-        self.assertEqual(job.customer, self.user)
+        self.assertEqual(job.homeowner, self.user)
         self.assertEqual(job.title, "Fix leaking faucet")
 
     def test_create_job_with_coordinates(self):
@@ -393,13 +393,13 @@ class MobileJobListCreateViewTests(APITestCase):
             email="nophone@example.com",
             password="testpass123",
         )
-        UserRole.objects.create(user=user_no_phone, role="customer")
+        UserRole.objects.create(user=user_no_phone, role="homeowner")
         user_no_phone.email_verified_at = "2024-01-01T00:00:00Z"
         user_no_phone.save()
         user_no_phone.token_payload = {
             "plat": "mobile",
-            "active_role": "customer",
-            "roles": ["customer"],
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
             "email_verified": True,
             "phone_verified": False,
         }
@@ -425,17 +425,17 @@ class MobileJobDetailViewTests(APITestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            email="customer@example.com",
+            email="homeowner@example.com",
             password="testpass123",
         )
-        UserRole.objects.create(user=self.user, role="customer")
+        UserRole.objects.create(user=self.user, role="homeowner")
         self.user.email_verified_at = "2024-01-01T00:00:00Z"
         self.user.save()
         # Mock token payload for permissions
         self.user.token_payload = {
             "plat": "mobile",
-            "active_role": "customer",
-            "roles": ["customer"],
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
             "email_verified": True,
         }
 
@@ -459,7 +459,7 @@ class MobileJobDetailViewTests(APITestCase):
 
         # Create test job
         self.job = Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Fix leaking faucet",
             description="Kitchen faucet is leaking",
             estimated_budget=Decimal("50.00"),
@@ -468,7 +468,7 @@ class MobileJobDetailViewTests(APITestCase):
             address="123 Main St",
         )
 
-        self.url = f"/api/v1/mobile/customer/jobs/{self.job.public_id}/"
+        self.url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/"
 
     def test_get_job_detail_success(self):
         """Test successfully getting job detail."""
@@ -482,7 +482,7 @@ class MobileJobDetailViewTests(APITestCase):
         """Test getting job detail that doesn't belong to user fails."""
         # Create job for other user
         other_job = Job.objects.create(
-            customer=self.other_user,
+            homeowner=self.other_user,
             title="Other user job",
             description="Test",
             estimated_budget=Decimal("30.00"),
@@ -493,7 +493,7 @@ class MobileJobDetailViewTests(APITestCase):
 
         self.client.force_authenticate(user=self.user)
         response = self.client.get(
-            f"/api/v1/mobile/customer/jobs/{other_job.public_id}/"
+            f"/api/v1/mobile/homeowner/jobs/{other_job.public_id}/"
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
@@ -501,7 +501,7 @@ class MobileJobDetailViewTests(APITestCase):
         """Test getting non-existent job returns 404."""
         self.client.force_authenticate(user=self.user)
         response = self.client.get(
-            "/api/v1/mobile/customer/jobs/00000000-0000-0000-0000-000000000000/"
+            "/api/v1/mobile/homeowner/jobs/00000000-0000-0000-0000-000000000000/"
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 

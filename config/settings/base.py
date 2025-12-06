@@ -275,12 +275,12 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": """
     Authentication: JWT Bearer Token with RS256 signatures
     Platform Support: Web and Mobile platforms with separate endpoints
-    Role-based Access: Customer, Handyman, and Admin roles with guards
+    Role-based Access: Homeowner, Handyman, and Admin roles with guards
 
     Getting Started:
     1. Register a new account via /auth/register
     2. Verify email using the 6-digit code sent to your inbox
-    3. Activate role (customer or handyman) via /auth/activate-role
+    3. Activate role (homeowner or handyman) via /auth/activate-role
     4. Access profiles and other protected endpoints
 
     Using Authentication:
@@ -294,6 +294,9 @@ SPECTACULAR_SETTINGS = {
     "SCHEMA_PATH_PREFIX": "/api/v1/",
     "COMPONENT_SPLIT_REQUEST": True,
     "SECURITY": [{"bearerAuth": []}],
+    "ENUM_NAME_OVERRIDES": {
+        "InitialRoleEnum": "apps.authn.serializers.RegisterSerializer.initial_role",
+    },
     "SWAGGER_UI_SETTINGS": {
         "deepLinking": True,
         "persistAuthorization": True,
@@ -369,9 +372,9 @@ UNFOLD = {
                 "separator": True,
                 "items": [
                     {
-                        "title": "Customer Profiles",
+                        "title": "Homeowner Profiles",
                         "icon": "person_outline",
-                        "link": lambda request: "/admin/profiles/customerprofile/",
+                        "link": lambda request: "/admin/profiles/homeownerprofile/",
                     },
                     {
                         "title": "Handyman Profiles",

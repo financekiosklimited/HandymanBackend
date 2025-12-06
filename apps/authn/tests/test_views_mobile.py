@@ -10,7 +10,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from apps.authn.twilio_service import VerificationResult
 from apps.authn.views import mobile as mobile_views
-from apps.profiles.models import CustomerProfile
+from apps.profiles.models import HomeownerProfile
 
 User = get_user_model()
 
@@ -35,7 +35,7 @@ class MobileRegisterViewTests(TestCase):
         data = {
             "email": "new@example.com",
             "password": "Complex123!",
-            "initial_role": "customer",
+            "initial_role": "homeowner",
         }
         request = self.factory.post("/auth/register", data, format="json")
         serializer = make_serializer(validated_data=data)
@@ -325,7 +325,7 @@ class MobileActivateRoleViewTests(TestCase):
         )
 
     def test_activate_role_success(self):
-        data = {"role": "customer"}
+        data = {"role": "homeowner"}
         request = self.factory.post("/auth/activate-role", data, format="json")
         force_authenticate(request, user=self.user)
         serializer = make_serializer(validated_data=data)
@@ -337,7 +337,7 @@ class MobileActivateRoleViewTests(TestCase):
             ),
             patch(
                 "apps.authn.views.mobile.auth_service.activate_role",
-                return_value={"role": "customer", "email_verified": True},
+                return_value={"role": "homeowner", "email_verified": True},
             ),
             patch(
                 "apps.authn.views.mobile.jwt_service.create_token_pair",
@@ -356,7 +356,7 @@ class MobileActivateRoleViewTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         payload = response.data["data"]
-        self.assertEqual(payload["active_role"], "customer")
+        self.assertEqual(payload["active_role"], "homeowner")
         self.assertEqual(payload["next_action"], "none")
 
     def test_activate_role_invalid_serializer(self):
@@ -1026,8 +1026,8 @@ class MobilePhoneVerifyViewTests(TestCase):
         )
 
     def test_phone_verify_success(self):
-        # Create a real CustomerProfile for the user
-        profile = CustomerProfile.objects.create(
+        # Create a real HomeownerProfile for the user
+        profile = HomeownerProfile.objects.create(
             user=self.user,
             display_name="Test User",
             phone_number="",

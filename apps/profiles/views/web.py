@@ -17,18 +17,18 @@ from apps.common.responses import (
     validation_error_response,
 )
 
-from ..models import CustomerProfile, HandymanProfile
+from ..models import HandymanProfile, HomeownerProfile
 from ..serializers import (
-    CustomerProfileResponseSerializer,
-    CustomerProfileSerializer,
-    CustomerProfileUpdateSerializer,
     HandymanProfileResponseSerializer,
     HandymanProfileSerializer,
     HandymanProfileUpdateSerializer,
+    HomeownerProfileResponseSerializer,
+    HomeownerProfileSerializer,
+    HomeownerProfileUpdateSerializer,
 )
 
 
-class CustomerProfileView(APIView):
+class HomeownerProfileView(APIView):
     permission_classes = [
         IsAuthenticated,
         PlatformGuardPermission,
@@ -37,40 +37,40 @@ class CustomerProfileView(APIView):
     ]
 
     @extend_schema(
-        responses={200: CustomerProfileResponseSerializer},
-        description="Get customer profile information for web app. Requires authenticated user with customer role and verified email.",
-        summary="Get customer profile",
-        tags=["Web Customer Profile"],
+        responses={200: HomeownerProfileResponseSerializer},
+        description="Get homeowner profile information for web app. Requires authenticated user with homeowner role and verified email.",
+        summary="Get homeowner profile",
+        tags=["Web Homeowner Profile"],
     )
     def get(self, request):
-        """Get customer profile."""
+        """Get homeowner profile."""
         try:
-            profile = request.user.customer_profile
-            serializer = CustomerProfileSerializer(profile)
+            profile = request.user.homeowner_profile
+            serializer = HomeownerProfileSerializer(profile)
             return success_response(
                 serializer.data, message="Profile retrieved successfully"
             )
-        except CustomerProfile.DoesNotExist:
+        except HomeownerProfile.DoesNotExist:
             return not_found_response("Profile not found")
 
     @extend_schema(
-        request=CustomerProfileUpdateSerializer,
-        responses={200: CustomerProfileResponseSerializer},
-        description="Update customer profile information via web app. All fields are optional and will only update provided values.",
-        summary="Update customer profile",
-        tags=["Web Customer Profile"],
+        request=HomeownerProfileUpdateSerializer,
+        responses={200: HomeownerProfileResponseSerializer},
+        description="Update homeowner profile information via web app. All fields are optional and will only update provided values.",
+        summary="Update homeowner profile",
+        tags=["Web Homeowner Profile"],
     )
     def put(self, request):
-        """Update customer profile."""
+        """Update homeowner profile."""
         try:
-            profile = request.user.customer_profile
-        except CustomerProfile.DoesNotExist:
+            profile = request.user.homeowner_profile
+        except HomeownerProfile.DoesNotExist:
             return not_found_response("Profile not found")
 
-        serializer = CustomerProfileUpdateSerializer(profile, data=request.data)
+        serializer = HomeownerProfileUpdateSerializer(profile, data=request.data)
         if serializer.is_valid():
             serializer.save()
-            response_serializer = CustomerProfileSerializer(profile)
+            response_serializer = HomeownerProfileSerializer(profile)
             return success_response(
                 response_serializer.data, message="Profile updated successfully"
             )

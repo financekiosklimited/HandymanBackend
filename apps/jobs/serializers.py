@@ -107,7 +107,7 @@ class JobCreateSerializer(serializers.Serializer):
         decimal_places=2,
         required=True,
         coerce_to_string=False,
-        help_text="Budget customer is willing to pay",
+        help_text="Budget homeowner is willing to pay",
     )
     category_id = serializers.UUIDField(
         required=True,
@@ -260,13 +260,13 @@ class JobCreateSerializer(serializers.Serializer):
         city = validated_data.pop("city_id")
         images = validated_data.pop("images", [])
 
-        # Get customer from context
-        customer = self.context["request"].user
+        # Get homeowner from context
+        homeowner = self.context["request"].user
 
         # Create job and images in a transaction
         with transaction.atomic():
             job = Job.objects.create(
-                customer=customer,
+                homeowner=homeowner,
                 category=category,
                 city=city,
                 **validated_data,

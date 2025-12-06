@@ -112,7 +112,7 @@ class RoleGuardPermission(permissions.BasePermission):
         path_parts = path.strip("/").split("/")
         if len(path_parts) >= 4 and path_parts[0] == "api" and path_parts[1] == "v1":
             role = path_parts[3]
-            if role in ["customer", "handyman", "admin"]:
+            if role in ["homeowner", "handyman", "admin"]:
                 return role
         return None
 

@@ -6,11 +6,11 @@ from django.db import models
 class WaitlistEntry(models.Model):
     """Represents a user who has joined the waitlist."""
 
-    CUSTOMER = "customer"
+    HOMEOWNER = "homeowner"
     HANDYMAN = "handyman"
 
     USER_TYPE_CHOICES = [
-        (CUSTOMER, "Customer"),
+        (HOMEOWNER, "Homeowner"),
         (HANDYMAN, "Handyman"),
     ]
 

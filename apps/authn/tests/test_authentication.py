@@ -75,12 +75,12 @@ class JWTAuthenticationTests(TestCase):
         self.user.email_verified_at = datetime.now(UTC)
         self.user.save()
 
-        UserRole.objects.create(user=self.user, role="customer")
+        UserRole.objects.create(user=self.user, role="homeowner")
 
     def test_authenticate_valid_token(self):
         """Test authentication with valid token."""
         tokens = jwt_service.create_token_pair(
-            user=self.user, platform="web", active_role="customer"
+            user=self.user, platform="web", active_role="homeowner"
         )
 
         request = self.factory.get("/api/v1/test/")
@@ -164,7 +164,7 @@ class JWTAuthenticationTests(TestCase):
     def test_token_payload_attached_to_user(self):
         """Test token payload is attached to user object."""
         tokens = jwt_service.create_token_pair(
-            user=self.user, platform="web", active_role="customer"
+            user=self.user, platform="web", active_role="homeowner"
         )
 
         request = self.factory.get("/api/v1/test/")
@@ -173,7 +173,7 @@ class JWTAuthenticationTests(TestCase):
         user, _ = self.auth.authenticate(request)
 
         self.assertTrue(hasattr(user, "token_payload"))
-        self.assertEqual(user.token_payload["active_role"], "customer")
+        self.assertEqual(user.token_payload["active_role"], "homeowner")
 
 
 @override_settings(
@@ -272,19 +272,19 @@ class RoleGuardPermissionTests(TestCase):
             email="test@example.com",
             password="testpass123",
         )
-        UserRole.objects.create(user=self.user, role="customer")
+        UserRole.objects.create(user=self.user, role="homeowner")
         UserRole.objects.create(user=self.user, role="handyman")
 
     def test_role_matches(self):
         """Test permission granted when role matches."""
         tokens = jwt_service.create_token_pair(
-            user=self.user, platform="web", active_role="customer"
+            user=self.user, platform="web", active_role="homeowner"
         )
 
         payload = jwt_service.decode_token(tokens["access_token"])
         self.user.token_payload = payload
 
-        request = self.factory.get("/api/v1/web/customer/profile/")
+        request = self.factory.get("/api/v1/web/homeowner/profile/")
         request.user = self.user
 
         self.assertTrue(self.permission.has_permission(request, None))
@@ -292,7 +292,7 @@ class RoleGuardPermissionTests(TestCase):
     def test_role_mismatch(self):
         """Test permission denied when active role doesn't match URL role."""
         tokens = jwt_service.create_token_pair(
-            user=self.user, platform="web", active_role="customer"
+            user=self.user, platform="web", active_role="homeowner"
         )
 
         payload = jwt_service.decode_token(tokens["access_token"])
@@ -324,7 +324,7 @@ class RoleGuardPermissionTests(TestCase):
     def test_no_role_in_url(self):
         """Test permission granted when no role in URL."""
         tokens = jwt_service.create_token_pair(
-            user=self.user, platform="web", active_role="customer"
+            user=self.user, platform="web", active_role="homeowner"
         )
 
         payload = jwt_service.decode_token(tokens["access_token"])
@@ -337,14 +337,14 @@ class RoleGuardPermissionTests(TestCase):
 
     def test_unauthenticated_user(self):
         """Test permission denied for unauthenticated user."""
-        request = self.factory.get("/api/v1/web/customer/profile/")
+        request = self.factory.get("/api/v1/web/homeowner/profile/")
         request.user = None
 
         self.assertFalse(self.permission.has_permission(request, None))
 
     def test_missing_token_payload(self):
         """Permission denied when token payload missing."""
-        request = self.factory.get("/api/v1/web/customer/profile/")
+        request = self.factory.get("/api/v1/web/homeowner/profile/")
         request.user = self.user
 
         if hasattr(self.user, "token_payload"):
@@ -367,7 +367,7 @@ class RoleGuardPermissionTests(TestCase):
 
     def test_extract_role_short_path(self):
         """Paths without expected segments return None."""
-        self.assertIsNone(self.permission._extract_role_from_url("/web/customer"))
+        self.assertIsNone(self.permission._extract_role_from_url("/web/homeowner"))
 
 
 @override_settings(
@@ -451,12 +451,12 @@ class ActiveRoleRequiredPermissionTests(TestCase):
             email="test@example.com",
             password="testpass123",
         )
-        UserRole.objects.create(user=self.user, role="customer")
+        UserRole.objects.create(user=self.user, role="homeowner")
 
     def test_active_role_present(self):
         """Test permission granted when active role is present."""
         tokens = jwt_service.create_token_pair(
-            user=self.user, platform="web", active_role="customer"
+            user=self.user, platform="web", active_role="homeowner"
         )
 
         payload = jwt_service.decode_token(tokens["access_token"])

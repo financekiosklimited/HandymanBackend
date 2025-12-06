@@ -6,7 +6,7 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
-from .models import CustomerProfile, HandymanProfile
+from .models import HandymanProfile, HomeownerProfile
 
 
 @admin.register(HandymanProfile)
@@ -42,10 +42,10 @@ class HandymanProfileAdmin(ModelAdmin):
         return "No rating"
 
 
-@admin.register(CustomerProfile)
-class CustomerProfileAdmin(ModelAdmin):
+@admin.register(HomeownerProfile)
+class HomeownerProfileAdmin(ModelAdmin):
     """
-    Admin interface for CustomerProfile model with Unfold styling.
+    Admin interface for HomeownerProfile model with Unfold styling.
     """
 
     list_display = ("user", "display_name", "phone_number", "created_at")

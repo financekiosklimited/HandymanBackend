@@ -14,7 +14,7 @@ class WaitlistEntrySerializerTests(TestCase):
         data = {
             "user_name": "John Doe",
             "email": "john@example.com",
-            "user_type": WaitlistEntry.CUSTOMER,
+            "user_type": WaitlistEntry.HOMEOWNER,
         }
         serializer = WaitlistEntrySerializer(data=data)
         self.assertTrue(serializer.is_valid())
@@ -32,7 +32,7 @@ class WaitlistEntrySerializerTests(TestCase):
         data = {
             "user_name": "John Doe",
             "email": "invalid-email",
-            "user_type": WaitlistEntry.CUSTOMER,
+            "user_type": WaitlistEntry.HOMEOWNER,
         }
         serializer = WaitlistEntrySerializer(data=data)
         self.assertFalse(serializer.is_valid())
@@ -54,7 +54,7 @@ class WaitlistEntrySerializerTests(TestCase):
         data = {
             "user_name": "John Doe",
             "email": "john@example.com",
-            "user_type": WaitlistEntry.CUSTOMER,
+            "user_type": WaitlistEntry.HOMEOWNER,
         }
         serializer = WaitlistEntrySerializer(data=data)
         self.assertTrue(serializer.is_valid())
@@ -69,7 +69,7 @@ class WaitlistEntrySerializerTests(TestCase):
         initial_data = {
             "user_name": "John Doe",
             "email": "john@example.com",
-            "user_type": WaitlistEntry.CUSTOMER,
+            "user_type": WaitlistEntry.HOMEOWNER,
         }
         serializer1 = WaitlistEntrySerializer(data=initial_data)
         self.assertTrue(serializer1.is_valid())
@@ -93,7 +93,7 @@ class WaitlistEntrySerializerTests(TestCase):
             "id": 999,
             "user_name": "John Doe",
             "email": "john@example.com",
-            "user_type": WaitlistEntry.CUSTOMER,
+            "user_type": WaitlistEntry.HOMEOWNER,
             "created_at": "2020-01-01T00:00:00Z",
             "updated_at": "2020-01-01T00:00:00Z",
         }

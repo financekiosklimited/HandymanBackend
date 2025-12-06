@@ -5,18 +5,18 @@ Serializers for profile endpoints.
 from rest_framework import serializers
 
 from apps.common.serializers import create_response_serializer
-from apps.profiles.models import CustomerProfile, HandymanProfile
+from apps.profiles.models import HandymanProfile, HomeownerProfile
 
 
-class CustomerProfileSerializer(serializers.ModelSerializer):
+class HomeownerProfileSerializer(serializers.ModelSerializer):
     """
-    Serializer for customer profile.
+    Serializer for homeowner profile.
     """
 
     is_phone_verified = serializers.BooleanField(read_only=True)
 
     class Meta:
-        model = CustomerProfile
+        model = HomeownerProfile
         fields = [
             "display_name",
             "phone_number",
@@ -34,14 +34,14 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
         ]
 
 
-class CustomerProfileUpdateSerializer(serializers.ModelSerializer):
+class HomeownerProfileUpdateSerializer(serializers.ModelSerializer):
     """
-    Serializer for updating customer profile.
+    Serializer for updating homeowner profile.
     Resets phone_verified_at when phone_number changes.
     """
 
     class Meta:
-        model = CustomerProfile
+        model = HomeownerProfile
         fields = ["display_name", "phone_number", "address"]
 
     def update(self, instance, validated_data):
@@ -100,8 +100,8 @@ class HandymanProfileUpdateSerializer(serializers.ModelSerializer):
 
 
 # Response serializers with envelope format
-CustomerProfileResponseSerializer = create_response_serializer(
-    CustomerProfileSerializer, "CustomerProfileResponse"
+HomeownerProfileResponseSerializer = create_response_serializer(
+    HomeownerProfileSerializer, "HomeownerProfileResponse"
 )
 
 HandymanProfileResponseSerializer = create_response_serializer(

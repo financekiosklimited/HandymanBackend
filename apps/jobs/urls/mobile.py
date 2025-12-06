@@ -14,15 +14,15 @@ urlpatterns = [
         mobile_views.CityListView.as_view(),
         name="mobile_cities",
     ),
-    # Customer job endpoints
+    # Homeowner job endpoints
     path(
-        "customer/jobs/",
+        "homeowner/jobs/",
         mobile_views.JobListCreateView.as_view(),
-        name="mobile_customer_jobs",
+        name="mobile_homeowner_jobs",
     ),
     path(
-        "customer/jobs/<uuid:public_id>/",
+        "homeowner/jobs/<uuid:public_id>/",
         mobile_views.JobDetailView.as_view(),
-        name="mobile_customer_job_detail",
+        name="mobile_homeowner_job_detail",
     ),
 ]

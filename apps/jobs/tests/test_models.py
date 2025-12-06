@@ -128,7 +128,7 @@ class JobModelTests(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            email="customer@example.com",
+            email="homeowner@example.com",
             password="testpass123",
         )
         self.category = JobCategory.objects.create(
@@ -145,7 +145,7 @@ class JobModelTests(TestCase):
     def test_create_job_success(self):
         """Test creating a job."""
         job = Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Fix leaking faucet",
             description="Kitchen faucet is leaking",
             estimated_budget=Decimal("50.00"),
@@ -157,7 +157,7 @@ class JobModelTests(TestCase):
             status="open",
         )
         self.assertEqual(job.title, "Fix leaking faucet")
-        self.assertEqual(job.customer, self.user)
+        self.assertEqual(job.homeowner, self.user)
         self.assertEqual(job.category, self.category)
         self.assertEqual(job.city, self.city)
         self.assertEqual(job.status, "open")
@@ -166,7 +166,7 @@ class JobModelTests(TestCase):
     def test_job_string_representation(self):
         """Test job string representation."""
         job = Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Fix door",
             description="Broken door",
             estimated_budget=Decimal("40.00"),
@@ -174,12 +174,12 @@ class JobModelTests(TestCase):
             city=self.city,
             address="123 Main St",
         )
-        self.assertEqual(str(job), "Fix door - customer@example.com")
+        self.assertEqual(str(job), "Fix door - homeowner@example.com")
 
     def test_job_default_status(self):
         """Test job default status is draft."""
         job = Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Test",
             description="Test",
             estimated_budget=Decimal("50.00"),
@@ -193,7 +193,7 @@ class JobModelTests(TestCase):
         """Test job budget must be positive."""
         with self.assertRaises(ValidationError):
             job = Job(
-                customer=self.user,
+                homeowner=self.user,
                 title="Test",
                 description="Test",
                 estimated_budget=Decimal("-10.00"),
@@ -210,7 +210,7 @@ class JobModelTests(TestCase):
         )
         with self.assertRaises(ValidationError):
             job = Job(
-                customer=self.user,
+                homeowner=self.user,
                 title="Test",
                 description="Test",
                 estimated_budget=Decimal("50.00"),
@@ -231,7 +231,7 @@ class JobModelTests(TestCase):
         )
         with self.assertRaises(ValidationError):
             job = Job(
-                customer=self.user,
+                homeowner=self.user,
                 title="Test",
                 description="Test",
                 estimated_budget=Decimal("50.00"),
@@ -245,7 +245,7 @@ class JobModelTests(TestCase):
         """Test job cannot have latitude without longitude."""
         with self.assertRaises(ValidationError):
             job = Job(
-                customer=self.user,
+                homeowner=self.user,
                 title="Test",
                 description="Test",
                 estimated_budget=Decimal("50.00"),
@@ -260,7 +260,7 @@ class JobModelTests(TestCase):
         """Test job cannot have longitude without latitude."""
         with self.assertRaises(ValidationError):
             job = Job(
-                customer=self.user,
+                homeowner=self.user,
                 title="Test",
                 description="Test",
                 estimated_budget=Decimal("50.00"),
@@ -275,7 +275,7 @@ class JobModelTests(TestCase):
         """Test job latitude must be between -90 and 90."""
         with self.assertRaises(ValidationError):
             job = Job(
-                customer=self.user,
+                homeowner=self.user,
                 title="Test",
                 description="Test",
                 estimated_budget=Decimal("50.00"),
@@ -291,7 +291,7 @@ class JobModelTests(TestCase):
         """Test job longitude must be between -180 and 180."""
         with self.assertRaises(ValidationError):
             job = Job(
-                customer=self.user,
+                homeowner=self.user,
                 title="Test",
                 description="Test",
                 estimated_budget=Decimal("50.00"),
@@ -304,9 +304,9 @@ class JobModelTests(TestCase):
             job.save()
 
     def test_job_cascade_delete_with_customer(self):
-        """Test job is deleted when customer is deleted."""
+        """Test job is deleted when homeowner is deleted."""
         job = Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Test",
             description="Test",
             estimated_budget=Decimal("50.00"),
@@ -321,7 +321,7 @@ class JobModelTests(TestCase):
     def test_job_ordering(self):
         """Test jobs are ordered by created_at descending."""
         job1 = Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="First",
             description="Test",
             estimated_budget=Decimal("50.00"),
@@ -330,7 +330,7 @@ class JobModelTests(TestCase):
             address="123 Main St",
         )
         job2 = Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Second",
             description="Test",
             estimated_budget=Decimal("50.00"),
@@ -350,7 +350,7 @@ class JobImageModelTests(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            email="customer@example.com",
+            email="homeowner@example.com",
             password="testpass123",
         )
         self.category = JobCategory.objects.create(
@@ -364,7 +364,7 @@ class JobImageModelTests(TestCase):
             is_active=True,
         )
         self.job = Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Test",
             description="Test",
             estimated_budget=Decimal("50.00"),

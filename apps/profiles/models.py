@@ -34,13 +34,13 @@ class HandymanProfile(BaseModel):
         return self.phone_verified_at is not None
 
 
-class CustomerProfile(BaseModel):
+class HomeownerProfile(BaseModel):
     """
-    Profile for customer users.
+    Profile for homeowner users.
     """
 
     user = models.OneToOneField(
-        "accounts.User", on_delete=models.CASCADE, related_name="customer_profile"
+        "accounts.User", on_delete=models.CASCADE, related_name="homeowner_profile"
     )
     display_name = models.CharField(max_length=100)
     phone_number = models.CharField(max_length=20, blank=True)
@@ -48,11 +48,11 @@ class CustomerProfile(BaseModel):
     address = models.TextField(blank=True)
 
     class Meta:
-        db_table = "customer_profiles"
+        db_table = "homeowner_profiles"
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"Customer: {self.display_name}"
+        return f"Homeowner: {self.display_name}"
 
     @property
     def is_phone_verified(self):

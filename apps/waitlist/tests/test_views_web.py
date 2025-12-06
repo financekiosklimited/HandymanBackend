@@ -13,12 +13,12 @@ class WaitlistSignupViewTests(APITestCase):
         """Set up test data."""
         self.url = "/api/v1/web/waitlist/"
 
-    def test_signup_success_customer(self):
-        """Test successful signup for customer."""
+    def test_signup_success_homeowner(self):
+        """Test successful signup for homeowner."""
         data = {
             "user_name": "John Doe",
             "email": "john@example.com",
-            "user_type": "customer",
+            "user_type": "homeowner",
         }
         response = self.client.post(self.url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -30,7 +30,7 @@ class WaitlistSignupViewTests(APITestCase):
         entry = WaitlistEntry.objects.first()
         self.assertEqual(entry.user_name, "John Doe")
         self.assertEqual(entry.email, "john@example.com")
-        self.assertEqual(entry.user_type, "customer")
+        self.assertEqual(entry.user_type, "homeowner")
 
     def test_signup_success_handyman(self):
         """Test successful signup for handyman."""
@@ -52,7 +52,7 @@ class WaitlistSignupViewTests(APITestCase):
         data = {
             "user_name": "John Doe",
             "email": "john@example.com",
-            "user_type": "customer",
+            "user_type": "homeowner",
         }
         # First signup
         response1 = self.client.post(self.url, data, format="json")
@@ -70,7 +70,7 @@ class WaitlistSignupViewTests(APITestCase):
         """Test signup fails with missing user_name."""
         data = {
             "email": "john@example.com",
-            "user_type": "customer",
+            "user_type": "homeowner",
         }
         response = self.client.post(self.url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -81,7 +81,7 @@ class WaitlistSignupViewTests(APITestCase):
         """Test signup fails with missing email."""
         data = {
             "user_name": "John Doe",
-            "user_type": "customer",
+            "user_type": "homeowner",
         }
         response = self.client.post(self.url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -102,7 +102,7 @@ class WaitlistSignupViewTests(APITestCase):
         data = {
             "user_name": "John Doe",
             "email": "not-an-email",
-            "user_type": "customer",
+            "user_type": "homeowner",
         }
         response = self.client.post(self.url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -124,7 +124,7 @@ class WaitlistSignupViewTests(APITestCase):
         data = {
             "user_name": "John Doe",
             "email": "john@example.com",
-            "user_type": "customer",
+            "user_type": "homeowner",
         }
         # APITestCase client is not authenticated by default
         response = self.client.post(self.url, data, format="json")
@@ -136,7 +136,7 @@ class WaitlistSignupViewTests(APITestCase):
         data = {
             "user_name": "",
             "email": "john@example.com",
-            "user_type": "customer",
+            "user_type": "homeowner",
         }
         response = self.client.post(self.url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -147,7 +147,7 @@ class WaitlistSignupViewTests(APITestCase):
         data = {
             "user_name": "A" * 255,  # Exactly at the limit
             "email": "john@example.com",
-            "user_type": "customer",
+            "user_type": "homeowner",
         }
         response = self.client.post(self.url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -157,7 +157,7 @@ class WaitlistSignupViewTests(APITestCase):
         data = {
             "user_name": "A" * 256,  # One character over the limit
             "email": "john@example.com",
-            "user_type": "customer",
+            "user_type": "homeowner",
         }
         response = self.client.post(self.url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

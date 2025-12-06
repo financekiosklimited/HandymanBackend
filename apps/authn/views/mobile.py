@@ -657,19 +657,19 @@ class PhoneVerifyView(APIView):
 
                 # Get the active profile based on active_role
                 if hasattr(user, "active_role") and user.active_role:
-                    if user.active_role == "customer" and hasattr(
-                        user, "customer_profile"
+                    if user.active_role == "homeowner" and hasattr(
+                        user, "homeowner_profile"
                     ):
-                        profile = user.customer_profile
+                        profile = user.homeowner_profile
                     elif user.active_role == "handyman" and hasattr(
                         user, "handyman_profile"
                     ):
                         profile = user.handyman_profile
 
-                # Fallback: try customer_profile then handyman_profile
+                # Fallback: try homeowner_profile then handyman_profile
                 if profile is None:
-                    if hasattr(user, "customer_profile"):
-                        profile = user.customer_profile
+                    if hasattr(user, "homeowner_profile"):
+                        profile = user.homeowner_profile
                     elif hasattr(user, "handyman_profile"):
                         profile = user.handyman_profile
 

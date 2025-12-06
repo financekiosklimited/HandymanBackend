@@ -74,7 +74,7 @@ class JWTServiceTests(TestCase):
         self.user.email_verified_at = datetime.now(UTC)
         self.user.save()
 
-        UserRole.objects.create(user=self.user, role="customer")
+        UserRole.objects.create(user=self.user, role="homeowner")
         UserRole.objects.create(user=self.user, role="handyman")
 
         self.jwt_service = JWTService()
@@ -82,7 +82,7 @@ class JWTServiceTests(TestCase):
     def test_create_token_pair(self):
         """Test creating access and refresh token pair."""
         tokens = self.jwt_service.create_token_pair(
-            user=self.user, platform="web", active_role="customer"
+            user=self.user, platform="web", active_role="homeowner"
         )
 
         self.assertIn("access_token", tokens)
@@ -93,7 +93,7 @@ class JWTServiceTests(TestCase):
     def test_access_token_payload(self):
         """Test access token contains correct payload."""
         tokens = self.jwt_service.create_token_pair(
-            user=self.user, platform="web", active_role="customer"
+            user=self.user, platform="web", active_role="homeowner"
         )
 
         payload = self.jwt_service.decode_token(tokens["access_token"])
@@ -101,9 +101,9 @@ class JWTServiceTests(TestCase):
         self.assertEqual(payload["type"], "access")
         self.assertEqual(payload["sub"], str(self.user.public_id))
         self.assertEqual(payload["plat"], "web")
-        self.assertEqual(payload["active_role"], "customer")
+        self.assertEqual(payload["active_role"], "homeowner")
         self.assertEqual(payload["email_verified"], True)
-        self.assertIn("customer", payload["roles"])
+        self.assertIn("homeowner", payload["roles"])
         self.assertIn("handyman", payload["roles"])
         self.assertIn("jti", payload)
         self.assertIn("iat", payload)
@@ -112,7 +112,7 @@ class JWTServiceTests(TestCase):
     def test_refresh_token_payload(self):
         """Test refresh token contains correct payload."""
         tokens = self.jwt_service.create_token_pair(
-            user=self.user, platform="web", active_role="customer"
+            user=self.user, platform="web", active_role="homeowner"
         )
 
         payload = self.jwt_service.decode_token(tokens["refresh_token"])
@@ -126,7 +126,7 @@ class JWTServiceTests(TestCase):
     def test_tokens_share_same_jti(self):
         """Test access and refresh tokens share the same JTI."""
         tokens = self.jwt_service.create_token_pair(
-            user=self.user, platform="web", active_role="customer"
+            user=self.user, platform="web", active_role="homeowner"
         )
 
         access_payload = self.jwt_service.decode_token(tokens["access_token"])
@@ -139,7 +139,7 @@ class JWTServiceTests(TestCase):
         tokens = self.jwt_service.create_token_pair(
             user=self.user,
             platform="web",
-            active_role="customer",
+            active_role="homeowner",
             user_agent="Mozilla/5.0",
             ip_address="192.168.1.1",
         )
@@ -194,7 +194,7 @@ class JWTServiceTests(TestCase):
         """Test refreshing token pair."""
         # Create initial tokens
         tokens = self.jwt_service.create_token_pair(
-            user=self.user, platform="web", active_role="customer"
+            user=self.user, platform="web", active_role="homeowner"
         )
 
         # Refresh tokens
@@ -213,12 +213,12 @@ class JWTServiceTests(TestCase):
     def test_refresh_preserves_active_role(self):
         """Test refreshing preserves active role if user still has it."""
         tokens = self.jwt_service.create_token_pair(
-            user=self.user, platform="web", active_role="customer"
+            user=self.user, platform="web", active_role="homeowner"
         )
 
         # Verify the original access token has the active role
         access_payload = self.jwt_service.decode_token(tokens["access_token"])
-        self.assertEqual(access_payload["active_role"], "customer")
+        self.assertEqual(access_payload["active_role"], "homeowner")
 
         new_tokens = self.jwt_service.refresh_token_pair(
             refresh_token=tokens["refresh_token"], platform="web"
@@ -426,7 +426,7 @@ class JWTServiceTests(TestCase):
 
     def test_refresh_clears_missing_active_role(self):
         """Refresh drops active role when user no longer has it."""
-        payload = {"type": "refresh", "jti": "abc", "active_role": "customer"}
+        payload = {"type": "refresh", "jti": "abc", "active_role": "homeowner"}
         session = MagicMock()
         session.platform = "web"
         session.user = SimpleNamespace(has_role=lambda role: False)

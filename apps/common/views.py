@@ -12,9 +12,16 @@ from .responses import success_response
 from .serializers import (
     CountryPhoneCodeListResponseEnvelope,
     CountryPhoneCodeSerializer,
+    ResponseEnvelopeSerializer,
 )
 
 
+@extend_schema(
+    summary="Health check",
+    description="Health check endpoint for deployment monitoring.",
+    tags=["Common"],
+    responses={200: ResponseEnvelopeSerializer},
+)
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def health_check(request):

@@ -8,16 +8,16 @@ from apps.waitlist.models import WaitlistEntry
 class WaitlistEntryModelTests(TestCase):
     """Test cases for WaitlistEntry model."""
 
-    def test_create_customer_entry(self):
-        """Test creating a customer waitlist entry."""
+    def test_create_homeowner_entry(self):
+        """Test creating a homeowner waitlist entry."""
         entry = WaitlistEntry.objects.create(
             user_name="John Doe",
             email="john@example.com",
-            user_type=WaitlistEntry.CUSTOMER,
+            user_type=WaitlistEntry.HOMEOWNER,
         )
         self.assertEqual(entry.user_name, "John Doe")
         self.assertEqual(entry.email, "john@example.com")
-        self.assertEqual(entry.user_type, WaitlistEntry.CUSTOMER)
+        self.assertEqual(entry.user_type, WaitlistEntry.HOMEOWNER)
         self.assertIsNotNone(entry.created_at)
         self.assertIsNotNone(entry.updated_at)
 
@@ -37,9 +37,9 @@ class WaitlistEntryModelTests(TestCase):
         entry = WaitlistEntry.objects.create(
             user_name="Test User",
             email="test@example.com",
-            user_type=WaitlistEntry.CUSTOMER,
+            user_type=WaitlistEntry.HOMEOWNER,
         )
-        expected = "test@example.com (customer)"
+        expected = "test@example.com (homeowner)"
         self.assertEqual(str(entry), expected)
 
     def test_ordering(self):
@@ -47,7 +47,7 @@ class WaitlistEntryModelTests(TestCase):
         entry1 = WaitlistEntry.objects.create(
             user_name="User 1",
             email="user1@example.com",
-            user_type=WaitlistEntry.CUSTOMER,
+            user_type=WaitlistEntry.HOMEOWNER,
         )
         entry2 = WaitlistEntry.objects.create(
             user_name="User 2",

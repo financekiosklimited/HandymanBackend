@@ -119,7 +119,7 @@ make check-postgres    # Test database connection
 
 ### Key Features
 - Platform-specific APIs (`/web/`, `/mobile/`)
-- Role-based access control (admin/handyman/customer)
+- Role-based access control (admin/handyman/homeowner)
 - Email verification with OTP
 - Google OAuth integration
 - Consistent JSON response format
@@ -130,7 +130,7 @@ make check-postgres    # Test database connection
 #### Core Apps
 - **`accounts`** - User management, authentication models, custom User model
 - **`authn`** - JWT token management, email verification, password reset flows
-- **`profiles`** - Customer and handyman profile management with role-based access
+- **`profiles`** - Homeowner and handyman profile management with role-based access
 - **`common`** - Shared utilities, BaseModel abstract class, response formatters
 - **`waitlist`** - Pre-launch waitlist signup and management
 
@@ -155,7 +155,7 @@ apps/                  # Django applications
 ├── accounts/         # User models & authentication
 ├── authn/           # JWT authentication service
 ├── common/          # Shared utilities (BaseModel, responses)
-├── profiles/        # Customer & handyman profiles
+├── profiles/        # Homeowner & handyman profiles
 └── waitlist/        # Pre-launch waitlist functionality
 
 config/              # Django configuration

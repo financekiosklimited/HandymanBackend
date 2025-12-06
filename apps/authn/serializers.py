@@ -22,7 +22,7 @@ class RegisterSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(min_length=8, write_only=True)
     initial_role = serializers.ChoiceField(
-        choices=["handyman", "customer"], required=False, allow_null=True
+        choices=["handyman", "homeowner"], required=False, allow_null=True
     )
 
     def validate_email(self, value):
@@ -66,7 +66,7 @@ class ActivateRoleSerializer(serializers.Serializer):
     Serializer for role activation.
     """
 
-    role = serializers.ChoiceField(choices=["handyman", "customer"])
+    role = serializers.ChoiceField(choices=["handyman", "homeowner"])
 
     def validate_role(self, value):
         """Validate user cannot activate admin role."""

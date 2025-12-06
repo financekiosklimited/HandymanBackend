@@ -9,9 +9,9 @@ from ..views import mobile as mobile_views
 urlpatterns = [
     # Role-specific profile endpoints
     path(
-        "customer/profile",
-        mobile_views.CustomerProfileView.as_view(),
-        name="mobile_customer_profile",
+        "homeowner/profile",
+        mobile_views.HomeownerProfileView.as_view(),
+        name="mobile_homeowner_profile",
     ),
     path(
         "handyman/profile",

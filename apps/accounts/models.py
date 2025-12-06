@@ -107,7 +107,7 @@ class UserRole(BaseModel):
     ROLE_CHOICES = [
         ("admin", "Admin"),
         ("handyman", "Handyman"),
-        ("customer", "Customer"),
+        ("homeowner", "Homeowner"),
     ]
 
     NEXT_ACTION_CHOICES = [

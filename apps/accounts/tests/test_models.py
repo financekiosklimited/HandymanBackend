@@ -175,13 +175,13 @@ class TestUserModel(TestCase):
 
     def test_has_role_returns_true_when_role_exists(self):
         """Test has_role returns True when user has the role."""
-        UserRole.objects.create(user=self.user, role="customer")
+        UserRole.objects.create(user=self.user, role="homeowner")
 
-        self.assertTrue(self.user.has_role("customer"))
+        self.assertTrue(self.user.has_role("homeowner"))
 
     def test_has_role_returns_false_when_role_does_not_exist(self):
         """Test has_role returns False when user doesn't have the role."""
-        self.assertFalse(self.user.has_role("customer"))
+        self.assertFalse(self.user.has_role("homeowner"))
 
     def test_get_role_returns_role_when_exists(self):
         """Test get_role returns UserRole instance when role exists."""
@@ -208,10 +208,10 @@ class TestUserRoleModel(TestCase):
 
     def test_create_user_role_success(self):
         """Test creating a user role."""
-        role = UserRole.objects.create(user=self.user, role="customer")
+        role = UserRole.objects.create(user=self.user, role="homeowner")
 
         self.assertEqual(role.user, self.user)
-        self.assertEqual(role.role, "customer")
+        self.assertEqual(role.role, "homeowner")
         self.assertEqual(role.next_action, "verify_email")  # Default value
         self.assertIsNotNone(role.public_id)
         self.assertIsNotNone(role.created_at)
@@ -232,7 +232,7 @@ class TestUserRoleModel(TestCase):
 
     def test_next_action_choices_are_valid(self):
         """Test all next_action choices can be set."""
-        role = UserRole.objects.create(user=self.user, role="customer")
+        role = UserRole.objects.create(user=self.user, role="homeowner")
 
         for action_value, _ in UserRole.NEXT_ACTION_CHOICES:
             role.next_action = action_value
@@ -242,14 +242,14 @@ class TestUserRoleModel(TestCase):
 
     def test_unique_together_constraint(self):
         """Test user-role combination is unique."""
-        UserRole.objects.create(user=self.user, role="customer")
+        UserRole.objects.create(user=self.user, role="homeowner")
 
         with self.assertRaises(IntegrityError):
-            UserRole.objects.create(user=self.user, role="customer")
+            UserRole.objects.create(user=self.user, role="homeowner")
 
     def test_user_can_have_multiple_roles(self):
         """Test user can have multiple different roles."""
-        role1 = UserRole.objects.create(user=self.user, role="customer")
+        role1 = UserRole.objects.create(user=self.user, role="homeowner")
         role2 = UserRole.objects.create(user=self.user, role="handyman")
 
         self.assertEqual(self.user.roles.count(), 2)
@@ -258,7 +258,7 @@ class TestUserRoleModel(TestCase):
 
     def test_user_role_cascade_delete(self):
         """Test roles are deleted when user is deleted."""
-        UserRole.objects.create(user=self.user, role="customer")
+        UserRole.objects.create(user=self.user, role="homeowner")
         UserRole.objects.create(user=self.user, role="handyman")
 
         user_id = self.user.id
@@ -268,7 +268,7 @@ class TestUserRoleModel(TestCase):
 
     def test_user_role_ordering_by_created_at_desc(self):
         """Test user roles are ordered by created_at descending."""
-        role1 = UserRole.objects.create(user=self.user, role="customer")
+        role1 = UserRole.objects.create(user=self.user, role="homeowner")
         role2 = UserRole.objects.create(user=self.user, role="handyman")
 
         roles = UserRole.objects.all()
@@ -277,14 +277,14 @@ class TestUserRoleModel(TestCase):
 
     def test_default_next_action_is_verify_email(self):
         """Test default next_action is 'verify_email'."""
-        role = UserRole.objects.create(user=self.user, role="customer")
+        role = UserRole.objects.create(user=self.user, role="homeowner")
 
         self.assertEqual(role.next_action, "verify_email")
 
     def test_custom_next_action_can_be_set(self):
         """Test custom next_action can be set on creation."""
         role = UserRole.objects.create(
-            user=self.user, role="customer", next_action="fill_profile"
+            user=self.user, role="homeowner", next_action="fill_profile"
         )
 
         self.assertEqual(role.next_action, "fill_profile")

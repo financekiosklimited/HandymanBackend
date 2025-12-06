@@ -14,7 +14,7 @@ from apps.authn.models import (
     RefreshSession,
 )
 from apps.authn.services import AuthService
-from apps.profiles.models import CustomerProfile, HandymanProfile
+from apps.profiles.models import HandymanProfile, HomeownerProfile
 
 TEST_PRIVATE_KEY = """-----BEGIN PRIVATE KEY-----
 MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCCgfzlhVtAL6to
@@ -74,7 +74,7 @@ class AuthServiceTests(TestCase):
         tokens = self.service.register_user(
             email="test@example.com",
             password="securepass123",
-            initial_role="customer",
+            initial_role="homeowner",
             platform="web",
         )
 
@@ -84,10 +84,10 @@ class AuthServiceTests(TestCase):
         self.assertTrue(user.is_active)
 
         # Check role created
-        self.assertTrue(user.roles.filter(role="customer").exists())
+        self.assertTrue(user.roles.filter(role="homeowner").exists())
 
         # Check profile created
-        self.assertTrue(CustomerProfile.objects.filter(user=user).exists())
+        self.assertTrue(HomeownerProfile.objects.filter(user=user).exists())
 
         # Check tokens returned
         self.assertIn("access_token", tokens)
@@ -184,16 +184,16 @@ class AuthServiceTests(TestCase):
             email="test@example.com", password="securepass123"
         )
 
-        result = self.service.activate_role(user, "customer")
+        result = self.service.activate_role(user, "homeowner")
 
         # Check role created
-        self.assertTrue(user.roles.filter(role="customer").exists())
+        self.assertTrue(user.roles.filter(role="homeowner").exists())
 
         # Check profile created
-        self.assertTrue(CustomerProfile.objects.filter(user=user).exists())
+        self.assertTrue(HomeownerProfile.objects.filter(user=user).exists())
 
         # Check result
-        self.assertEqual(result["role"], "customer")
+        self.assertEqual(result["role"], "homeowner")
         self.assertEqual(result["next_action"], "verify_email")
 
     def test_activate_role_existing_role(self):
@@ -201,13 +201,13 @@ class AuthServiceTests(TestCase):
         user = User.objects.create_user(
             email="test@example.com", password="securepass123"
         )
-        UserRole.objects.create(user=user, role="customer")
-        CustomerProfile.objects.create(user=user, display_name="Test")
+        UserRole.objects.create(user=user, role="homeowner")
+        HomeownerProfile.objects.create(user=user, display_name="Test")
 
-        result = self.service.activate_role(user, "customer")
+        result = self.service.activate_role(user, "homeowner")
 
         # Should not create duplicate role
-        self.assertEqual(user.roles.filter(role="customer").count(), 1)
+        self.assertEqual(user.roles.filter(role="homeowner").count(), 1)
         self.assertEqual(result["next_action"], "verify_email")
 
     def test_activate_role_verified_email(self):
@@ -218,10 +218,10 @@ class AuthServiceTests(TestCase):
         user.email_verified_at = datetime.now(UTC)
         user.save()
 
-        UserRole.objects.create(user=user, role="customer")
-        CustomerProfile.objects.create(user=user, display_name="Test")
+        UserRole.objects.create(user=user, role="homeowner")
+        HomeownerProfile.objects.create(user=user, display_name="Test")
 
-        result = self.service.activate_role(user, "customer")
+        result = self.service.activate_role(user, "homeowner")
 
         # Next action should be none since email is verified and profile complete
         self.assertEqual(result["next_action"], "none")
@@ -234,10 +234,10 @@ class AuthServiceTests(TestCase):
         user.email_verified_at = datetime.now(UTC)
         user.save()
 
-        UserRole.objects.create(user=user, role="customer")
-        CustomerProfile.objects.create(user=user, display_name="")
+        UserRole.objects.create(user=user, role="homeowner")
+        HomeownerProfile.objects.create(user=user, display_name="")
 
-        result = self.service.activate_role(user, "customer")
+        result = self.service.activate_role(user, "homeowner")
 
         self.assertEqual(result["next_action"], "fill_profile")
 
@@ -296,9 +296,9 @@ class AuthServiceTests(TestCase):
         user.email_verified_at = datetime.now(UTC)
         user.save()
 
-        UserRole.objects.create(user=user, role="customer")
+        UserRole.objects.create(user=user, role="homeowner")
         # Create profile without display_name
-        CustomerProfile.objects.create(user=user, display_name="")
+        HomeownerProfile.objects.create(user=user, display_name="")
 
         next_action = self.service.get_next_action_for_user(user)
 
@@ -312,8 +312,8 @@ class AuthServiceTests(TestCase):
         user.email_verified_at = datetime.now(UTC)
         user.save()
 
-        UserRole.objects.create(user=user, role="customer")
-        CustomerProfile.objects.create(user=user, display_name="Test User")
+        UserRole.objects.create(user=user, role="homeowner")
+        HomeownerProfile.objects.create(user=user, display_name="Test User")
 
         next_action = self.service.get_next_action_for_user(user)
 
@@ -458,18 +458,18 @@ class AuthServiceTests(TestCase):
         )
         self.assertEqual(active_sessions.count(), 0)
 
-    def test_has_complete_profile_customer(self):
-        """Test checking complete profile for customer."""
+    def test_has_complete_profile_homeowner(self):
+        """Test checking complete profile for homeowner."""
         user = User.objects.create_user(email="test@example.com", password="pass123")
 
         # Incomplete profile
-        CustomerProfile.objects.create(user=user, display_name="")
-        self.assertFalse(self.service._has_complete_profile(user, "customer"))
+        HomeownerProfile.objects.create(user=user, display_name="")
+        self.assertFalse(self.service._has_complete_profile(user, "homeowner"))
 
         # Complete profile
-        user.customer_profile.display_name = "Test User"
-        user.customer_profile.save()
-        self.assertTrue(self.service._has_complete_profile(user, "customer"))
+        user.homeowner_profile.display_name = "Test User"
+        user.homeowner_profile.save()
+        self.assertTrue(self.service._has_complete_profile(user, "homeowner"))
 
     def test_has_complete_profile_handyman(self):
         """Test checking complete profile for handyman."""
@@ -533,8 +533,8 @@ class AuthServiceTests(TestCase):
 
         user = User.objects.get(email="demo@example.com")
         self.assertTrue(user.is_email_verified)
-        self.assertTrue(UserRole.objects.filter(user=user, role="customer").exists())
-        self.assertTrue(CustomerProfile.objects.filter(user=user).exists())
+        self.assertTrue(UserRole.objects.filter(user=user, role="homeowner").exists())
+        self.assertTrue(HomeownerProfile.objects.filter(user=user).exists())
         self.assertIn("access_token", tokens)
 
     def test_google_login_errors_wrapped(self):
@@ -554,9 +554,9 @@ class AuthServiceTests(TestCase):
             email="fill@example.com", password="securepass123"
         )
         role = UserRole.objects.create(
-            user=user, role="customer", next_action="verify_email"
+            user=user, role="homeowner", next_action="verify_email"
         )
-        CustomerProfile.objects.create(user=user, display_name="")
+        HomeownerProfile.objects.create(user=user, display_name="")
         mock_verify.return_value = user
 
         self.service.verify_email(user.email, "123456")
@@ -571,9 +571,9 @@ class AuthServiceTests(TestCase):
             email="complete@example.com", password="securepass123"
         )
         role = UserRole.objects.create(
-            user=user, role="customer", next_action="verify_email"
+            user=user, role="homeowner", next_action="verify_email"
         )
-        CustomerProfile.objects.create(user=user, display_name="Ready")
+        HomeownerProfile.objects.create(user=user, display_name="Ready")
         mock_verify.return_value = user
 
         self.service.verify_email(user.email, "123456")
@@ -588,9 +588,9 @@ class AuthServiceTests(TestCase):
             email="other@example.com", password="securepass123"
         )
         role = UserRole.objects.create(
-            user=user, role="customer", next_action="fill_profile"
+            user=user, role="homeowner", next_action="fill_profile"
         )
-        CustomerProfile.objects.create(user=user, display_name="In progress")
+        HomeownerProfile.objects.create(user=user, display_name="In progress")
         mock_verify.return_value = user
 
         self.service.verify_email(user.email, "123456")
@@ -598,16 +598,16 @@ class AuthServiceTests(TestCase):
         role.refresh_from_db()
         self.assertEqual(role.next_action, "fill_profile")
 
-    def test_create_profile_for_role_customer(self):
+    def test_create_profile_for_role_homeowner(self):
         """Customer profile helper creates profile when missing."""
         user = User.objects.create_user(
-            email="customer@example.com", password="securepass123"
+            email="homeowner@example.com", password="securepass123"
         )
-        CustomerProfile.objects.filter(user=user).delete()
+        HomeownerProfile.objects.filter(user=user).delete()
 
-        self.service._create_profile_for_role(user, "customer")
+        self.service._create_profile_for_role(user, "homeowner")
 
-        self.assertTrue(CustomerProfile.objects.filter(user=user).exists())
+        self.assertTrue(HomeownerProfile.objects.filter(user=user).exists())
 
     def test_create_profile_for_role_admin_noop(self):
         """Admin role does not create a profile."""
@@ -617,14 +617,14 @@ class AuthServiceTests(TestCase):
 
         self.service._create_profile_for_role(user, "admin")
 
-        self.assertFalse(CustomerProfile.objects.filter(user=user).exists())
+        self.assertFalse(HomeownerProfile.objects.filter(user=user).exists())
         self.assertFalse(HandymanProfile.objects.filter(user=user).exists())
 
-    def test_has_complete_profile_without_customer_profile(self):
-        """Missing customer profile results in incomplete status."""
+    def test_has_complete_profile_without_homeowner_profile(self):
+        """Missing homeowner profile results in incomplete status."""
         user = SimpleNamespace()
 
-        self.assertFalse(self.service._has_complete_profile(user, "customer"))
+        self.assertFalse(self.service._has_complete_profile(user, "homeowner"))
 
     def test_has_complete_profile_admin_attribute_error(self):
         """Admin role remains complete even if attribute access fails."""

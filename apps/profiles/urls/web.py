@@ -9,9 +9,9 @@ from ..views import web as web_views
 urlpatterns = [
     # Role-specific profile endpoints
     path(
-        "customer/profile",
-        web_views.CustomerProfileView.as_view(),
-        name="web_customer_profile",
+        "homeowner/profile",
+        web_views.HomeownerProfileView.as_view(),
+        name="web_homeowner_profile",
     ),
     path(
         "handyman/profile",

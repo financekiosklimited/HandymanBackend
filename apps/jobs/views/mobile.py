@@ -97,7 +97,7 @@ class CityListView(APIView):
 
 class JobListCreateView(APIView):
     """
-    View for listing customer's jobs and creating new jobs.
+    View for listing homeowner's jobs and creating new jobs.
     """
 
     permission_classes = [
@@ -118,6 +118,7 @@ class JobListCreateView(APIView):
         return permissions
 
     @extend_schema(
+        operation_id="mobile_homeowner_jobs_list",
         responses={200: JobListResponseSerializer},
         parameters=[
             OpenApiParameter(
@@ -156,14 +157,14 @@ class JobListCreateView(APIView):
                 required=False,
             ),
         ],
-        description="List all jobs for authenticated customer with pagination and filtering. Returns only jobs created by the customer.",
-        summary="List customer jobs",
-        tags=["Mobile Customer Jobs"],
+        description="List all jobs for authenticated homeowner with pagination and filtering. Returns only jobs created by the homeowner.",
+        summary="List homeowner jobs",
+        tags=["Mobile Homeowner Jobs"],
     )
     def get(self, request):
-        """List customer's jobs with pagination and filtering."""
-        # Get customer's jobs only
-        jobs = Job.objects.filter(customer=request.user)
+        """List homeowner's jobs with pagination and filtering."""
+        # Get homeowner's jobs only
+        jobs = Job.objects.filter(homeowner=request.user)
 
         # Apply filters
         category_id = request.query_params.get("category")
@@ -238,9 +239,9 @@ class JobListCreateView(APIView):
         description="Create a new job listing for mobile app. "
         "Supports multiple image uploads (max 10 images, each max 5MB, JPEG/PNG only). "
         "Use multipart/form-data encoding for file uploads. "
-        "Requires customer role and verified email.",
+        "Requires homeowner role and verified email.",
         summary="Create job",
-        tags=["Mobile Customer Jobs"],
+        tags=["Mobile Homeowner Jobs"],
     )
     def post(self, request):
         """Create a new job."""
@@ -275,18 +276,19 @@ class JobDetailView(APIView):
     ]
 
     @extend_schema(
+        operation_id="mobile_homeowner_jobs_retrieve",
         responses={200: JobDetailResponseSerializer},
-        description="Get job detail by public_id for mobile app. Only returns job if it belongs to the authenticated customer.",
+        description="Get job detail by public_id for mobile app. Only returns job if it belongs to the authenticated homeowner.",
         summary="Get job detail",
-        tags=["Mobile Customer Jobs"],
+        tags=["Mobile Homeowner Jobs"],
     )
     def get(self, request, public_id):
         """Get job detail."""
-        # Verify job belongs to authenticated customer
+        # Verify job belongs to authenticated homeowner
         job = get_object_or_404(
             Job.objects.select_related("category", "city").prefetch_related("images"),
             public_id=public_id,
-            customer=request.user,
+            homeowner=request.user,
         )
 
         serializer = JobDetailSerializer(job)

@@ -66,7 +66,7 @@ class JobImageSerializerTests(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            email="customer@example.com",
+            email="homeowner@example.com",
             password="testpass123",
         )
         self.category = JobCategory.objects.create(
@@ -80,7 +80,7 @@ class JobImageSerializerTests(TestCase):
             is_active=True,
         )
         self.job = Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Test",
             description="Test",
             estimated_budget=Decimal("50.00"),
@@ -117,7 +117,7 @@ class JobListSerializerTests(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            email="customer@example.com",
+            email="homeowner@example.com",
             password="testpass123",
         )
         self.category = JobCategory.objects.create(
@@ -134,7 +134,7 @@ class JobListSerializerTests(TestCase):
     def test_job_list_serialization(self):
         """Test job list serialization with nested data."""
         job = Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Fix leaking faucet",
             description="Kitchen faucet is leaking",
             estimated_budget=Decimal("50.00"),
@@ -173,7 +173,7 @@ class JobDetailSerializerTests(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            email="customer@example.com",
+            email="homeowner@example.com",
             password="testpass123",
         )
         self.category = JobCategory.objects.create(
@@ -190,7 +190,7 @@ class JobDetailSerializerTests(TestCase):
     def test_job_detail_serialization(self):
         """Test job detail serialization."""
         job = Job.objects.create(
-            customer=self.user,
+            homeowner=self.user,
             title="Fix door",
             description="Broken door",
             estimated_budget=Decimal("40.00"),
@@ -219,7 +219,7 @@ class JobCreateSerializerTests(TestCase):
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            email="customer@example.com",
+            email="homeowner@example.com",
             password="testpass123",
         )
         self.category = JobCategory.objects.create(
@@ -255,7 +255,7 @@ class JobCreateSerializerTests(TestCase):
 
         job = serializer.save()
         self.assertEqual(job.title, "Fix leaking faucet")
-        self.assertEqual(job.customer, self.user)
+        self.assertEqual(job.homeowner, self.user)
         self.assertEqual(job.category, self.category)
         self.assertEqual(job.city, self.city)
         self.assertEqual(job.status, "open")

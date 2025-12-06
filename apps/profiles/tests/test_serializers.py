@@ -5,34 +5,34 @@ from decimal import Decimal
 from django.test import TestCase
 
 from apps.accounts.models import User, UserRole
-from apps.profiles.models import CustomerProfile, HandymanProfile
+from apps.profiles.models import HandymanProfile, HomeownerProfile
 from apps.profiles.serializers import (
-    CustomerProfileSerializer,
-    CustomerProfileUpdateSerializer,
     HandymanProfileSerializer,
     HandymanProfileUpdateSerializer,
+    HomeownerProfileSerializer,
+    HomeownerProfileUpdateSerializer,
 )
 
 
-class CustomerProfileSerializerTests(TestCase):
-    """Test cases for CustomerProfileSerializer."""
+class HomeownerProfileSerializerTests(TestCase):
+    """Test cases for HomeownerProfileSerializer."""
 
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            email="customer@example.com", password="testpass123"
+            email="homeowner@example.com", password="testpass123"
         )
-        UserRole.objects.create(user=self.user, role="customer")
-        self.profile = CustomerProfile.objects.create(
+        UserRole.objects.create(user=self.user, role="homeowner")
+        self.profile = HomeownerProfile.objects.create(
             user=self.user,
-            display_name="Test Customer",
+            display_name="Test Homeowner",
             phone_number="+1234567890",
             address="123 Main St",
         )
 
     def test_serializer_contains_expected_fields(self):
         """Test serializer contains expected fields."""
-        serializer = CustomerProfileSerializer(self.profile)
+        serializer = HomeownerProfileSerializer(self.profile)
         self.assertIn("display_name", serializer.data)
         self.assertIn("phone_number", serializer.data)
         self.assertIn("address", serializer.data)
@@ -41,8 +41,8 @@ class CustomerProfileSerializerTests(TestCase):
 
     def test_serializer_field_values(self):
         """Test serializer returns correct field values."""
-        serializer = CustomerProfileSerializer(self.profile)
-        self.assertEqual(serializer.data["display_name"], "Test Customer")
+        serializer = HomeownerProfileSerializer(self.profile)
+        self.assertEqual(serializer.data["display_name"], "Test Homeowner")
         self.assertEqual(serializer.data["phone_number"], "+1234567890")
         self.assertEqual(serializer.data["address"], "123 Main St")
 
@@ -55,22 +55,22 @@ class CustomerProfileSerializerTests(TestCase):
             "created_at": "2020-01-01T00:00:00Z",
             "updated_at": "2020-01-01T00:00:00Z",
         }
-        serializer = CustomerProfileSerializer(self.profile, data=data)
+        serializer = HomeownerProfileSerializer(self.profile, data=data)
         self.assertTrue(serializer.is_valid())
 
 
-class CustomerProfileUpdateSerializerTests(TestCase):
-    """Test cases for CustomerProfileUpdateSerializer."""
+class HomeownerProfileUpdateSerializerTests(TestCase):
+    """Test cases for HomeownerProfileUpdateSerializer."""
 
     def setUp(self):
         """Set up test data."""
         self.user = User.objects.create_user(
-            email="customer@example.com", password="testpass123"
+            email="homeowner@example.com", password="testpass123"
         )
-        UserRole.objects.create(user=self.user, role="customer")
-        self.profile = CustomerProfile.objects.create(
+        UserRole.objects.create(user=self.user, role="homeowner")
+        self.profile = HomeownerProfile.objects.create(
             user=self.user,
-            display_name="Test Customer",
+            display_name="Test Homeowner",
             phone_number="+1234567890",
             address="123 Main St",
         )
@@ -82,13 +82,13 @@ class CustomerProfileUpdateSerializerTests(TestCase):
             "phone_number": "+9876543210",
             "address": "456 Oak Ave",
         }
-        serializer = CustomerProfileUpdateSerializer(self.profile, data=data)
+        serializer = HomeownerProfileUpdateSerializer(self.profile, data=data)
         self.assertTrue(serializer.is_valid())
 
     def test_update_serializer_partial_update(self):
         """Test update serializer with partial data."""
         data = {"display_name": "Partial Update"}
-        serializer = CustomerProfileUpdateSerializer(
+        serializer = HomeownerProfileUpdateSerializer(
             self.profile, data=data, partial=True
         )
         self.assertTrue(serializer.is_valid())
@@ -101,7 +101,7 @@ class CustomerProfileUpdateSerializerTests(TestCase):
     def test_update_serializer_empty_optional_fields(self):
         """Test update serializer allows empty optional fields."""
         data = {"display_name": "Name", "phone_number": "", "address": ""}
-        serializer = CustomerProfileUpdateSerializer(self.profile, data=data)
+        serializer = HomeownerProfileUpdateSerializer(self.profile, data=data)
         self.assertTrue(serializer.is_valid())
 
 

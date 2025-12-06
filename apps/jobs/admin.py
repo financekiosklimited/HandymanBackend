@@ -56,7 +56,7 @@ class JobAdmin(ModelAdmin):
 
     list_display = (
         "title",
-        "customer_email",
+        "homeowner_email",
         "category",
         "city",
         "status_display",
@@ -67,12 +67,12 @@ class JobAdmin(ModelAdmin):
     search_fields = (
         "title",
         "description",
-        "customer__email",
-        "customer__first_name",
-        "customer__last_name",
+        "homeowner__email",
+        "homeowner__first_name",
+        "homeowner__last_name",
     )
     ordering = ("-created_at",)
-    autocomplete_fields = ("customer", "category", "city")
+    autocomplete_fields = ("homeowner", "category", "city")
     readonly_fields = ("public_id", "created_at", "updated_at")
     inlines = [JobImageInline]
 
@@ -82,7 +82,7 @@ class JobAdmin(ModelAdmin):
             {
                 "fields": (
                     "public_id",
-                    "customer",
+                    "homeowner",
                     "title",
                     "description",
                     "status",
@@ -111,10 +111,10 @@ class JobAdmin(ModelAdmin):
         ),
     )
 
-    @display(description="Customer")
-    def customer_email(self, obj):
-        """Display customer email."""
-        return obj.customer.email
+    @display(description="Homeowner")
+    def homeowner_email(self, obj):
+        """Display homeowner email."""
+        return obj.homeowner.email
 
     @display(description="Status")
     def status_display(self, obj):
