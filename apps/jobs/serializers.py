@@ -64,6 +64,11 @@ class JobListSerializer(serializers.ModelSerializer):
     estimated_budget = serializers.DecimalField(
         max_digits=10, decimal_places=2, coerce_to_string=False
     )
+    job_items = serializers.ListField(
+        child=serializers.CharField(),
+        read_only=True,
+        help_text="List of tasks/items to be done for this job",
+    )
 
     class Meta:
         model = Job

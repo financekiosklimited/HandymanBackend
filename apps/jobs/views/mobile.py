@@ -232,6 +232,11 @@ class JobListCreateView(APIView):
                     "latitude": 43.651070,
                     "longitude": -79.347015,
                     "status": "open",
+                    "job_items": [
+                        "Inspect faucet and pipes",
+                        "Replace worn washers",
+                        "Test for leaks",
+                    ],
                 },
                 request_only=True,
             ),
