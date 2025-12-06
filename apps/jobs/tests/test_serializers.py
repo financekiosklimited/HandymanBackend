@@ -8,6 +8,7 @@ from rest_framework.test import APIRequestFactory
 
 from apps.accounts.models import User
 from apps.jobs.models import City, Job, JobCategory, JobImage
+from apps.jobs.models import MAX_JOB_ITEM_LENGTH, MAX_JOB_ITEMS
 from apps.jobs.serializers import (
     CitySerializer,
     JobCategorySerializer,
@@ -142,6 +143,7 @@ class JobListSerializerTests(TestCase):
             city=self.city,
             address="123 Main St",
             status="open",
+            job_items=["Check pipes", "Replace washer"],
         )
 
         serializer = JobListSerializer(job)
@@ -165,6 +167,10 @@ class JobListSerializerTests(TestCase):
         # Check images (should be empty list)
         self.assertIn("images", data)
         self.assertEqual(data["images"], [])
+
+        # Check job_items
+        self.assertIn("job_items", data)
+        self.assertEqual(data["job_items"], ["Check pipes", "Replace washer"])
 
 
 class JobDetailSerializerTests(TestCase):
@@ -480,3 +486,129 @@ class JobCreateSerializerTests(TestCase):
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
         self.assertIn("images", serializer.errors)
+
+    def test_create_job_with_job_items(self):
+        """Test creating a job with job_items."""
+        data = {
+            "title": "Bathroom Renovation",
+            "description": "Complete renovation",
+            "estimated_budget": "1000.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "job_items": ["Remove old tiles", "Install new tiles", "Paint walls"],
+        }
+
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertTrue(serializer.is_valid())
+
+        job = serializer.save()
+        self.assertEqual(
+            job.job_items, ["Remove old tiles", "Install new tiles", "Paint walls"]
+        )
+
+    def test_create_job_without_job_items(self):
+        """Test creating a job without job_items defaults to empty list."""
+        data = {
+            "title": "Test Job",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+        }
+
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertTrue(serializer.is_valid())
+
+        job = serializer.save()
+        self.assertEqual(job.job_items, [])
+
+    def test_job_items_serialization_in_response(self):
+        """Test job_items is included in serialized response."""
+        job = Job.objects.create(
+            homeowner=self.user,
+            title="Test",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            job_items=["Task 1", "Task 2"],
+        )
+
+        serializer = JobDetailSerializer(job)
+        data = serializer.data
+
+        self.assertIn("job_items", data)
+        self.assertEqual(data["job_items"], ["Task 1", "Task 2"])
+
+    def test_job_items_max_items_validation(self):
+        """Test job_items cannot exceed maximum number of items."""
+        job_items = [f"Task {i}" for i in range(MAX_JOB_ITEMS + 1)]
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "job_items": job_items,
+        }
+
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("job_items", serializer.errors)
+
+    def test_job_items_max_length_validation(self):
+        """Test each job item cannot exceed maximum length."""
+        long_item = "x" * (MAX_JOB_ITEM_LENGTH + 1)
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "job_items": [long_item],
+        }
+
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("job_items", serializer.errors)
+
+    def test_job_items_strips_whitespace(self):
+        """Test job_items strips whitespace from items."""
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "job_items": ["  Task with spaces  ", "Normal task"],
+        }
+
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertTrue(serializer.is_valid())
+
+        job = serializer.save()
+        self.assertEqual(job.job_items, ["Task with spaces", "Normal task"])
+
+    def test_job_items_removes_empty_strings(self):
+        """Test job_items removes empty strings after stripping."""
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "job_items": ["Valid task", "", "  ", "Another valid task"],
+        }
+
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertTrue(serializer.is_valid())
+
+        job = serializer.save()
+        self.assertEqual(job.job_items, ["Valid task", "Another valid task"])

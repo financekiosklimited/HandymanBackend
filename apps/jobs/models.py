@@ -5,6 +5,10 @@ from django.db import models
 
 from apps.common.models import BaseModel
 
+# Configurable limits for job items
+MAX_JOB_ITEMS = 20  # Maximum number of items per job
+MAX_JOB_ITEM_LENGTH = 255  # Maximum characters per item
+
 
 class JobCategory(BaseModel):
     """
@@ -96,6 +100,11 @@ class Job(BaseModel):
         max_digits=9, decimal_places=6, null=True, blank=True
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="draft")
+    job_items = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of tasks/items to be done for this job",
+    )
 
     class Meta:
         db_table = "jobs"
@@ -151,6 +160,28 @@ class Job(BaseModel):
                 raise ValidationError(
                     {"longitude": "Longitude must be between -180 and 180."}
                 )
+
+        # Validate job_items
+        if self.job_items:
+            if not isinstance(self.job_items, list):
+                raise ValidationError({"job_items": "Job items must be a list."})
+
+            if len(self.job_items) > MAX_JOB_ITEMS:
+                raise ValidationError(
+                    {"job_items": f"Maximum {MAX_JOB_ITEMS} items allowed."}
+                )
+
+            for idx, item in enumerate(self.job_items):
+                if not isinstance(item, str):
+                    raise ValidationError(
+                        {"job_items": f"Item at index {idx} must be a string."}
+                    )
+                if len(item) > MAX_JOB_ITEM_LENGTH:
+                    raise ValidationError(
+                        {
+                            "job_items": f"Item at index {idx} exceeds maximum length of {MAX_JOB_ITEM_LENGTH} characters."
+                        }
+                    )
 
     def save(self, *args, **kwargs):
         """

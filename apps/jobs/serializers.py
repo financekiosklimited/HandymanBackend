@@ -8,7 +8,14 @@ from apps.common.serializers import (
     create_list_response_serializer,
     create_response_serializer,
 )
-from apps.jobs.models import City, Job, JobCategory, JobImage
+from apps.jobs.models import (
+    MAX_JOB_ITEM_LENGTH,
+    MAX_JOB_ITEMS,
+    City,
+    Job,
+    JobCategory,
+    JobImage,
+)
 
 
 class JobCategorySerializer(serializers.ModelSerializer):
@@ -72,6 +79,7 @@ class JobListSerializer(serializers.ModelSerializer):
             "latitude",
             "longitude",
             "status",
+            "job_items",
             "images",
             "created_at",
             "updated_at",
@@ -156,6 +164,13 @@ class JobCreateSerializer(serializers.Serializer):
         max_length=10,
         help_text="Job images (max 10 files, each max 5MB, JPEG/PNG only)",
     )
+    job_items = serializers.ListField(
+        child=serializers.CharField(max_length=MAX_JOB_ITEM_LENGTH, allow_blank=True),
+        required=False,
+        allow_empty=True,
+        max_length=MAX_JOB_ITEMS,
+        help_text=f"List of tasks/items to be done (max {MAX_JOB_ITEMS} items, {MAX_JOB_ITEM_LENGTH} chars each)",
+    )
 
     def validate_estimated_budget(self, value):
         """Validate budget is positive."""
@@ -207,6 +222,16 @@ class JobCreateSerializer(serializers.Serializer):
                 )
 
         return value
+
+    def validate_job_items(self, value):
+        """Validate and clean job items."""
+        if not value:
+            return []
+
+        # Strip whitespace and filter out empty strings
+        cleaned_items = [item.strip() for item in value if item and item.strip()]
+
+        return cleaned_items
 
     def validate_postal_code(self, value):
         """Validate Canadian postal code format."""
