@@ -7,8 +7,14 @@ from PIL import Image as PILImage
 from rest_framework.test import APIRequestFactory
 
 from apps.accounts.models import User
-from apps.jobs.models import City, Job, JobCategory, JobImage
-from apps.jobs.models import MAX_JOB_ITEM_LENGTH, MAX_JOB_ITEMS
+from apps.jobs.models import (
+    MAX_JOB_ITEM_LENGTH,
+    MAX_JOB_ITEMS,
+    City,
+    Job,
+    JobCategory,
+    JobImage,
+)
 from apps.jobs.serializers import (
     CitySerializer,
     JobCategorySerializer,

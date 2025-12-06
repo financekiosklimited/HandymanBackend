@@ -395,6 +395,43 @@ UNFOLD = {
                 ],
             },
             {
+                "title": "Jobs",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Job Listings",
+                        "icon": "work",
+                        "link": lambda request: "/admin/jobs/job/",
+                    },
+                    {
+                        "title": "Job Images",
+                        "icon": "image",
+                        "link": lambda request: "/admin/jobs/jobimage/",
+                    },
+                ],
+            },
+            {
+                "title": "Master Data",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Cities",
+                        "icon": "location_city",
+                        "link": lambda request: "/admin/jobs/city/",
+                    },
+                    {
+                        "title": "Country Phone Codes",
+                        "icon": "phone",
+                        "link": lambda request: "/admin/common/countryphonecode/",
+                    },
+                    {
+                        "title": "Job Categories",
+                        "icon": "category",
+                        "link": lambda request: "/admin/jobs/jobcategory/",
+                    },
+                ],
+            },
+            {
                 "title": "Authentication & Security",
                 "separator": True,
                 "items": [
