@@ -101,6 +101,22 @@ class JobDetailSerializer(JobListSerializer):
     pass
 
 
+class ForYouJobSerializer(JobListSerializer):
+    """
+    Serializer for ForYou job listing with optional distance.
+    Used for homeowner job discovery/inspiration.
+    """
+
+    distance_km = serializers.FloatField(
+        read_only=True,
+        allow_null=True,
+        help_text="Distance from user's location in kilometers. Null if coordinates not provided.",
+    )
+
+    class Meta(JobListSerializer.Meta):
+        fields = JobListSerializer.Meta.fields + ["distance_km"]
+
+
 class JobCreateSerializer(serializers.Serializer):
     """
     Serializer for creating a job (write-only).
@@ -328,4 +344,8 @@ JobDetailResponseSerializer = create_response_serializer(
 
 JobCreateResponseSerializer = create_response_serializer(
     JobDetailSerializer, "JobCreateResponse"
+)
+
+ForYouJobListResponseSerializer = create_list_response_serializer(
+    ForYouJobSerializer, "ForYouJobListResponse"
 )

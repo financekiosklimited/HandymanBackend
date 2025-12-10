@@ -21,6 +21,11 @@ urlpatterns = [
         name="mobile_homeowner_jobs",
     ),
     path(
+        "homeowner/jobs/for-you/",
+        mobile_views.ForYouJobListView.as_view(),
+        name="mobile_homeowner_jobs_for_you",
+    ),
+    path(
         "homeowner/jobs/<uuid:public_id>/",
         mobile_views.JobDetailView.as_view(),
         name="mobile_homeowner_job_detail",

@@ -1,3 +1,5 @@
+from django.db.models import Case, FloatField, Value, When
+from django.db.models.functions import ACos, Cos, Radians, Sin
 from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema
@@ -19,6 +21,8 @@ from apps.jobs.models import City, Job, JobCategory
 from apps.jobs.serializers import (
     CityListResponseSerializer,
     CitySerializer,
+    ForYouJobListResponseSerializer,
+    ForYouJobSerializer,
     JobCategoryListResponseSerializer,
     JobCategorySerializer,
     JobCreateResponseSerializer,
@@ -298,3 +302,286 @@ class JobDetailView(APIView):
 
         serializer = JobDetailSerializer(job)
         return success_response(serializer.data, message="Job retrieved successfully")
+
+
+class ForYouJobListView(APIView):
+    """
+    View for listing open jobs for homeowner discovery/inspiration.
+    Returns jobs from other homeowners, sorted by recency and optionally by distance.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_homeowner_jobs_for_you",
+        responses={200: ForYouJobListResponseSerializer},
+        parameters=[
+            OpenApiParameter(
+                name="latitude",
+                type=OpenApiTypes.DECIMAL,
+                location=OpenApiParameter.QUERY,
+                description="User's current latitude for distance calculation (e.g., 43.651070)",
+                required=False,
+                examples=[
+                    OpenApiExample(
+                        "Toronto",
+                        value=43.651070,
+                        description="Latitude of Toronto, ON",
+                    ),
+                ],
+            ),
+            OpenApiParameter(
+                name="longitude",
+                type=OpenApiTypes.DECIMAL,
+                location=OpenApiParameter.QUERY,
+                description="User's current longitude for distance calculation (e.g., -79.347015)",
+                required=False,
+                examples=[
+                    OpenApiExample(
+                        "Toronto",
+                        value=-79.347015,
+                        description="Longitude of Toronto, ON",
+                    ),
+                ],
+            ),
+            OpenApiParameter(
+                name="page",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Page number (default: 1)",
+                required=False,
+                examples=[
+                    OpenApiExample("First page", value=1),
+                ],
+            ),
+            OpenApiParameter(
+                name="page_size",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Items per page, max 100 (default: 20)",
+                required=False,
+                examples=[
+                    OpenApiExample("Default", value=20),
+                    OpenApiExample("Large", value=50),
+                ],
+            ),
+            OpenApiParameter(
+                name="category",
+                type=OpenApiTypes.UUID,
+                location=OpenApiParameter.QUERY,
+                description="Filter by category public_id",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="city",
+                type=OpenApiTypes.UUID,
+                location=OpenApiParameter.QUERY,
+                description="Filter by city public_id",
+                required=False,
+            ),
+        ],
+        description=(
+            "List open jobs from other homeowners for discovery/inspiration. "
+            "Jobs are sorted by recency (newest first). "
+            "If latitude and longitude are provided, jobs are also sorted by distance (closest first). "
+            "Jobs without coordinates will have distance_km as null and appear after jobs with coordinates."
+        ),
+        summary="For You - Discover jobs",
+        tags=["Mobile Homeowner Jobs"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Jobs retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "title": "Fix leaking kitchen faucet",
+                            "description": "Kitchen faucet has been leaking for a few days. Need someone to fix it.",
+                            "estimated_budget": 50.00,
+                            "category": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                                "name": "Plumbing",
+                                "slug": "plumbing",
+                                "description": "Plumbing services",
+                                "icon": "plumbing",
+                            },
+                            "city": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                                "name": "Toronto",
+                                "province": "Ontario",
+                                "province_code": "ON",
+                                "slug": "toronto-on",
+                            },
+                            "address": "123 Main St, Toronto",
+                            "postal_code": "M5H 2N2",
+                            "latitude": 43.651070,
+                            "longitude": -79.347015,
+                            "status": "open",
+                            "job_items": [
+                                "Inspect faucet and pipes",
+                                "Replace worn washers",
+                                "Test for leaks",
+                            ],
+                            "images": [],
+                            "created_at": "2024-01-15T10:30:00Z",
+                            "updated_at": "2024-01-15T10:30:00Z",
+                            "distance_km": 2.5,
+                        },
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174003",
+                            "title": "Paint bedroom walls",
+                            "description": "Need to repaint the master bedroom.",
+                            "estimated_budget": 200.00,
+                            "category": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174004",
+                                "name": "Painting",
+                                "slug": "painting",
+                                "description": "Painting services",
+                                "icon": "painting",
+                            },
+                            "city": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                                "name": "Toronto",
+                                "province": "Ontario",
+                                "province_code": "ON",
+                                "slug": "toronto-on",
+                            },
+                            "address": "456 Oak Ave",
+                            "postal_code": "M4B 1B3",
+                            "latitude": None,
+                            "longitude": None,
+                            "status": "open",
+                            "job_items": ["Paint walls", "Apply primer"],
+                            "images": [],
+                            "created_at": "2024-01-14T09:00:00Z",
+                            "updated_at": "2024-01-14T09:00:00Z",
+                            "distance_km": None,
+                        },
+                    ],
+                    "errors": None,
+                    "meta": {
+                        "pagination": {
+                            "page": 1,
+                            "page_size": 20,
+                            "total_pages": 3,
+                            "total_count": 45,
+                            "has_next": True,
+                            "has_previous": False,
+                        }
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    def get(self, request):
+        """List open jobs for discovery, sorted by recency and distance."""
+        # Get coordinates from query params (optional)
+        latitude = request.query_params.get("latitude")
+        longitude = request.query_params.get("longitude")
+
+        # Base queryset: open jobs from other users
+        jobs = Job.objects.filter(status="open").exclude(homeowner=request.user)
+
+        # Apply filters
+        category_id = request.query_params.get("category")
+        city_id = request.query_params.get("city")
+
+        if category_id:
+            jobs = jobs.filter(category__public_id=category_id)
+        if city_id:
+            jobs = jobs.filter(city__public_id=city_id)
+
+        # Calculate distance if coordinates provided
+        has_coordinates = latitude is not None and longitude is not None
+        if has_coordinates:
+            try:
+                user_lat = float(latitude)
+                user_lng = float(longitude)
+
+                # Validate coordinate ranges
+                if not (-90 <= user_lat <= 90) or not (-180 <= user_lng <= 180):
+                    has_coordinates = False
+                else:
+                    # Haversine formula for distance calculation in km
+                    # distance = 6371 * acos(
+                    #     cos(radians(lat1)) * cos(radians(lat2)) *
+                    #     cos(radians(lng2) - radians(lng1)) +
+                    #     sin(radians(lat1)) * sin(radians(lat2))
+                    # )
+                    jobs = jobs.annotate(
+                        distance_km=Case(
+                            When(
+                                latitude__isnull=False,
+                                longitude__isnull=False,
+                                then=(
+                                    6371.0
+                                    * ACos(
+                                        Cos(Radians(Value(user_lat)))
+                                        * Cos(Radians("latitude"))
+                                        * Cos(
+                                            Radians("longitude")
+                                            - Radians(Value(user_lng))
+                                        )
+                                        + Sin(Radians(Value(user_lat)))
+                                        * Sin(Radians("latitude"))
+                                    )
+                                ),
+                            ),
+                            default=Value(None),
+                            output_field=FloatField(),
+                        )
+                    )
+                    # Order by created_at DESC, then by distance ASC (nulls last)
+                    jobs = jobs.order_by("-created_at", "distance_km")
+            except (ValueError, TypeError):
+                has_coordinates = False
+
+        if not has_coordinates:
+            # No coordinates or invalid - just annotate with null distance
+            jobs = jobs.annotate(distance_km=Value(None, output_field=FloatField()))
+            jobs = jobs.order_by("-created_at")
+
+        # Count total before pagination
+        total_count = jobs.count()
+
+        # Pagination
+        page = int(request.query_params.get("page", 1))
+        page_size = min(int(request.query_params.get("page_size", 20)), 100)
+        total_pages = (
+            (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        )
+
+        # Slice queryset
+        start = (page - 1) * page_size
+        end = start + page_size
+        jobs = jobs[start:end]
+
+        # Optimize queries
+        jobs = jobs.select_related("category", "city").prefetch_related("images")
+
+        # Serialize
+        serializer = ForYouJobSerializer(jobs, many=True)
+
+        # Build meta
+        meta = {
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "total_count": total_count,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+            }
+        }
+
+        return success_response(
+            serializer.data, message="Jobs retrieved successfully", meta=meta
+        )
