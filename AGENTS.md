@@ -1,35 +1,28 @@
-# Repository Guidelines
+# AGENTS.md
 
-## Project Structure & Module Organization
-- Django 5 entrypoint is `manage.py`; reusable apps live under `apps/` (e.g., `accounts`, `authn`, `profiles`, `storage`).
-- Shared utilities (email, mixins, enums) sit in `apps/common/`; ASGI startup is in `main.py`.
-- Tests live beside their feature code (e.g., `apps/authn/tests/test_services.py`); settings variants are under `config/settings/` (`dev.py`, `prod.py`, `test.py`).
-- Static assets collect into `staticfiles/`; runtime scripts and infra helpers stay at the project root.
+## Commands
+- **Install**: `make install` (uses uv)
+- **Run tests**: `make test`
+- **Single test**: `DJANGO_SETTINGS_MODULE=config.settings.test uv run python manage.py test apps.authn.tests.test_views_mobile.LoginViewTests.test_method`
+- **Lint**: `make lint` / **Fix**: `make lint-fix`
+- **Format**: `make format` / **Check**: `make format-check`
+- **Coverage**: `make coverage`
 
-## Build, Test, and Development Commands
-- `make setup` — bootstrap the `uv` virtualenv, install dependencies, and run migrations.
-- `make run` — start the local server with `config.settings.dev`.
-- `make test` — run the full Django test suite using the SQLite-backed test settings.
-- `make migrate` / `make makemigrations` — generate and apply schema changes.
-- `make check-postgres` — verify `.env` credentials before talking to Postgres services.
+## Code Style
+- **Python 3.13**, line length 88, double quotes, 4-space indent (ruff)
+- **Imports**: stdlib -> third-party (Django, DRF) -> first-party (`apps.*`, `config.*`) -> local
+- **No type hints** (pyright disabled) - use docstrings instead
+- **Naming**: PascalCase classes, snake_case functions/variables, UPPER_SNAKE_CASE constants
 
-## Coding Style & Naming Conventions
-- Follow PEP 8 with four-space indentation and `snake_case` for modules, functions, and fields.
-- Use `CamelCase` for models, serializers, and class-based views (e.g., `ProfileDetailView`).
-- Run `make lint` (Ruff) before committing; prefer explicit imports within each app and keep business logic out of views when possible.
-- Rely on structured logging via `logging.getLogger(__name__)` (see `apps/common/email.py`); avoid bare `print` in production code.
+## Architecture
+- **Service layer**: Business logic in `*Service` classes (e.g., `AuthService`), instantiated as singletons
+- **Models**: Inherit from `apps.common.models.BaseModel` (provides `id`, `public_id`, `created_at`, `updated_at`)
+- **Responses**: Use `apps.common.responses` helpers (`success_response`, `error_response`, `validation_error_response`, etc.)
+- **Tests**: Use `django.test.TestCase`, `unittest.mock.patch`, `APIRequestFactory`
 
-## Testing Guidelines
-- Use Django `TestCase` or DRF `APITestCase`; name tests `test_<condition>_<expected>` inside `Test...` classes.
-- Mock external systems (auth providers, S3, SMTP) and cover serializers, services, signals, and REST endpoints.
-- The default test settings disable logging noise and use an in-memory database; run `make test` before every commit.
+## Response Envelope
+All APIs return: `{"message": "...", "data": {...}, "errors": null, "meta": null}`
 
-## Commit & Pull Request Guidelines
-- Adopt Conventional Commit prefixes (`feat:`, `fix:`, `chore:`) with subjects under ~70 characters.
-- Reference tickets where available, describe migrations or breaking changes, and confirm `make test`/`make lint` results.
-- PRs should outline purpose, key changes, data/backfill steps, and include screenshots for any UI/admin impact.
-
-## Security & Configuration Tips
-- Keep secrets in `.env`; never commit credentials or generated keys.
-- Switch environments by exporting `DJANGO_SETTINGS_MODULE` (e.g., `config.settings.dev`).
-- Collect static files prior to deployment and configure S3 credentials for `django-storages` when targeting production.
+## Workflow
+- **Always run `make lint` and `make test` after any code changes**
+- **New APIs**: Add detailed OpenAPI spec using `drf-spectacular` decorators (`@extend_schema`) with examples, request/response schemas, and descriptions
