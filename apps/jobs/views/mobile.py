@@ -14,6 +14,9 @@ from apps.authn.permissions import (
 )
 from apps.common.responses import (
     created_response,
+    forbidden_response,
+    no_content_response,
+    not_found_response,
     success_response,
     validation_error_response,
 )
@@ -31,6 +34,8 @@ from apps.jobs.serializers import (
     JobDetailSerializer,
     JobListResponseSerializer,
     JobListSerializer,
+    JobUpdateResponseSerializer,
+    JobUpdateSerializer,
 )
 
 
@@ -167,8 +172,8 @@ class JobListCreateView(APIView):
     )
     def get(self, request):
         """List homeowner's jobs with pagination and filtering."""
-        # Get homeowner's jobs only
-        jobs = Job.objects.filter(homeowner=request.user)
+        # Get homeowner's jobs only (exclude deleted)
+        jobs = Job.objects.filter(homeowner=request.user).exclude(status="deleted")
 
         # Apply filters
         category_id = request.query_params.get("category")
@@ -274,7 +279,7 @@ class JobListCreateView(APIView):
 
 class JobDetailView(APIView):
     """
-    View for getting job detail.
+    View for getting, updating, and deleting job detail.
     """
 
     permission_classes = [
@@ -284,12 +289,92 @@ class JobDetailView(APIView):
         EmailVerifiedPermission,
     ]
 
+    def get_permissions(self):
+        """
+        Return different permissions for GET vs PUT/DELETE.
+        PUT and DELETE require phone verification.
+        """
+        permissions = super().get_permissions()
+        if self.request.method in ["PUT", "DELETE"]:
+            permissions.append(PhoneVerifiedPermission())
+        return permissions
+
     @extend_schema(
         operation_id="mobile_homeowner_jobs_retrieve",
-        responses={200: JobDetailResponseSerializer},
-        description="Get job detail by public_id for mobile app. Only returns job if it belongs to the authenticated homeowner.",
+        responses={
+            200: JobDetailResponseSerializer,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Get job detail by public_id for mobile app. "
+            "Only returns job if it belongs to the authenticated homeowner. "
+            "Returns 404 for deleted jobs or jobs not found."
+        ),
         summary="Get job detail",
         tags=["Mobile Homeowner Jobs"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Job retrieved successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "title": "Fix leaking kitchen faucet",
+                        "description": "Kitchen faucet has been leaking for a few days. Need someone to fix it.",
+                        "estimated_budget": 50.00,
+                        "category": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                            "name": "Plumbing",
+                            "slug": "plumbing",
+                            "description": "Plumbing services",
+                            "icon": "plumbing",
+                        },
+                        "city": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                            "name": "Toronto",
+                            "province": "Ontario",
+                            "province_code": "ON",
+                            "slug": "toronto-on",
+                        },
+                        "address": "123 Main St, Toronto",
+                        "postal_code": "M5H 2N2",
+                        "latitude": 43.651070,
+                        "longitude": -79.347015,
+                        "status": "open",
+                        "status_at": "2024-01-15T10:30:00Z",
+                        "job_items": [
+                            "Inspect faucet and pipes",
+                            "Replace worn washers",
+                            "Test for leaks",
+                        ],
+                        "images": [
+                            {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174010",
+                                "image": "https://example.com/media/jobs/images/2024/01/15/faucet.jpg",
+                                "order": 0,
+                            }
+                        ],
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-15T10:30:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Not Found Response",
+                value={
+                    "message": "Job not found",
+                    "data": None,
+                    "errors": {"detail": "The requested resource was not found"},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["404"],
+            ),
+        ],
     )
     def get(self, request, public_id):
         """Get job detail."""
@@ -300,8 +385,254 @@ class JobDetailView(APIView):
             homeowner=request.user,
         )
 
+        # Return 404 for deleted jobs
+        if job.status == "deleted":
+            return not_found_response("Job not found")
+
         serializer = JobDetailSerializer(job)
         return success_response(serializer.data, message="Job retrieved successfully")
+
+    @extend_schema(
+        operation_id="mobile_homeowner_jobs_update",
+        request=JobUpdateSerializer,
+        responses={
+            200: JobUpdateResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Update a job by public_id for mobile app. "
+            "Only the job owner can update. All fields are optional (partial update supported). "
+            "Cannot update completed, cancelled, or deleted jobs. "
+            "Status can only be changed to draft, open, or in_progress. "
+            "Requires phone verification."
+        ),
+        summary="Update job",
+        tags=["Mobile Homeowner Jobs"],
+        examples=[
+            OpenApiExample(
+                "Update Title and Description",
+                value={
+                    "title": "Fix leaking kitchen faucet - URGENT",
+                    "description": "Kitchen faucet has been leaking for a week now. Need someone to fix it ASAP.",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Update Status to Open",
+                value={
+                    "status": "open",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Update Budget and Location",
+                value={
+                    "estimated_budget": 75.00,
+                    "address": "456 Oak Ave, Toronto",
+                    "postal_code": "M5H 2N2",
+                    "latitude": 43.651070,
+                    "longitude": -79.347015,
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Update Category and City",
+                value={
+                    "category_id": "123e4567-e89b-12d3-a456-426614174001",
+                    "city_id": "123e4567-e89b-12d3-a456-426614174002",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Update Job Items",
+                value={
+                    "job_items": [
+                        "Inspect faucet and pipes",
+                        "Replace worn washers",
+                        "Test for leaks",
+                        "Clean up work area",
+                    ],
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Job updated successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "title": "Fix leaking kitchen faucet - URGENT",
+                        "description": "Kitchen faucet has been leaking for a week now. Need someone to fix it ASAP.",
+                        "estimated_budget": 75.00,
+                        "category": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                            "name": "Plumbing",
+                            "slug": "plumbing",
+                            "description": "Plumbing services",
+                            "icon": "plumbing",
+                        },
+                        "city": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                            "name": "Toronto",
+                            "province": "Ontario",
+                            "province_code": "ON",
+                            "slug": "toronto-on",
+                        },
+                        "address": "456 Oak Ave, Toronto",
+                        "postal_code": "M5H 2N2",
+                        "latitude": 43.651070,
+                        "longitude": -79.347015,
+                        "status": "open",
+                        "status_at": "2024-01-16T14:30:00Z",
+                        "job_items": [
+                            "Inspect faucet and pipes",
+                            "Replace worn washers",
+                            "Test for leaks",
+                            "Clean up work area",
+                        ],
+                        "images": [],
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-16T14:30:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Validation Error Response",
+                value={
+                    "message": "Validation failed",
+                    "data": None,
+                    "errors": {
+                        "estimated_budget": ["Budget must be greater than 0."],
+                        "status": ['"deleted" is not a valid choice.'],
+                    },
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["400"],
+            ),
+            OpenApiExample(
+                "Forbidden Response (Completed Job)",
+                value={
+                    "message": "Cannot update a completed job",
+                    "data": None,
+                    "errors": {"status": "Cannot update a completed job."},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["403"],
+            ),
+            OpenApiExample(
+                "Not Found Response",
+                value={
+                    "message": "Job not found",
+                    "data": None,
+                    "errors": {"detail": "The requested resource was not found"},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["404"],
+            ),
+        ],
+    )
+    def put(self, request, public_id):
+        """Update job."""
+        # Verify job belongs to authenticated homeowner
+        job = get_object_or_404(
+            Job.objects.select_related("category", "city").prefetch_related("images"),
+            public_id=public_id,
+            homeowner=request.user,
+        )
+
+        # Return 404 for deleted jobs
+        if job.status == "deleted":
+            return not_found_response("Job not found")
+
+        # Return 403 for completed/cancelled jobs
+        if job.status in ["completed", "cancelled"]:
+            return forbidden_response(
+                errors={"status": f"Cannot update a {job.status} job."},
+                message=f"Cannot update a {job.status} job",
+            )
+
+        serializer = JobUpdateSerializer(
+            job, data=request.data, context={"request": request}
+        )
+        if serializer.is_valid():
+            job = serializer.save()
+            # Refresh to get updated related objects
+            job = (
+                Job.objects.select_related("category", "city")
+                .prefetch_related("images")
+                .get(pk=job.pk)
+            )
+            response_serializer = JobDetailSerializer(job)
+            return success_response(
+                response_serializer.data, message="Job updated successfully"
+            )
+        return validation_error_response(serializer.errors)
+
+    @extend_schema(
+        operation_id="mobile_homeowner_jobs_delete",
+        responses={
+            200: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Delete a job by public_id for mobile app (soft delete - sets status to 'deleted'). "
+            "Only the job owner can delete. Returns 404 if job is already deleted or not found. "
+            "The job data is preserved in the database but will no longer appear in listings. "
+            "Requires phone verification."
+        ),
+        summary="Delete job",
+        tags=["Mobile Homeowner Jobs"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Job deleted successfully",
+                    "data": None,
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Not Found Response",
+                value={
+                    "message": "Job not found",
+                    "data": None,
+                    "errors": {"detail": "The requested resource was not found"},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["404"],
+            ),
+        ],
+    )
+    def delete(self, request, public_id):
+        """Soft delete job by setting status to 'deleted'."""
+        # Verify job belongs to authenticated homeowner
+        job = get_object_or_404(
+            Job,
+            public_id=public_id,
+            homeowner=request.user,
+        )
+
+        # Return 404 for already deleted jobs
+        if job.status == "deleted":
+            return not_found_response("Job not found")
+
+        job.status = "deleted"
+        job.save()
+
+        return no_content_response(message="Job deleted successfully")
 
 
 class ForYouJobListView(APIView):

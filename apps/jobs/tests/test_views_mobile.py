@@ -510,6 +510,469 @@ class MobileJobDetailViewTests(APITestCase):
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_get_deleted_job_returns_404(self):
+        """Test getting deleted job returns 404."""
+        self.job.status = "deleted"
+        self.job.save()
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class MobileJobUpdateDeleteViewTests(APITestCase):
+    """Test cases for mobile JobDetailView PUT and DELETE methods."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.user = User.objects.create_user(
+            email="homeowner@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.user, role="homeowner")
+        self.user.email_verified_at = "2024-01-01T00:00:00Z"
+        self.user.save()
+        # Mock token payload for permissions (with phone_verified for PUT/DELETE)
+        self.user.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create another user
+        self.other_user = User.objects.create_user(
+            email="other@example.com",
+            password="testpass123",
+        )
+
+        # Create test categories and cities
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.category2 = JobCategory.objects.create(
+            name="Electrical", slug="electrical", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.city2 = City.objects.create(
+            name="Vancouver",
+            province="British Columbia",
+            province_code="BC",
+            slug="vancouver-bc",
+            is_active=True,
+        )
+
+        # Create test job
+        self.job = Job.objects.create(
+            homeowner=self.user,
+            title="Fix leaking faucet",
+            description="Kitchen faucet is leaking",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="draft",
+        )
+
+        self.url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/"
+
+    # ===== PUT Tests =====
+
+    def test_update_job_success(self):
+        """Test successfully updating a job."""
+        data = {
+            "title": "Updated title",
+            "description": "Updated description",
+            "estimated_budget": "100.00",
+        }
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Job updated successfully")
+        self.assertEqual(response.data["data"]["title"], "Updated title")
+        self.assertEqual(response.data["data"]["description"], "Updated description")
+        self.assertEqual(response.data["data"]["estimated_budget"], 100.00)
+
+        # Verify in database
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.title, "Updated title")
+
+    def test_update_job_partial_update(self):
+        """Test partial update (only some fields)."""
+        data = {"title": "Only title updated"}
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["title"], "Only title updated")
+        # Other fields should remain unchanged
+        self.assertEqual(
+            response.data["data"]["description"], "Kitchen faucet is leaking"
+        )
+
+    def test_update_job_change_category(self):
+        """Test updating job category."""
+        data = {"category_id": str(self.category2.public_id)}
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["data"]["category"]["public_id"],
+            str(self.category2.public_id),
+        )
+
+    def test_update_job_change_city(self):
+        """Test updating job city."""
+        data = {"city_id": str(self.city2.public_id)}
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["data"]["city"]["public_id"], str(self.city2.public_id)
+        )
+
+    def test_update_job_change_status_draft_to_open(self):
+        """Test changing status from draft to open."""
+        data = {"status": "open"}
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["status"], "open")
+
+    def test_update_job_status_at_updated(self):
+        """Test that status_at is updated when status changes."""
+        # Initial status_at
+        initial_status_at = self.job.status_at
+
+        data = {"status": "open"}
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.job.refresh_from_db()
+        self.assertIsNotNone(self.job.status_at)
+        if initial_status_at:
+            self.assertNotEqual(self.job.status_at, initial_status_at)
+
+    def test_update_job_status_at_in_response(self):
+        """Test that status_at field is included in job response."""
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, {"title": "Test"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("status_at", response.data["data"])
+
+    def test_update_job_validation_error(self):
+        """Test update with invalid data returns 400."""
+        data = {"estimated_budget": "-10.00"}
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("estimated_budget", response.data["errors"])
+
+    def test_update_job_invalid_category(self):
+        """Test update with invalid category returns 400."""
+        data = {"category_id": "00000000-0000-0000-0000-000000000000"}
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("category_id", response.data["errors"])
+
+    def test_update_job_not_owner_returns_404(self):
+        """Test updating job that doesn't belong to user returns 404."""
+        # Create job for other user
+        other_job = Job.objects.create(
+            homeowner=self.other_user,
+            title="Other user job",
+            description="Test",
+            estimated_budget=Decimal("30.00"),
+            category=self.category,
+            city=self.city,
+            address="456 Oak Ave",
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(
+            f"/api/v1/mobile/homeowner/jobs/{other_job.public_id}/",
+            {"title": "Hacked!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_update_job_not_found(self):
+        """Test updating non-existent job returns 404."""
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(
+            "/api/v1/mobile/homeowner/jobs/00000000-0000-0000-0000-000000000000/",
+            {"title": "Test"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_update_deleted_job_returns_404(self):
+        """Test updating deleted job returns 404."""
+        self.job.status = "deleted"
+        self.job.save()
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, {"title": "Test"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_update_completed_job_returns_403(self):
+        """Test updating completed job returns 403."""
+        self.job.status = "completed"
+        self.job.save()
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, {"title": "Test"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("completed", response.data["message"])
+
+    def test_update_cancelled_job_returns_403(self):
+        """Test updating cancelled job returns 403."""
+        self.job.status = "cancelled"
+        self.job.save()
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, {"title": "Test"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("cancelled", response.data["message"])
+
+    def test_update_job_cannot_set_status_to_deleted(self):
+        """Test cannot set status to 'deleted' via update."""
+        data = {"status": "deleted"}
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("status", response.data["errors"])
+
+    def test_update_job_cannot_set_status_to_completed(self):
+        """Test cannot set status to 'completed' via update."""
+        data = {"status": "completed"}
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("status", response.data["errors"])
+
+    def test_update_job_cannot_set_status_to_cancelled(self):
+        """Test cannot set status to 'cancelled' via update."""
+        data = {"status": "cancelled"}
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("status", response.data["errors"])
+
+    def test_update_job_requires_phone_verification(self):
+        """Test update requires phone verification."""
+        # User without phone verification
+        user_no_phone = User.objects.create_user(
+            email="nophone@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=user_no_phone, role="homeowner")
+        user_no_phone.email_verified_at = "2024-01-01T00:00:00Z"
+        user_no_phone.save()
+        user_no_phone.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": False,
+        }
+
+        # Create job for this user
+        job = Job.objects.create(
+            homeowner=user_no_phone,
+            title="Test job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        self.client.force_authenticate(user=user_no_phone)
+        response = self.client.put(
+            f"/api/v1/mobile/homeowner/jobs/{job.public_id}/",
+            {"title": "Updated"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("phone", str(response.data["errors"]).lower())
+
+    def test_update_job_unauthenticated(self):
+        """Test update without authentication returns 401."""
+        response = self.client.put(self.url, {"title": "Test"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_update_job_with_job_items(self):
+        """Test updating job items."""
+        data = {"job_items": ["Task 1", "Task 2", "Task 3"]}
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["data"]["job_items"], ["Task 1", "Task 2", "Task 3"]
+        )
+
+    def test_update_job_with_coordinates(self):
+        """Test updating job coordinates."""
+        data = {"latitude": "43.651070", "longitude": "-79.347015"}
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.put(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(float(response.data["data"]["latitude"]), 43.651070)
+        self.assertEqual(float(response.data["data"]["longitude"]), -79.347015)
+
+    # ===== DELETE Tests =====
+
+    def test_delete_job_success(self):
+        """Test successfully deleting a job."""
+        self.client.force_authenticate(user=self.user)
+        response = self.client.delete(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Job deleted successfully")
+
+    def test_delete_job_sets_status_to_deleted(self):
+        """Test delete sets status to 'deleted'."""
+        self.client.force_authenticate(user=self.user)
+        response = self.client.delete(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, "deleted")
+
+    def test_delete_job_sets_status_at(self):
+        """Test delete updates status_at timestamp."""
+        initial_status_at = self.job.status_at
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.delete(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.job.refresh_from_db()
+        self.assertIsNotNone(self.job.status_at)
+        if initial_status_at:
+            self.assertNotEqual(self.job.status_at, initial_status_at)
+
+    def test_delete_job_not_owner_returns_404(self):
+        """Test deleting job that doesn't belong to user returns 404."""
+        # Create job for other user
+        other_job = Job.objects.create(
+            homeowner=self.other_user,
+            title="Other user job",
+            description="Test",
+            estimated_budget=Decimal("30.00"),
+            category=self.category,
+            city=self.city,
+            address="456 Oak Ave",
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.delete(
+            f"/api/v1/mobile/homeowner/jobs/{other_job.public_id}/"
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_delete_job_not_found(self):
+        """Test deleting non-existent job returns 404."""
+        self.client.force_authenticate(user=self.user)
+        response = self.client.delete(
+            "/api/v1/mobile/homeowner/jobs/00000000-0000-0000-0000-000000000000/"
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_delete_already_deleted_job_returns_404(self):
+        """Test deleting already deleted job returns 404."""
+        self.job.status = "deleted"
+        self.job.save()
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.delete(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_delete_job_requires_phone_verification(self):
+        """Test delete requires phone verification."""
+        # User without phone verification
+        user_no_phone = User.objects.create_user(
+            email="nophone2@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=user_no_phone, role="homeowner")
+        user_no_phone.email_verified_at = "2024-01-01T00:00:00Z"
+        user_no_phone.save()
+        user_no_phone.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": False,
+        }
+
+        # Create job for this user
+        job = Job.objects.create(
+            homeowner=user_no_phone,
+            title="Test job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        self.client.force_authenticate(user=user_no_phone)
+        response = self.client.delete(f"/api/v1/mobile/homeowner/jobs/{job.public_id}/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("phone", str(response.data["errors"]).lower())
+
+    def test_delete_job_unauthenticated(self):
+        """Test delete without authentication returns 401."""
+        response = self.client.delete(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    # ===== Listing Exclusion Tests =====
+
+    def test_deleted_jobs_excluded_from_list(self):
+        """Test deleted jobs are excluded from job listing."""
+        # Create another job that's not deleted
+        Job.objects.create(
+            homeowner=self.user,
+            title="Active job",
+            description="Test",
+            estimated_budget=Decimal("60.00"),
+            category=self.category,
+            city=self.city,
+            address="456 Oak Ave",
+            status="open",
+        )
+
+        # Delete the first job
+        self.job.status = "deleted"
+        self.job.save()
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get("/api/v1/mobile/homeowner/jobs/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Active job")
+
 
 class MobileForYouJobListViewTests(APITestCase):
     """Test cases for mobile ForYouJobListView."""

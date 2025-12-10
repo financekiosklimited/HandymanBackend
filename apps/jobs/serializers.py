@@ -84,6 +84,7 @@ class JobListSerializer(serializers.ModelSerializer):
             "latitude",
             "longitude",
             "status",
+            "status_at",
             "job_items",
             "images",
             "created_at",
@@ -325,6 +326,190 @@ class JobCreateSerializer(serializers.Serializer):
         return job
 
 
+class JobUpdateSerializer(serializers.Serializer):
+    """
+    Serializer for updating a job (write-only).
+    All fields are optional for partial updates.
+    Cannot update completed, cancelled, or deleted jobs.
+    """
+
+    title = serializers.CharField(
+        max_length=200,
+        required=False,
+        help_text="Job title",
+    )
+    description = serializers.CharField(
+        required=False,
+        help_text="Job description",
+    )
+    estimated_budget = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        coerce_to_string=False,
+        help_text="Budget homeowner is willing to pay",
+    )
+    category_id = serializers.UUIDField(
+        required=False,
+        help_text="Category public_id",
+    )
+    city_id = serializers.UUIDField(
+        required=False,
+        help_text="City public_id",
+    )
+    address = serializers.CharField(
+        required=False,
+        help_text="Street address",
+    )
+    postal_code = serializers.CharField(
+        max_length=7,
+        required=False,
+        allow_blank=True,
+        help_text="Postal code (e.g., A1A 1A1)",
+    )
+    latitude = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        required=False,
+        allow_null=True,
+        coerce_to_string=False,
+        help_text="Latitude coordinate (optional, must provide both lat/lng)",
+    )
+    longitude = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        required=False,
+        allow_null=True,
+        coerce_to_string=False,
+        help_text="Longitude coordinate (optional, must provide both lat/lng)",
+    )
+    status = serializers.ChoiceField(
+        choices=[
+            ("draft", "Draft"),
+            ("open", "Open"),
+            ("in_progress", "In Progress"),
+        ],
+        required=False,
+        help_text="Job status (only draft, open, in_progress allowed)",
+    )
+    job_items = serializers.ListField(
+        child=serializers.CharField(max_length=MAX_JOB_ITEM_LENGTH, allow_blank=True),
+        required=False,
+        allow_empty=True,
+        max_length=MAX_JOB_ITEMS,
+        help_text=f"List of tasks/items to be done (max {MAX_JOB_ITEMS} items, {MAX_JOB_ITEM_LENGTH} chars each)",
+    )
+
+    def validate_estimated_budget(self, value):
+        """Validate budget is positive."""
+        if value is not None and value <= Decimal("0"):
+            raise serializers.ValidationError("Budget must be greater than 0.")
+        return value
+
+    def validate_category_id(self, value):
+        """Validate category exists and is active."""
+        try:
+            category = JobCategory.objects.get(public_id=value)
+            if not category.is_active:
+                raise serializers.ValidationError("Selected category is not active.")
+            return category
+        except JobCategory.DoesNotExist:
+            raise serializers.ValidationError("Invalid category.")
+
+    def validate_city_id(self, value):
+        """Validate city exists and is active."""
+        try:
+            city = City.objects.get(public_id=value)
+            if not city.is_active:
+                raise serializers.ValidationError("Selected city is not active.")
+            return city
+        except City.DoesNotExist:
+            raise serializers.ValidationError("Invalid city.")
+
+    def validate_postal_code(self, value):
+        """Validate Canadian postal code format."""
+        if value:
+            # Remove spaces and convert to uppercase
+            cleaned = value.replace(" ", "").upper()
+            # Canadian postal code format: A1A1A1
+            if len(cleaned) != 6:
+                raise serializers.ValidationError(
+                    "Postal code must be 6 characters (e.g., A1A 1A1)."
+                )
+            # Check format: letter-number-letter-number-letter-number
+            pattern = r"^[A-Z]\d[A-Z]\d[A-Z]\d$"
+            if not re.match(pattern, cleaned):
+                raise serializers.ValidationError(
+                    "Invalid postal code format. Must be like A1A 1A1."
+                )
+            # Return formatted value with space
+            return f"{cleaned[:3]} {cleaned[3:]}"
+        return value
+
+    def validate_job_items(self, value):
+        """Validate and clean job items."""
+        if not value:
+            return []
+
+        # Strip whitespace and filter out empty strings
+        cleaned_items = [item.strip() for item in value if item and item.strip()]
+
+        return cleaned_items
+
+    def validate(self, attrs):
+        """Cross-field validation."""
+        # Get current instance values for lat/lng if not provided in update
+        instance = self.instance
+
+        # Check if one is being set to None while the other exists
+        if "latitude" in attrs or "longitude" in attrs:
+            new_lat = attrs.get("latitude")
+            new_lng = attrs.get("longitude")
+
+            # If updating one, need to consider the other
+            if "latitude" in attrs and "longitude" not in attrs:
+                new_lng = getattr(instance, "longitude", None) if instance else None
+            if "longitude" in attrs and "latitude" not in attrs:
+                new_lat = getattr(instance, "latitude", None) if instance else None
+
+            # If one coordinate is provided/exists, both must be provided/exist
+            if (new_lat is None) != (new_lng is None):
+                raise serializers.ValidationError(
+                    "Both latitude and longitude must be provided together."
+                )
+
+            # Validate coordinate ranges
+            if new_lat is not None:
+                if not (-90 <= new_lat <= 90):
+                    raise serializers.ValidationError(
+                        {"latitude": "Latitude must be between -90 and 90."}
+                    )
+            if new_lng is not None:
+                if not (-180 <= new_lng <= 180):
+                    raise serializers.ValidationError(
+                        {"longitude": "Longitude must be between -180 and 180."}
+                    )
+
+        return attrs
+
+    def update(self, instance, validated_data):
+        """Update job fields."""
+        # Handle category if provided
+        if "category_id" in validated_data:
+            instance.category = validated_data.pop("category_id")
+
+        # Handle city if provided
+        if "city_id" in validated_data:
+            instance.city = validated_data.pop("city_id")
+
+        # Update remaining fields
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+
+        instance.save()
+        return instance
+
+
 # Response envelope serializers
 JobCategoryListResponseSerializer = create_list_response_serializer(
     JobCategorySerializer, "JobCategoryListResponse"
@@ -344,6 +529,10 @@ JobDetailResponseSerializer = create_response_serializer(
 
 JobCreateResponseSerializer = create_response_serializer(
     JobDetailSerializer, "JobCreateResponse"
+)
+
+JobUpdateResponseSerializer = create_response_serializer(
+    JobDetailSerializer, "JobUpdateResponse"
 )
 
 ForYouJobListResponseSerializer = create_list_response_serializer(

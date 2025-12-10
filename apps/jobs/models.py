@@ -79,6 +79,7 @@ class Job(BaseModel):
         ("in_progress", "In Progress"),
         ("completed", "Completed"),
         ("cancelled", "Cancelled"),
+        ("deleted", "Deleted"),
     ]
 
     homeowner = models.ForeignKey(
@@ -100,6 +101,11 @@ class Job(BaseModel):
         max_digits=9, decimal_places=6, null=True, blank=True
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="draft")
+    status_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when status was last changed",
+    )
     job_items = models.JSONField(
         default=list,
         blank=True,
@@ -185,8 +191,19 @@ class Job(BaseModel):
 
     def save(self, *args, **kwargs):
         """
-        Override save to run validation.
+        Override save to run validation and track status changes.
         """
+        from django.utils import timezone
+
+        # Track status changes
+        if self.pk:
+            old_status = Job.objects.filter(pk=self.pk).values("status").first()
+            if old_status and old_status["status"] != self.status:
+                self.status_at = timezone.now()
+        elif self.status:
+            # New instance with status set
+            self.status_at = timezone.now()
+
         self.full_clean()
         super().save(*args, **kwargs)
 
