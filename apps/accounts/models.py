@@ -65,6 +65,9 @@ class User(AbstractUser):
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True, db_index=True)
 
+    # Dummy data flag for demo purposes
+    is_dummy = models.BooleanField(default=False, db_index=True)
+
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 

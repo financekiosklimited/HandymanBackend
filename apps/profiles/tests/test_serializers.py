@@ -9,6 +9,8 @@ from apps.profiles.models import HandymanProfile, HomeownerProfile
 from apps.profiles.serializers import (
     HandymanProfileSerializer,
     HandymanProfileUpdateSerializer,
+    HomeownerHandymanDetailSerializer,
+    HomeownerHandymanListSerializer,
     HomeownerProfileSerializer,
     HomeownerProfileUpdateSerializer,
 )
@@ -127,6 +129,12 @@ class HandymanProfileSerializerTests(TestCase):
         serializer = HandymanProfileSerializer(self.profile)
         self.assertIn("display_name", serializer.data)
         self.assertIn("rating", serializer.data)
+        self.assertIn("hourly_rate", serializer.data)
+        self.assertIn("latitude", serializer.data)
+        self.assertIn("longitude", serializer.data)
+        self.assertIn("is_active", serializer.data)
+        self.assertIn("is_available", serializer.data)
+        self.assertIn("is_approved", serializer.data)
         self.assertIn("phone_number", serializer.data)
         self.assertIn("address", serializer.data)
         self.assertIn("created_at", serializer.data)
@@ -134,9 +142,23 @@ class HandymanProfileSerializerTests(TestCase):
 
     def test_serializer_field_values(self):
         """Test serializer returns correct field values."""
+        self.profile.hourly_rate = Decimal("75.00")
+        self.profile.latitude = Decimal("43.651070")
+        self.profile.longitude = Decimal("-79.347015")
+        self.profile.is_active = True
+        self.profile.is_available = True
+        self.profile.is_approved = True
+        self.profile.save()
+
         serializer = HandymanProfileSerializer(self.profile)
         self.assertEqual(serializer.data["display_name"], "Test Handyman")
         self.assertEqual(serializer.data["rating"], "4.50")
+        self.assertEqual(serializer.data["hourly_rate"], "75.00")
+        self.assertEqual(serializer.data["latitude"], "43.651070")
+        self.assertEqual(serializer.data["longitude"], "-79.347015")
+        self.assertTrue(serializer.data["is_active"])
+        self.assertTrue(serializer.data["is_available"])
+        self.assertTrue(serializer.data["is_approved"])
         self.assertEqual(serializer.data["phone_number"], "+1234567890")
         self.assertEqual(serializer.data["address"], "789 Pine Rd")
 
@@ -218,3 +240,85 @@ class HandymanProfileUpdateSerializerTests(TestCase):
         data = {"display_name": "Name", "phone_number": "", "address": ""}
         serializer = HandymanProfileUpdateSerializer(self.profile, data=data)
         self.assertTrue(serializer.is_valid())
+
+    def test_update_serializer_rejects_hourly_rate_lte_zero(self):
+        """Test update serializer rejects non-positive hourly rate."""
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile, data={"hourly_rate": Decimal("0.00")}, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("hourly_rate", serializer.errors)
+
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile, data={"hourly_rate": Decimal("-1.00")}, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("hourly_rate", serializer.errors)
+
+    def test_update_serializer_requires_lat_lng_together(self):
+        """Test update serializer requires latitude/longitude together."""
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile, data={"latitude": Decimal("43.651070")}, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("non_field_errors", serializer.errors)
+
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile, data={"longitude": Decimal("-79.347015")}, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("non_field_errors", serializer.errors)
+
+    def test_update_serializer_rejects_out_of_range_coordinates(self):
+        """Test update serializer rejects invalid coordinate ranges."""
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile,
+            data={"latitude": Decimal("91"), "longitude": Decimal("0")},
+            partial=True,
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("latitude", serializer.errors)
+
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile,
+            data={"latitude": Decimal("0"), "longitude": Decimal("181")},
+            partial=True,
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("longitude", serializer.errors)
+
+
+class HomeownerHandymanPublicSerializersTests(TestCase):
+    """Test cases for homeowner-facing handymen serializers."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        UserRole.objects.create(user=self.user, role="handyman")
+        self.profile = HandymanProfile.objects.create(
+            user=self.user,
+            display_name="Test Handyman",
+            rating=Decimal("4.50"),
+            hourly_rate=Decimal("75.00"),
+            latitude=Decimal("43.651070"),
+            longitude=Decimal("-79.347015"),
+            phone_number="+1234567890",
+            address="789 Pine Rd",
+        )
+
+    def test_homeowner_list_serializer_hides_sensitive_fields(self):
+        """Homeowner list serializer must not expose phone/address/coordinates."""
+        serializer = HomeownerHandymanListSerializer(self.profile)
+        self.assertNotIn("phone_number", serializer.data)
+        self.assertNotIn("address", serializer.data)
+        self.assertNotIn("latitude", serializer.data)
+        self.assertNotIn("longitude", serializer.data)
+
+    def test_homeowner_detail_serializer_hides_sensitive_fields(self):
+        """Homeowner detail serializer must not expose phone/address/coordinates."""
+        serializer = HomeownerHandymanDetailSerializer(self.profile)
+        self.assertNotIn("phone_number", serializer.data)
+        self.assertNotIn("address", serializer.data)
+        self.assertNotIn("latitude", serializer.data)
+        self.assertNotIn("longitude", serializer.data)

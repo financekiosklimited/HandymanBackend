@@ -112,6 +112,9 @@ class Job(BaseModel):
         help_text="List of tasks/items to be done for this job",
     )
 
+    # Dummy data flag for demo purposes
+    is_dummy = models.BooleanField(default=False, db_index=True)
+
     class Meta:
         db_table = "jobs"
         ordering = ["-created_at"]

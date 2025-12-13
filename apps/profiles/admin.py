@@ -19,11 +19,22 @@ class HandymanProfileAdmin(ModelAdmin):
         "user",
         "display_name",
         "rating_display",
+        "hourly_rate",
+        "is_approved",
+        "is_active",
+        "is_available",
         "phone_number",
         "is_phone_verified_display",
         "created_at",
     )
-    list_filter = ("rating", "phone_verified_at", "created_at")
+    list_filter = (
+        "rating",
+        "is_approved",
+        "is_active",
+        "is_available",
+        "phone_verified_at",
+        "created_at",
+    )
     search_fields = (
         "user__email",
         "display_name",
@@ -43,8 +54,20 @@ class HandymanProfileAdmin(ModelAdmin):
             {"fields": ("public_id", "user", "display_name")},
         ),
         (
+            "Listing Status",
+            {"fields": ("is_approved", "is_active", "is_available")},
+        ),
+        (
+            "Pricing",
+            {"fields": ("hourly_rate",)},
+        ),
+        (
             "Rating",
             {"fields": ("rating",)},
+        ),
+        (
+            "Location",
+            {"fields": ("latitude", "longitude")},
         ),
         (
             "Contact & Verification",

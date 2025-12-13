@@ -134,6 +134,17 @@ format-check: ## Check code formatting
 	@echo "$(BLUE)Checking code formatting...$(NC)"
 	$(UV) run ruff format --check .
 
+# Dummy data (for demo)
+.PHONY: dummy-generate
+dummy-generate: ## Generate dummy data for demo
+	@echo "$(BLUE)Generating dummy data...$(NC)"
+	$(MANAGE) generate_dummy_data
+
+.PHONY: dummy-delete
+dummy-delete: ## Delete all dummy data
+	@echo "$(BLUE)Deleting dummy data...$(NC)"
+	$(MANAGE) delete_dummy_data --yes
+
 # Utilities
 .PHONY: clean
 clean: ## Clean temporary files
