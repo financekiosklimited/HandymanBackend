@@ -3,6 +3,7 @@ Admin configuration for profiles app.
 """
 
 from django.contrib import admin
+from django.utils.html import format_html
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
@@ -16,6 +17,7 @@ class HandymanProfileAdmin(ModelAdmin):
     """
 
     list_display = (
+        "avatar_preview",
         "user",
         "display_name",
         "rating_display",
@@ -51,7 +53,7 @@ class HandymanProfileAdmin(ModelAdmin):
     fieldsets = (
         (
             "Profile Information",
-            {"fields": ("public_id", "user", "display_name")},
+            {"fields": ("public_id", "user", "display_name", "avatar")},
         ),
         (
             "Listing Status",
@@ -96,6 +98,21 @@ class HandymanProfileAdmin(ModelAdmin):
         """Display whether phone is verified."""
         return obj.is_phone_verified
 
+    @display(description="Avatar")
+    def avatar_preview(self, obj):
+        """Display avatar thumbnail in list view."""
+        if obj.avatar:
+            return format_html(
+                '<img src="{}" style="width: 40px; height: 40px; '
+                'border-radius: 50%; object-fit: cover;" />',
+                obj.avatar.url,
+            )
+        return format_html(
+            '<div style="width: 40px; height: 40px; border-radius: 50%; '
+            "background-color: #e0e0e0; display: flex; align-items: center; "
+            'justify-content: center; color: #666; font-size: 12px;">N/A</div>'
+        )
+
 
 @admin.register(HomeownerProfile)
 class HomeownerProfileAdmin(ModelAdmin):
@@ -104,6 +121,7 @@ class HomeownerProfileAdmin(ModelAdmin):
     """
 
     list_display = (
+        "avatar_preview",
         "user",
         "display_name",
         "phone_number",
@@ -127,7 +145,7 @@ class HomeownerProfileAdmin(ModelAdmin):
     fieldsets = (
         (
             "Profile Information",
-            {"fields": ("public_id", "user", "display_name")},
+            {"fields": ("public_id", "user", "display_name", "avatar")},
         ),
         (
             "Contact & Verification",
@@ -147,3 +165,18 @@ class HomeownerProfileAdmin(ModelAdmin):
     def is_phone_verified_display(self, obj):
         """Display whether phone is verified."""
         return obj.is_phone_verified
+
+    @display(description="Avatar")
+    def avatar_preview(self, obj):
+        """Display avatar thumbnail in list view."""
+        if obj.avatar:
+            return format_html(
+                '<img src="{}" style="width: 40px; height: 40px; '
+                'border-radius: 50%; object-fit: cover;" />',
+                obj.avatar.url,
+            )
+        return format_html(
+            '<div style="width: 40px; height: 40px; border-radius: 50%; '
+            "background-color: #e0e0e0; display: flex; align-items: center; "
+            'justify-content: center; color: #666; font-size: 12px;">N/A</div>'
+        )
