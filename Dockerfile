@@ -54,6 +54,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
     wget \
+    make \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /root/.local/share/uv /root/.local/share/uv
