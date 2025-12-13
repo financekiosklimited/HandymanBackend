@@ -181,6 +181,20 @@ class HomeownerHandymanListSerializer(serializers.ModelSerializer):
     """Serializer for homeowners browsing nearby handymen (public fields only)."""
 
     avatar_url = serializers.URLField(read_only=True, allow_null=True)
+    rating = serializers.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        read_only=True,
+        allow_null=True,
+        coerce_to_string=False,
+    )
+    hourly_rate = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        read_only=True,
+        allow_null=True,
+        coerce_to_string=False,
+    )
     distance_km = serializers.FloatField(
         read_only=True,
         allow_null=True,
@@ -204,6 +218,20 @@ class HomeownerHandymanDetailSerializer(serializers.ModelSerializer):
     """Serializer for homeowner viewing a handyman profile detail (public fields only)."""
 
     avatar_url = serializers.URLField(read_only=True, allow_null=True)
+    rating = serializers.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        read_only=True,
+        allow_null=True,
+        coerce_to_string=False,
+    )
+    hourly_rate = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        read_only=True,
+        allow_null=True,
+        coerce_to_string=False,
+    )
 
     class Meta:
         model = HandymanProfile
