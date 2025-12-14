@@ -185,7 +185,9 @@ class AuthServiceTests(TestCase):
     def test_login_user_nonexistent(self):
         """Test login with nonexistent user."""
         tokens = self.service.login_user(
-            email="nonexistent@example.com", password="password123", platform="web"
+            email="nonexistent@example.com",
+            password="password123",
+            platform="web",
         )
 
         self.assertIsNone(tokens)

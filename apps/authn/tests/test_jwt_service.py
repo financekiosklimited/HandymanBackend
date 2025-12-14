@@ -225,7 +225,8 @@ class JWTServiceTests(TestCase):
         self.assertEqual(access_payload["active_role"], "homeowner")
 
         new_tokens = self.jwt_service.refresh_token_pair(
-            refresh_token=tokens["refresh_token"], platform="web"
+            refresh_token=tokens["refresh_token"],
+            platform="web",
         )
 
         new_payload = self.jwt_service.decode_token(new_tokens["access_token"])
@@ -432,7 +433,8 @@ class JWTServiceTests(TestCase):
         session = MagicMock()
         session.platform = "web"
         session.user = SimpleNamespace(
-            has_role=lambda role: False, active_role=None
+            has_role=lambda role: False,
+            active_role=None,
         )
 
         with (
