@@ -89,6 +89,9 @@ class AuthServiceTests(TestCase):
         # Check profile created
         self.assertTrue(HomeownerProfile.objects.filter(user=user).exists())
 
+        # Check active_role is set
+        self.assertEqual(user.active_role, "homeowner")
+
         # Check tokens returned
         self.assertIn("access_token", tokens)
         self.assertIn("refresh_token", tokens)
@@ -107,6 +110,9 @@ class AuthServiceTests(TestCase):
 
         # No roles should be created
         self.assertFalse(user.roles.exists())
+
+        # active_role should be None
+        self.assertIsNone(user.active_role)
 
         # Tokens should still be returned
         self.assertIn("access_token", tokens)
@@ -136,7 +142,9 @@ class AuthServiceTests(TestCase):
 
     def test_login_user_success(self):
         """Test successful user login."""
-        User.objects.create_user(email="test@example.com", password="securepass123")
+        user = User.objects.create_user(
+            email="test@example.com", password="securepass123"
+        )
 
         tokens = self.service.login_user(
             email="test@example.com", password="securepass123", platform="web"
@@ -145,6 +153,25 @@ class AuthServiceTests(TestCase):
         self.assertIsNotNone(tokens)
         self.assertIn("access_token", tokens)
         self.assertIn("refresh_token", tokens)
+
+    def test_login_user_with_active_role(self):
+        """Test login user with active_role set."""
+        user = User.objects.create_user(
+            email="test@example.com", password="securepass123"
+        )
+        user.active_role = "homeowner"
+        user.save()
+
+        tokens = self.service.login_user(
+            email="test@example.com", password="securepass123", platform="web"
+        )
+
+        self.assertIsNotNone(tokens)
+        # Token should include active_role from user
+        from apps.authn.jwt_service import jwt_service
+
+        payload = jwt_service.decode_token(tokens["access_token"])
+        self.assertEqual(payload.get("active_role"), "homeowner")
 
     def test_login_user_wrong_password(self):
         """Test login with wrong password."""
@@ -192,6 +219,10 @@ class AuthServiceTests(TestCase):
         # Check profile created
         self.assertTrue(HomeownerProfile.objects.filter(user=user).exists())
 
+        # Check active_role is set
+        user.refresh_from_db()
+        self.assertEqual(user.active_role, "homeowner")
+
         # Check result
         self.assertEqual(result["role"], "homeowner")
         self.assertEqual(result["next_action"], "verify_email")
@@ -208,6 +239,11 @@ class AuthServiceTests(TestCase):
 
         # Should not create duplicate role
         self.assertEqual(user.roles.filter(role="homeowner").count(), 1)
+
+        # Check active_role is set
+        user.refresh_from_db()
+        self.assertEqual(user.active_role, "homeowner")
+
         self.assertEqual(result["next_action"], "verify_email")
 
     def test_activate_role_verified_email(self):
@@ -535,6 +571,8 @@ class AuthServiceTests(TestCase):
         self.assertTrue(user.is_email_verified)
         self.assertTrue(UserRole.objects.filter(user=user, role="homeowner").exists())
         self.assertTrue(HomeownerProfile.objects.filter(user=user).exists())
+        # Check active_role is set for new Google user
+        self.assertEqual(user.active_role, "homeowner")
         self.assertIn("access_token", tokens)
 
     def test_google_login_errors_wrapped(self):
