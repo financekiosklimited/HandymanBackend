@@ -104,7 +104,9 @@ class AuthServiceTests(TestCase):
     def test_register_user_without_initial_role(self, mock_send_email):
         """Test registering user without initial role."""
         tokens = self.service.register_user(
-            email="test@example.com", password="securepass123", platform="web"
+            email="test@example.com",
+            password="securepass123",
+            platform="web",
         )
 
         user = User.objects.get(email="test@example.com")
@@ -144,11 +146,14 @@ class AuthServiceTests(TestCase):
     def test_login_user_success(self):
         """Test successful user login."""
         User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
 
         tokens = self.service.login_user(
-            email="test@example.com", password="securepass123", platform="web"
+            email="test@example.com",
+            password="securepass123",
+            platform="web",
         )
 
         self.assertIsNotNone(tokens)
@@ -158,13 +163,16 @@ class AuthServiceTests(TestCase):
     def test_login_user_with_active_role(self):
         """Test login user with active_role set."""
         user = User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
         user.active_role = "homeowner"
         user.save()
 
         tokens = self.service.login_user(
-            email="test@example.com", password="securepass123", platform="web"
+            email="test@example.com",
+            password="securepass123",
+            platform="web",
         )
 
         self.assertIsNotNone(tokens)
@@ -174,10 +182,15 @@ class AuthServiceTests(TestCase):
 
     def test_login_user_wrong_password(self):
         """Test login with wrong password."""
-        User.objects.create_user(email="test@example.com", password="securepass123")
+        User.objects.create_user(
+            email="test@example.com",
+            password="securepass123",
+        )
 
         tokens = self.service.login_user(
-            email="test@example.com", password="wrongpassword", platform="web"
+            email="test@example.com",
+            password="wrongpassword",
+            platform="web",
         )
 
         self.assertIsNone(tokens)
@@ -195,13 +208,16 @@ class AuthServiceTests(TestCase):
     def test_login_inactive_user(self):
         """Test login with inactive user."""
         user = User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
         user.is_active = False
         user.save()
 
         tokens = self.service.login_user(
-            email="test@example.com", password="securepass123", platform="web"
+            email="test@example.com",
+            password="securepass123",
+            platform="web",
         )
 
         self.assertIsNone(tokens)
@@ -209,7 +225,8 @@ class AuthServiceTests(TestCase):
     def test_activate_role_new_role(self):
         """Test activating a new role."""
         user = User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
 
         result = self.service.activate_role(user, "homeowner")
@@ -231,7 +248,8 @@ class AuthServiceTests(TestCase):
     def test_activate_role_existing_role(self):
         """Test activating an existing role."""
         user = User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
         UserRole.objects.create(user=user, role="homeowner")
         HomeownerProfile.objects.create(user=user, display_name="Test")
@@ -250,7 +268,8 @@ class AuthServiceTests(TestCase):
     def test_activate_role_verified_email(self):
         """Test activating role with verified email."""
         user = User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
         user.email_verified_at = datetime.now(UTC)
         user.save()
@@ -266,7 +285,8 @@ class AuthServiceTests(TestCase):
     def test_activate_role_requires_profile_completion(self):
         """Verified user with empty profile should fill profile next."""
         user = User.objects.create_user(
-            email="fill@example.com", password="securepass123"
+            email="fill@example.com",
+            password="securepass123",
         )
         user.email_verified_at = datetime.now(UTC)
         user.save()
@@ -281,7 +301,8 @@ class AuthServiceTests(TestCase):
     def test_verify_email(self):
         """Test email verification."""
         user = User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
         token, otp = EmailVerificationToken.create_for_user(user)
 
@@ -294,7 +315,8 @@ class AuthServiceTests(TestCase):
     def test_verify_email_invalid_otp(self):
         """Test email verification with invalid OTP."""
         user = User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
 
         verified_user = self.service.verify_email("test@example.com", "000000")
@@ -306,7 +328,8 @@ class AuthServiceTests(TestCase):
     def test_get_next_action_unverified_email(self):
         """Test next action for unverified email."""
         user = User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
 
         next_action = self.service.get_next_action_for_user(user)
@@ -316,7 +339,8 @@ class AuthServiceTests(TestCase):
     def test_get_next_action_no_roles(self):
         """Test next action when user has no roles."""
         user = User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
         user.email_verified_at = datetime.now(UTC)
         user.save()
@@ -328,7 +352,8 @@ class AuthServiceTests(TestCase):
     def test_get_next_action_incomplete_profile(self):
         """Test next action when profile is incomplete."""
         user = User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
         user.email_verified_at = datetime.now(UTC)
         user.save()
@@ -344,7 +369,8 @@ class AuthServiceTests(TestCase):
     def test_get_next_action_complete(self):
         """Test next action when everything is complete."""
         user = User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
         user.email_verified_at = datetime.now(UTC)
         user.save()
@@ -360,7 +386,8 @@ class AuthServiceTests(TestCase):
     def test_resend_email_verification(self, mock_send_email):
         """Test resending email verification."""
         user = User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
 
         # Create old token
@@ -386,7 +413,8 @@ class AuthServiceTests(TestCase):
     def test_forgot_password(self, mock_send_email):
         """Test forgot password flow."""
         user = User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
 
         self.service.forgot_password("test@example.com")
@@ -412,7 +440,8 @@ class AuthServiceTests(TestCase):
     def test_verify_password_reset_code(self):
         """Test verifying password reset code."""
         user = User.objects.create_user(
-            email="test@example.com", password="securepass123"
+            email="test@example.com",
+            password="securepass123",
         )
         code, otp = PasswordResetCode.create_for_user(user)
 
@@ -430,7 +459,10 @@ class AuthServiceTests(TestCase):
 
     def test_reset_password(self):
         """Test resetting password."""
-        user = User.objects.create_user(email="test@example.com", password="oldpass123")
+        user = User.objects.create_user(
+            email="test@example.com",
+            password="oldpass123",
+        )
         token_obj, token = PasswordResetToken.create_for_user(user)
 
         success = self.service.reset_password(token, "newpass123")
@@ -441,7 +473,10 @@ class AuthServiceTests(TestCase):
 
     def test_reset_password_revokes_sessions(self):
         """Test resetting password revokes all refresh sessions."""
-        user = User.objects.create_user(email="test@example.com", password="oldpass123")
+        user = User.objects.create_user(
+            email="test@example.com",
+            password="oldpass123",
+        )
 
         # Create some sessions
         RefreshSession.create_session(user=user, platform="web", jti="jti1")
@@ -464,7 +499,10 @@ class AuthServiceTests(TestCase):
 
     def test_change_password(self):
         """Test changing password."""
-        user = User.objects.create_user(email="test@example.com", password="oldpass123")
+        user = User.objects.create_user(
+            email="test@example.com",
+            password="oldpass123",
+        )
 
         success = self.service.change_password(user, "oldpass123", "newpass123")
 
@@ -474,7 +512,10 @@ class AuthServiceTests(TestCase):
 
     def test_change_password_wrong_current_password(self):
         """Test changing password with wrong current password."""
-        user = User.objects.create_user(email="test@example.com", password="oldpass123")
+        user = User.objects.create_user(
+            email="test@example.com",
+            password="oldpass123",
+        )
 
         success = self.service.change_password(user, "wrongpass", "newpass123")
 
@@ -482,7 +523,10 @@ class AuthServiceTests(TestCase):
 
     def test_change_password_revokes_sessions(self):
         """Test changing password revokes all refresh sessions."""
-        user = User.objects.create_user(email="test@example.com", password="oldpass123")
+        user = User.objects.create_user(
+            email="test@example.com",
+            password="oldpass123",
+        )
 
         # Create sessions
         RefreshSession.create_session(user=user, platform="web", jti="jti1")
@@ -497,7 +541,10 @@ class AuthServiceTests(TestCase):
 
     def test_has_complete_profile_homeowner(self):
         """Test checking complete profile for homeowner."""
-        user = User.objects.create_user(email="test@example.com", password="pass123")
+        user = User.objects.create_user(
+            email="test@example.com",
+            password="pass123",
+        )
 
         # Incomplete profile
         HomeownerProfile.objects.create(user=user, display_name="")
@@ -510,7 +557,10 @@ class AuthServiceTests(TestCase):
 
     def test_has_complete_profile_handyman(self):
         """Test checking complete profile for handyman."""
-        user = User.objects.create_user(email="test@example.com", password="pass123")
+        user = User.objects.create_user(
+            email="test@example.com",
+            password="pass123",
+        )
 
         # Incomplete profile
         HandymanProfile.objects.create(user=user, display_name="")
@@ -523,7 +573,10 @@ class AuthServiceTests(TestCase):
 
     def test_has_complete_profile_admin(self):
         """Test checking complete profile for admin (always complete)."""
-        user = User.objects.create_user(email="test@example.com", password="pass123")
+        user = User.objects.create_user(
+            email="test@example.com",
+            password="pass123",
+        )
 
         # Admin role doesn't require profile
         self.assertTrue(self.service._has_complete_profile(user, "admin"))
@@ -531,7 +584,9 @@ class AuthServiceTests(TestCase):
     def test_google_login_existing_user_sets_google_sub(self):
         """Existing user receives google_sub and verification timestamp."""
         user = User.objects.create_user(
-            email="demo@example.com", password="securepass123", google_sub=None
+            email="demo@example.com",
+            password="securepass123",
+            google_sub=None,
         )
 
         with patch(
@@ -548,7 +603,9 @@ class AuthServiceTests(TestCase):
     def test_google_login_existing_user_retains_google_sub(self):
         """Existing google_sub should not be overwritten."""
         user = User.objects.create_user(
-            email="demo@example.com", password="securepass123", google_sub="existing"
+            email="demo@example.com",
+            password="securepass123",
+            google_sub="existing",
         )
 
         with patch(
@@ -590,7 +647,8 @@ class AuthServiceTests(TestCase):
     def test_verify_email_sets_fill_profile(self, mock_verify):
         """Roles awaiting verification move to fill_profile when incomplete."""
         user = User.objects.create_user(
-            email="fill@example.com", password="securepass123"
+            email="fill@example.com",
+            password="securepass123",
         )
         role = UserRole.objects.create(
             user=user, role="homeowner", next_action="verify_email"
@@ -607,7 +665,8 @@ class AuthServiceTests(TestCase):
     def test_verify_email_sets_none_when_complete(self, mock_verify):
         """Roles become none when profile already complete."""
         user = User.objects.create_user(
-            email="complete@example.com", password="securepass123"
+            email="complete@example.com",
+            password="securepass123",
         )
         role = UserRole.objects.create(
             user=user, role="homeowner", next_action="verify_email"
@@ -624,7 +683,8 @@ class AuthServiceTests(TestCase):
     def test_verify_email_leaves_other_roles_unchanged(self, mock_verify):
         """Roles not waiting on verification remain untouched."""
         user = User.objects.create_user(
-            email="other@example.com", password="securepass123"
+            email="other@example.com",
+            password="securepass123",
         )
         role = UserRole.objects.create(
             user=user, role="homeowner", next_action="fill_profile"
@@ -640,7 +700,8 @@ class AuthServiceTests(TestCase):
     def test_create_profile_for_role_homeowner(self):
         """Customer profile helper creates profile when missing."""
         user = User.objects.create_user(
-            email="homeowner@example.com", password="securepass123"
+            email="homeowner@example.com",
+            password="securepass123",
         )
         HomeownerProfile.objects.filter(user=user).delete()
 
@@ -651,7 +712,8 @@ class AuthServiceTests(TestCase):
     def test_create_profile_for_role_admin_noop(self):
         """Admin role does not create a profile."""
         user = User.objects.create_user(
-            email="admin@example.com", password="securepass123"
+            email="admin@example.com",
+            password="securepass123",
         )
 
         self.service._create_profile_for_role(user, "admin")
@@ -681,7 +743,10 @@ class AuthServiceTests(TestCase):
                 return super().__eq__(other)
 
         role = ExplodingRole("admin")
-        user = User.objects.create_user(email="admin2@example.com", password="pass123")
+        user = User.objects.create_user(
+            email="admin2@example.com",
+            password="pass123",
+        )
 
         self.assertTrue(self.service._has_complete_profile(user, role))
 
