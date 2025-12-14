@@ -211,7 +211,11 @@ class JWTServiceTests(TestCase):
         self.assertNotEqual(tokens["refresh_token"], new_tokens["refresh_token"])
 
     def test_refresh_preserves_active_role(self):
-        """Test refreshing preserves active role if user still has it."""
+        """Test refreshing preserves active role from user.active_role if available."""
+        # Set active_role on user
+        self.user.active_role = "homeowner"
+        self.user.save()
+
         tokens = self.jwt_service.create_token_pair(
             user=self.user, platform="web", active_role="homeowner"
         )
@@ -226,10 +230,8 @@ class JWTServiceTests(TestCase):
 
         new_payload = self.jwt_service.decode_token(new_tokens["access_token"])
 
-        # Note: The refresh token doesn't contain active_role, only access tokens do
-        # So after refresh, active_role should be None unless explicitly set
-        # This is expected behavior - user needs to reactivate role after refresh
-        self.assertIsNone(new_payload["active_role"])
+        # After refresh, active_role should be preserved from user.active_role
+        self.assertEqual(new_payload["active_role"], "homeowner")
 
     def test_refresh_revokes_old_session(self):
         """Test refreshing revokes old session."""

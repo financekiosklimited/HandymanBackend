@@ -338,8 +338,6 @@ class MobileActivateRoleViewTests(TestCase):
         serializer = make_serializer(validated_data=data)
 
         # Mock user refresh_from_db to actually set active_role
-        original_refresh = self.user.refresh_from_db
-
         def mock_refresh():
             self.user.active_role = "homeowner"
             self.user.save(update_fields=["active_role"])

@@ -7,6 +7,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 
 from apps.accounts.models import User, UserRole
+from apps.authn.jwt_service import jwt_service
 from apps.authn.models import (
     EmailVerificationToken,
     PasswordResetCode,
@@ -168,8 +169,6 @@ class AuthServiceTests(TestCase):
 
         self.assertIsNotNone(tokens)
         # Token should include active_role from user
-        from apps.authn.jwt_service import jwt_service
-
         payload = jwt_service.decode_token(tokens["access_token"])
         self.assertEqual(payload.get("active_role"), "homeowner")
 
