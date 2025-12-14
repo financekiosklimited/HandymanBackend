@@ -55,6 +55,18 @@ class User(AbstractUser):
     # Additional fields
     google_sub = models.CharField(max_length=255, unique=True, null=True, blank=True)
     email_verified_at = models.DateTimeField(null=True, blank=True)
+    active_role = models.CharField(
+        max_length=20,
+        choices=[
+            ("admin", "Admin"),
+            ("handyman", "Handyman"),
+            ("homeowner", "Homeowner"),
+        ],
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Currently active role for the user",
+    )
 
     # Public UUID for external references (from BaseModel pattern)
     public_id = models.UUIDField(

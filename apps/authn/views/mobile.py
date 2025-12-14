@@ -81,6 +81,7 @@ class RegisterView(APIView):
                     next_action = auth_service.get_next_action_for_user(user)
                     tokens.update(
                         {
+                            "active_role": user.active_role,
                             "next_action": next_action,
                             "email_verified": user.is_email_verified,
                         }
@@ -89,6 +90,7 @@ class RegisterView(APIView):
                     # Fallback values
                     tokens.update(
                         {
+                            "active_role": None,
                             "next_action": "verify_email",
                             "email_verified": False,
                         }
@@ -138,6 +140,7 @@ class LoginView(APIView):
                     next_action = auth_service.get_next_action_for_user(user)
                     tokens.update(
                         {
+                            "active_role": user.active_role,
                             "next_action": next_action,
                             "email_verified": user.is_email_verified,
                         }
@@ -146,6 +149,7 @@ class LoginView(APIView):
                     # This shouldn't happen if login succeeded, but fallback
                     tokens.update(
                         {
+                            "active_role": None,
                             "next_action": "none",
                             "email_verified": False,
                         }
@@ -183,13 +187,14 @@ class GoogleLoginView(APIView):
                     platform=self.platform,
                 )
 
-                # Add next_action and email_verified to Google login response
+                # Add active_role, next_action and email_verified to Google login response
                 try:
                     payload = jwt_service.decode_token(tokens["access_token"])
                     user = User.objects.get(public_id=payload["sub"])
                     next_action = auth_service.get_next_action_for_user(user)
                     tokens.update(
                         {
+                            "active_role": user.active_role,
                             "next_action": next_action,
                             "email_verified": user.is_email_verified,
                         }
@@ -198,6 +203,7 @@ class GoogleLoginView(APIView):
                     # Fallback values for Google users (usually email verified)
                     tokens.update(
                         {
+                            "active_role": None,
                             "next_action": "none",
                             "email_verified": True,
                         }
@@ -237,11 +243,14 @@ class ActivateRoleView(APIView):
                 user=request.user, role=serializer.validated_data["role"]
             )
 
+            # Refresh user from database to get updated active_role
+            request.user.refresh_from_db()
+
             # Generate new token pair with active role
             tokens = jwt_service.create_token_pair(
                 user=request.user,
                 platform=self.platform,
-                active_role=role_info["role"],
+                active_role=request.user.active_role,
             )
 
             # Get updated next action after role activation
@@ -249,7 +258,7 @@ class ActivateRoleView(APIView):
 
             response_data = {
                 **tokens,
-                "active_role": role_info["role"],
+                "active_role": request.user.active_role,
                 "email_verified": role_info["email_verified"],
                 "next_action": next_action,
             }
@@ -299,14 +308,16 @@ class EmailVerifyView(APIView):
 
             if user:
                 # Generate new token pair with updated email verification status
+                # Use user.active_role if available
                 tokens = jwt_service.create_token_pair(
-                    user=user, platform=self.platform, active_role=None
+                    user=user, platform=self.platform, active_role=user.active_role
                 )
 
                 # Get next action after email verification
                 next_action = auth_service.get_next_action_for_user(user)
                 tokens.update(
                     {
+                        "active_role": user.active_role,
                         "next_action": next_action,
                         "email_verified": user.is_email_verified,
                     }
