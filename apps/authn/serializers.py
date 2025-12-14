@@ -252,6 +252,10 @@ class TokenResponseSerializer(serializers.Serializer):
     access_token = serializers.CharField()
     refresh_token = serializers.CharField()
     token_type = serializers.CharField(default="bearer")
+    active_role = serializers.CharField(
+        allow_null=True,
+        help_text="Currently active role for the user (null if not activated yet)",
+    )
     next_action = serializers.CharField(
         allow_null=True,
         help_text="Next action user should take (verify_email, activate_role, fill_profile, none)",

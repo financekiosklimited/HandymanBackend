@@ -53,9 +53,13 @@ class AuthService:
             # Create profile
             self._create_profile_for_role(user, initial_role)
 
-        # Generate token pair (no active role initially)
+            # Set active_role
+            user.active_role = initial_role
+            user.save(update_fields=["active_role"])
+
+        # Generate token pair (use user.active_role if available)
         tokens = jwt_service.create_token_pair(
-            user=user, platform=platform, active_role=None
+            user=user, platform=platform, active_role=user.active_role
         )
 
         # Create and send email verification
@@ -80,9 +84,9 @@ class AuthService:
             user = User.objects.get(email=email, is_active=True)
 
             if check_password(password, user.password):
-                # Generate token pair
+                # Generate token pair (use user.active_role if available)
                 tokens = jwt_service.create_token_pair(
-                    user=user, platform=platform, active_role=None
+                    user=user, platform=platform, active_role=user.active_role
                 )
                 return tokens
         except User.DoesNotExist:
@@ -133,7 +137,6 @@ class AuthService:
 
                 # Auto-verify email for Google users
                 user.email_verified_at = timezone.now()
-                user.save()
 
                 # Create default homeowner role and profile
                 UserRole.objects.create(
@@ -147,14 +150,18 @@ class AuthService:
                     display_name=email.split("@")[0],  # Default display name
                 )
 
+                # Set active_role for new Google user
+                user.active_role = "homeowner"
+                user.save(update_fields=["email_verified_at", "active_role"])
+
             # Ensure email is verified for Google users
             if not user.email_verified_at:
                 user.email_verified_at = timezone.now()
-                user.save()
+                user.save(update_fields=["email_verified_at"])
 
-            # Generate token pair
+            # Generate token pair (use user.active_role if available)
             tokens = jwt_service.create_token_pair(
-                user=user, platform=platform, active_role=None
+                user=user, platform=platform, active_role=user.active_role
             )
 
             return tokens
@@ -195,6 +202,10 @@ class AuthService:
         # Update user role next_action
         user_role.next_action = next_action
         user_role.save()
+
+        # Set active_role for user
+        user.active_role = role
+        user.save(update_fields=["active_role"])
 
         return {
             "role": role,

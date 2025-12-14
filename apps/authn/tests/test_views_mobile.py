@@ -60,7 +60,9 @@ class MobileRegisterViewTests(TestCase):
             ) as mock_next_action,
             patch.object(User.objects, "get") as mock_get,
         ):
-            mock_get.return_value = SimpleNamespace(is_email_verified=True)
+            mock_get.return_value = SimpleNamespace(
+                is_email_verified=True, active_role="homeowner"
+            )
 
             response = self.view(request)
 
@@ -68,6 +70,7 @@ class MobileRegisterViewTests(TestCase):
         self.assertEqual(response.data["message"], "User registered successfully")
         self.assertEqual(response.data["data"]["next_action"], "fill_profile")
         self.assertTrue(response.data["data"]["email_verified"])
+        self.assertEqual(response.data["data"]["active_role"], "homeowner")
         mock_next_action.assert_called_once()
 
     def test_register_success_user_missing(self):
@@ -99,6 +102,7 @@ class MobileRegisterViewTests(TestCase):
         payload = response.data["data"]
         self.assertEqual(payload["next_action"], "verify_email")
         self.assertFalse(payload["email_verified"])
+        self.assertIsNone(payload["active_role"])
 
     def test_register_failure_from_service(self):
         data = {"email": "fail@example.com", "password": "Complex123!"}
@@ -157,13 +161,16 @@ class MobileLoginViewTests(TestCase):
             ),
             patch.object(User.objects, "get") as mock_get,
         ):
-            mock_get.return_value = SimpleNamespace(is_email_verified=False)
+            mock_get.return_value = SimpleNamespace(
+                is_email_verified=False, active_role=None
+            )
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["message"], "Login successful")
         payload = response.data["data"]
         self.assertFalse(payload["email_verified"])
+        self.assertIsNone(payload["active_role"])
         self.assertEqual(payload["next_action"], "none")
 
     def test_login_invalid_credentials(self):
@@ -245,11 +252,14 @@ class MobileGoogleLoginViewTests(TestCase):
                 return_value="fill_profile",
             ),
         ):
-            mock_get.return_value = SimpleNamespace(is_email_verified=True)
+            mock_get.return_value = SimpleNamespace(
+                is_email_verified=True, active_role="homeowner"
+            )
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["data"]["email_verified"], True)
+        self.assertEqual(response.data["data"]["active_role"], "homeowner")
         self.assertEqual(response.data["data"]["next_action"], "fill_profile")
 
     def test_google_login_fallback_on_missing_user(self):
@@ -330,6 +340,11 @@ class MobileActivateRoleViewTests(TestCase):
         force_authenticate(request, user=self.user)
         serializer = make_serializer(validated_data=data)
 
+        # Mock user refresh_from_db to actually set active_role
+        def mock_refresh():
+            self.user.active_role = "homeowner"
+            self.user.save(update_fields=["active_role"])
+
         with (
             patch(
                 "apps.authn.views.mobile.ActivateRoleSerializer",
@@ -351,6 +366,7 @@ class MobileActivateRoleViewTests(TestCase):
                 "apps.authn.views.mobile.auth_service.get_next_action_for_user",
                 return_value="none",
             ),
+            patch.object(self.user, "refresh_from_db", side_effect=mock_refresh),
         ):
             response = self.view(request)
 
@@ -358,6 +374,9 @@ class MobileActivateRoleViewTests(TestCase):
         payload = response.data["data"]
         self.assertEqual(payload["active_role"], "homeowner")
         self.assertEqual(payload["next_action"], "none")
+        # Verify active_role is set in database
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.active_role, "homeowner")
 
     def test_activate_role_invalid_serializer(self):
         request = self.factory.post("/auth/activate-role", {}, format="json")

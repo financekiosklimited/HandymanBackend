@@ -78,6 +78,7 @@ class JWTService:
             user: User instance
             platform: 'admin', 'web', or 'mobile'
             active_role: Active role ('admin', 'handyman', 'homeowner', or None)
+                        If None, will use user.active_role from database
             user_agent: User agent string
             ip_address: Client IP address
 
@@ -85,6 +86,10 @@ class JWTService:
             dict: Contains 'access_token', 'refresh_token', 'token_type'
         """
         now = datetime.now(UTC)
+
+        # Use user.active_role as default if active_role parameter is None
+        if active_role is None:
+            active_role = user.active_role
 
         # Generate JTI for both tokens (same JTI for the pair)
         jti = str(uuid.uuid4())
@@ -249,9 +254,14 @@ class JWTService:
         session.revoke()
 
         # Get current active role (carry forward if user still has it)
+        # If not available or invalid, use user.active_role from database
         current_active_role = payload.get("active_role")
         if current_active_role and not session.user.has_role(current_active_role):
             current_active_role = None
+
+        # Use user.active_role as fallback if current_active_role is None
+        if current_active_role is None:
+            current_active_role = session.user.active_role
 
         # Create new token pair
         return self.create_token_pair(
