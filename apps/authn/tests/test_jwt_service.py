@@ -431,7 +431,9 @@ class JWTServiceTests(TestCase):
         payload = {"type": "refresh", "jti": "abc", "active_role": "homeowner"}
         session = MagicMock()
         session.platform = "web"
-        session.user = SimpleNamespace(has_role=lambda role: False)
+        session.user = SimpleNamespace(
+            has_role=lambda role: False, active_role=None
+        )
 
         with (
             patch.object(self.jwt_service, "decode_token", return_value=payload),

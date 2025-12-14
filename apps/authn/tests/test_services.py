@@ -143,7 +143,7 @@ class AuthServiceTests(TestCase):
 
     def test_login_user_success(self):
         """Test successful user login."""
-        user = User.objects.create_user(
+        User.objects.create_user(
             email="test@example.com", password="securepass123"
         )
 

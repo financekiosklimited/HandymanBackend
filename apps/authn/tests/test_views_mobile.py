@@ -252,11 +252,14 @@ class MobileGoogleLoginViewTests(TestCase):
                 return_value="fill_profile",
             ),
         ):
-            mock_get.return_value = SimpleNamespace(is_email_verified=True)
+            mock_get.return_value = SimpleNamespace(
+                is_email_verified=True, active_role="homeowner"
+            )
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["data"]["email_verified"], True)
+        self.assertEqual(response.data["data"]["active_role"], "homeowner")
         self.assertEqual(response.data["data"]["next_action"], "fill_profile")
 
     def test_google_login_fallback_on_missing_user(self):
