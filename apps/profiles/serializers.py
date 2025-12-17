@@ -252,3 +252,16 @@ HomeownerHandymanListResponseSerializer = create_list_response_serializer(
 HomeownerHandymanDetailResponseSerializer = create_response_serializer(
     HomeownerHandymanDetailSerializer, "HomeownerHandymanDetailResponse"
 )
+
+
+# Guest serializers (reuse HomeownerHandyman serializers)
+GuestHandymanListSerializer = HomeownerHandymanListSerializer
+GuestHandymanDetailSerializer = HomeownerHandymanDetailSerializer
+
+GuestHandymanListResponseSerializer = create_list_response_serializer(
+    GuestHandymanListSerializer, "GuestHandymanListResponse"
+)
+
+GuestHandymanDetailResponseSerializer = create_response_serializer(
+    GuestHandymanDetailSerializer, "GuestHandymanDetailResponse"
+)

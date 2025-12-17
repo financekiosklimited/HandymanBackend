@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 
 from apps.authn.permissions import (
     EmailVerifiedPermission,
+    GuestPlatformGuardPermission,
     PlatformGuardPermission,
     RoleGuardPermission,
 )
@@ -22,6 +23,10 @@ from apps.common.responses import (
 
 from ..models import HandymanProfile, HomeownerProfile
 from ..serializers import (
+    GuestHandymanDetailResponseSerializer,
+    GuestHandymanDetailSerializer,
+    GuestHandymanListResponseSerializer,
+    GuestHandymanListSerializer,
     HandymanProfileResponseSerializer,
     HandymanProfileSerializer,
     HandymanProfileUpdateSerializer,
@@ -410,6 +415,289 @@ class HomeownerHandymanDetailView(APIView):
             return not_found_response("Handyman not found")
 
         serializer = HomeownerHandymanDetailSerializer(profile)
+        return success_response(
+            serializer.data, message="Handyman retrieved successfully"
+        )
+
+
+class GuestHandymanListView(APIView):
+    """
+    View for listing handymen for guest users (no authentication required).
+    Returns approved, active, available handymen with optional distance calculation.
+    """
+
+    authentication_classes = []
+    permission_classes = [
+        GuestPlatformGuardPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_guest_handymen_list",
+        responses={200: GuestHandymanListResponseSerializer},
+        parameters=[
+            OpenApiParameter(
+                name="latitude",
+                type=OpenApiTypes.DECIMAL,
+                location=OpenApiParameter.QUERY,
+                description="User's current latitude for distance calculation (e.g., 43.651070)",
+                required=False,
+                examples=[
+                    OpenApiExample("Toronto", value=43.651070),
+                ],
+            ),
+            OpenApiParameter(
+                name="longitude",
+                type=OpenApiTypes.DECIMAL,
+                location=OpenApiParameter.QUERY,
+                description="User's current longitude for distance calculation (e.g., -79.347015)",
+                required=False,
+                examples=[
+                    OpenApiExample("Toronto", value=-79.347015),
+                ],
+            ),
+            OpenApiParameter(
+                name="radius_km",
+                type=OpenApiTypes.DECIMAL,
+                location=OpenApiParameter.QUERY,
+                description="Search radius in kilometers (default: 25). Only applies if lat/lng provided.",
+                required=False,
+                examples=[
+                    OpenApiExample("Default", value=25),
+                    OpenApiExample("Large", value=50),
+                ],
+            ),
+            OpenApiParameter(
+                name="page",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Page number (default: 1)",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="page_size",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Items per page, max 100 (default: 20)",
+                required=False,
+            ),
+        ],
+        description=(
+            "List approved, active, available handymen for guest users (no authentication required). "
+            "If latitude and longitude are provided, handymen are filtered by radius_km and sorted by distance. "
+            "If coordinates not provided, returns all matching handymen without distance filter."
+        ),
+        summary="Guest - List handymen",
+        tags=["Mobile Guest Handymen"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Handymen retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "display_name": "John Handyman",
+                            "avatar_url": None,
+                            "rating": 4.5,
+                            "hourly_rate": 75.0,
+                            "distance_km": 2.1,
+                        }
+                    ],
+                    "errors": None,
+                    "meta": {
+                        "pagination": {
+                            "page": 1,
+                            "page_size": 20,
+                            "total_pages": 1,
+                            "total_count": 1,
+                            "has_next": False,
+                            "has_previous": False,
+                        }
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    def get(self, request):
+        """List handymen for guest users with optional distance calculation."""
+        latitude = request.query_params.get("latitude")
+        longitude = request.query_params.get("longitude")
+        radius_km = request.query_params.get("radius_km", "25")
+
+        # Base queryset: only visible handymen
+        handymen = HandymanProfile.objects.filter(
+            is_approved=True,
+            is_active=True,
+            is_available=True,
+        ).select_related("user")
+
+        # Check if coordinates provided
+        has_coordinates = latitude is not None and longitude is not None
+        if has_coordinates:
+            try:
+                user_lat = float(latitude)
+                user_lng = float(longitude)
+                radius = float(radius_km)
+
+                # Validate coordinate ranges
+                if not (-90 <= user_lat <= 90):
+                    has_coordinates = False
+                elif not (-180 <= user_lng <= 180):
+                    has_coordinates = False
+                elif radius <= 0:
+                    has_coordinates = False
+                else:
+                    # Filter handymen that have coordinates
+                    handymen = handymen.filter(
+                        latitude__isnull=False,
+                        longitude__isnull=False,
+                    )
+
+                    # Haversine formula for distance calculation in km
+                    handymen = handymen.annotate(
+                        distance_km=Case(
+                            When(
+                                latitude__isnull=False,
+                                longitude__isnull=False,
+                                then=(
+                                    6371.0
+                                    * ACos(
+                                        Cos(Radians(Value(user_lat)))
+                                        * Cos(Radians("latitude"))
+                                        * Cos(
+                                            Radians("longitude")
+                                            - Radians(Value(user_lng))
+                                        )
+                                        + Sin(Radians(Value(user_lat)))
+                                        * Sin(Radians("latitude"))
+                                    )
+                                ),
+                            ),
+                            default=Value(None),
+                            output_field=FloatField(),
+                        )
+                    )
+
+                    # Filter by radius
+                    handymen = handymen.filter(distance_km__lte=radius)
+
+                    # Order by distance, then by created_at
+                    handymen = handymen.order_by("distance_km", "-created_at")
+            except (ValueError, TypeError):
+                has_coordinates = False
+
+        if not has_coordinates:
+            # No coordinates or invalid - return all without distance filter
+            handymen = handymen.annotate(
+                distance_km=Value(None, output_field=FloatField())
+            )
+            handymen = handymen.order_by("-created_at")
+
+        # Count total before pagination
+        total_count = handymen.count()
+
+        # Pagination
+        page = int(request.query_params.get("page", 1))
+        page_size = min(int(request.query_params.get("page_size", 20)), 100)
+        total_pages = (
+            (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        )
+
+        # Slice queryset
+        start = (page - 1) * page_size
+        end = start + page_size
+        handymen_page = handymen[start:end]
+
+        # Serialize
+        serializer = GuestHandymanListSerializer(handymen_page, many=True)
+
+        # Build meta
+        meta = {
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "total_count": total_count,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+            }
+        }
+
+        return success_response(
+            serializer.data, message="Handymen retrieved successfully", meta=meta
+        )
+
+
+class GuestHandymanDetailView(APIView):
+    """
+    View for getting handyman detail for guest users (no authentication required).
+    Only returns approved, active, available handymen.
+    """
+
+    authentication_classes = []
+    permission_classes = [
+        GuestPlatformGuardPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_guest_handymen_retrieve",
+        responses={
+            200: GuestHandymanDetailResponseSerializer,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Get handyman detail by public_id for guest users (no authentication required). "
+            "Only returns handymen that are approved, active, and available. "
+            "Returns 404 if handyman not found or not visible."
+        ),
+        summary="Guest - Get handyman detail",
+        tags=["Mobile Guest Handymen"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Handyman retrieved successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "display_name": "John Handyman",
+                        "avatar_url": None,
+                        "rating": 4.5,
+                        "hourly_rate": 75.0,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Not Found",
+                value={
+                    "message": "Handyman not found",
+                    "data": None,
+                    "errors": {"detail": "The requested resource was not found"},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["404"],
+            ),
+        ],
+    )
+    def get(self, request, public_id):
+        """Get handyman detail for guest users."""
+        try:
+            profile = HandymanProfile.objects.get(
+                public_id=public_id,
+                is_approved=True,
+                is_active=True,
+                is_available=True,
+            )
+        except HandymanProfile.DoesNotExist:
+            return not_found_response("Handyman not found")
+
+        serializer = GuestHandymanDetailSerializer(profile)
         return success_response(
             serializer.data, message="Handyman retrieved successfully"
         )

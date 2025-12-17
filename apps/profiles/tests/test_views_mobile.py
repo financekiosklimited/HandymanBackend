@@ -453,3 +453,342 @@ class MobileHandymanProfileViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["message"], "Validation failed")
         self.assertIn("display_name", response.data["errors"])
+
+
+class MobileGuestHandymanListViewTests(APITestCase):
+    """Test cases for mobile GuestHandymanListView (no auth required)."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.url = "/api/v1/mobile/guest/handymen/"
+
+        # Visible handyman (approved, active, available, has coords)
+        self.handyman_user_visible = User.objects.create_user(
+            email="handyman_visible@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman_user_visible, role="handyman")
+        self.handyman_visible = HandymanProfile.objects.create(
+            user=self.handyman_user_visible,
+            display_name="Visible Handyman",
+            phone_number="+1234567890",
+            address="123 Main St",
+            hourly_rate="75.00",
+            latitude="43.651070",
+            longitude="-79.347015",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+        )
+
+        # Visible handyman (far location)
+        self.handyman_user_far = User.objects.create_user(
+            email="handyman_far@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman_user_far, role="handyman")
+        self.handyman_far = HandymanProfile.objects.create(
+            user=self.handyman_user_far,
+            display_name="Far Handyman",
+            phone_number="+1234567891",
+            address="456 Oak Ave",
+            hourly_rate="80.00",
+            latitude="43.800000",
+            longitude="-79.400000",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+        )
+
+        # Not visible: not approved
+        self.handyman_user_not_approved = User.objects.create_user(
+            email="handyman_not_approved@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman_user_not_approved, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman_user_not_approved,
+            display_name="Not Approved Handyman",
+            phone_number="+1234567892",
+            address="789 Pine Rd",
+            hourly_rate="70.00",
+            latitude="43.651070",
+            longitude="-79.347015",
+            is_active=True,
+            is_available=True,
+            is_approved=False,
+        )
+
+        # Not visible: not active
+        self.handyman_user_not_active = User.objects.create_user(
+            email="handyman_not_active@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman_user_not_active, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman_user_not_active,
+            display_name="Not Active Handyman",
+            phone_number="+1234567893",
+            address="321 Elm St",
+            hourly_rate="65.00",
+            latitude="43.651070",
+            longitude="-79.347015",
+            is_active=False,
+            is_available=True,
+            is_approved=True,
+        )
+
+        # Not visible: not available
+        self.handyman_user_not_available = User.objects.create_user(
+            email="handyman_not_available@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman_user_not_available, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman_user_not_available,
+            display_name="Not Available Handyman",
+            phone_number="+1234567894",
+            address="654 Maple Ln",
+            hourly_rate="85.00",
+            latitude="43.651070",
+            longitude="-79.347015",
+            is_active=True,
+            is_available=False,
+            is_approved=True,
+        )
+
+    def test_list_handymen_no_auth_required(self):
+        """Test listing handymen without authentication succeeds."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Handymen retrieved successfully")
+
+    def test_list_handymen_returns_only_visible(self):
+        """Test only approved, active, available handymen are returned."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = response.data["data"]
+        self.assertEqual(len(results), 2)
+
+        display_names = [r["display_name"] for r in results]
+        self.assertIn("Visible Handyman", display_names)
+        self.assertIn("Far Handyman", display_names)
+        self.assertNotIn("Not Approved Handyman", display_names)
+        self.assertNotIn("Not Active Handyman", display_names)
+        self.assertNotIn("Not Available Handyman", display_names)
+
+    def test_list_handymen_hides_sensitive_fields(self):
+        """Test sensitive fields are not exposed in list response."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        for item in response.data["data"]:
+            self.assertIn("public_id", item)
+            self.assertIn("display_name", item)
+            self.assertIn("rating", item)
+            self.assertIn("hourly_rate", item)
+            self.assertNotIn("phone_number", item)
+            self.assertNotIn("address", item)
+            self.assertNotIn("latitude", item)
+            self.assertNotIn("longitude", item)
+
+    def test_list_handymen_with_location_includes_distance(self):
+        """Test distance_km is calculated when lat/lng provided."""
+        response = self.client.get(
+            self.url,
+            {"latitude": "43.651070", "longitude": "-79.347015"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        for item in response.data["data"]:
+            self.assertIn("distance_km", item)
+
+    def test_list_handymen_without_location_no_distance(self):
+        """Test distance_km is None when lat/lng not provided."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        for item in response.data["data"]:
+            self.assertIsNone(item.get("distance_km"))
+
+    def test_list_handymen_filter_by_radius(self):
+        """Test filtering by radius excludes far handymen."""
+        response = self.client.get(
+            self.url,
+            {"latitude": "43.651070", "longitude": "-79.347015", "radius_km": "1"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = response.data["data"]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["display_name"], "Visible Handyman")
+
+    def test_list_handymen_orders_by_distance_when_location_provided(self):
+        """Test handymen are ordered by distance when location provided."""
+        response = self.client.get(
+            self.url,
+            {"latitude": "43.651070", "longitude": "-79.347015"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = response.data["data"]
+        self.assertEqual(results[0]["display_name"], "Visible Handyman")
+        self.assertEqual(results[1]["display_name"], "Far Handyman")
+
+    def test_list_handymen_includes_pagination(self):
+        """Test response includes pagination metadata."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("pagination", response.data["meta"])
+
+    def test_list_handymen_invalid_coordinates(self):
+        """Test invalid coordinates are treated as no coordinates (no filtering)."""
+        response = self.client.get(
+            self.url,
+            {"latitude": "invalid", "longitude": "-79.347015"},
+        )
+        # Invalid coordinates are treated as no coordinates - returns all visible handymen
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return all visible handymen since coordinates are invalid
+        self.assertEqual(len(response.data["data"]), 2)
+
+    def test_list_handymen_partial_coordinates(self):
+        """Test providing only lat or lng is treated as no coordinates."""
+        response = self.client.get(self.url, {"latitude": "43.651070"})
+        # Partial coordinates are treated as no coordinates - returns all visible handymen
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+
+    def test_list_handymen_web_platform_blocked(self):
+        """Test web platform cannot access mobile guest endpoint."""
+        # Create a user with web platform token
+        user = User.objects.create_user(
+            email="webuser@example.com",
+            password="testpass123",
+        )
+        user.token_payload = {
+            "plat": "web",
+            "active_role": None,
+            "roles": [],
+            "email_verified": False,
+        }
+        self.client.force_authenticate(user=user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class MobileGuestHandymanDetailViewTests(APITestCase):
+    """Test cases for mobile GuestHandymanDetailView (no auth required)."""
+
+    def setUp(self):
+        """Set up test data."""
+        # Visible handyman
+        self.handyman_user = User.objects.create_user(
+            email="handyman_detail@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman_user, role="handyman")
+        self.handyman = HandymanProfile.objects.create(
+            user=self.handyman_user,
+            display_name="Detail Handyman",
+            phone_number="+1234567890",
+            address="123 Main St",
+            hourly_rate="75.00",
+            latitude="43.651070",
+            longitude="-79.347015",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+        )
+        self.url = f"/api/v1/mobile/guest/handymen/{self.handyman.public_id}/"
+
+        # Not approved handyman
+        self.handyman_user_not_approved = User.objects.create_user(
+            email="handyman_not_approved_detail@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman_user_not_approved, role="handyman")
+        self.handyman_not_approved = HandymanProfile.objects.create(
+            user=self.handyman_user_not_approved,
+            display_name="Not Approved Detail",
+            phone_number="+1234567891",
+            address="456 Oak Ave",
+            hourly_rate="80.00",
+            is_active=True,
+            is_available=True,
+            is_approved=False,
+        )
+
+    def test_get_handyman_no_auth_required(self):
+        """Test getting handyman detail without authentication succeeds."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Handyman retrieved successfully")
+
+    def test_get_handyman_returns_correct_data(self):
+        """Test handyman detail returns expected fields."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        data = response.data["data"]
+        self.assertEqual(data["display_name"], "Detail Handyman")
+        self.assertEqual(str(data["hourly_rate"]), "75.00")
+        self.assertIn("rating", data)
+        self.assertIn("avatar_url", data)
+
+    def test_get_handyman_hides_sensitive_fields(self):
+        """Test sensitive fields are not exposed in detail response."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        data = response.data["data"]
+        self.assertNotIn("phone_number", data)
+        self.assertNotIn("address", data)
+        self.assertNotIn("latitude", data)
+        self.assertNotIn("longitude", data)
+
+    def test_get_handyman_not_found(self):
+        """Test getting non-existent handyman returns 404."""
+        response = self.client.get(
+            "/api/v1/mobile/guest/handymen/00000000-0000-0000-0000-000000000000/"
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.data["message"], "Handyman not found")
+
+    def test_get_handyman_not_approved_returns_404(self):
+        """Test getting not approved handyman returns 404."""
+        url = f"/api/v1/mobile/guest/handymen/{self.handyman_not_approved.public_id}/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.data["message"], "Handyman not found")
+
+    def test_get_handyman_not_active_returns_404(self):
+        """Test getting not active handyman returns 404."""
+        self.handyman.is_active = False
+        self.handyman.save()
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_handyman_not_available_returns_404(self):
+        """Test getting not available handyman returns 404."""
+        self.handyman.is_available = False
+        self.handyman.save()
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_handyman_web_platform_blocked(self):
+        """Test web platform cannot access mobile guest endpoint."""
+        user = User.objects.create_user(
+            email="webuser_detail@example.com",
+            password="testpass123",
+        )
+        user.token_payload = {
+            "plat": "web",
+            "active_role": None,
+            "roles": [],
+            "email_verified": False,
+        }
+        self.client.force_authenticate(user=user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

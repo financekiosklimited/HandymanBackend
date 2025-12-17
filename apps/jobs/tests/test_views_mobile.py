@@ -44,9 +44,11 @@ class MobileJobCategoryListViewTests(APITestCase):
         self.assertEqual(len(response.data["data"]), 2)  # Only active categories
 
     def test_list_categories_unauthenticated(self):
-        """Test listing categories without authentication fails."""
+        """Test listing categories without authentication succeeds."""
         response = self.client.get(self.url)
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Categories retrieved successfully")
+        self.assertEqual(len(response.data["data"]), 2)  # Only active categories
 
 
 class MobileCityListViewTests(APITestCase):
@@ -109,9 +111,11 @@ class MobileCityListViewTests(APITestCase):
         self.assertEqual(response.data["data"][0]["name"], "Toronto")
 
     def test_list_cities_unauthenticated(self):
-        """Test listing cities without authentication fails."""
+        """Test listing cities without authentication succeeds."""
         response = self.client.get(self.url)
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Cities retrieved successfully")
+        self.assertEqual(len(response.data["data"]), 2)  # Only active cities
 
 
 class MobileJobListCreateViewTests(APITestCase):
@@ -1456,3 +1460,399 @@ class MobileForYouJobListViewTests(APITestCase):
         self.assertEqual(response.data["message"], "Jobs retrieved successfully")
         self.assertEqual(len(response.data["data"]), 0)
         self.assertEqual(response.data["meta"]["pagination"]["total_count"], 0)
+
+
+class MobileGuestJobListViewTests(APITestCase):
+    """Test cases for mobile GuestJobListView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.url = "/api/v1/mobile/guest/jobs/"
+
+        # Create users
+        self.user1 = User.objects.create_user(
+            email="user1@example.com",
+            password="testpass123",
+        )
+        self.user2 = User.objects.create_user(
+            email="user2@example.com",
+            password="testpass123",
+        )
+
+        # Create test categories
+        self.category_plumbing = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.category_electrical = JobCategory.objects.create(
+            name="Electrical", slug="electrical", is_active=True
+        )
+
+        # Create test cities
+        self.city_toronto = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.city_vancouver = City.objects.create(
+            name="Vancouver",
+            province="British Columbia",
+            province_code="BC",
+            slug="vancouver-bc",
+            is_active=True,
+        )
+
+    def test_guest_job_list_success_no_auth(self):
+        """Test successfully listing open jobs without authentication."""
+        Job.objects.create(
+            homeowner=self.user1,
+            title="Open job 1",
+            description="Test description",
+            estimated_budget=Decimal("50.00"),
+            category=self.category_plumbing,
+            city=self.city_toronto,
+            address="123 Main St",
+            status="open",
+        )
+        Job.objects.create(
+            homeowner=self.user2,
+            title="Open job 2",
+            description="Test description",
+            estimated_budget=Decimal("60.00"),
+            category=self.category_electrical,
+            city=self.city_vancouver,
+            address="456 Oak Ave",
+            status="open",
+        )
+
+        # No authentication required
+        response = self.client.get(self.url, HTTP_X_PLATFORM="mobile")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Jobs retrieved successfully")
+        self.assertEqual(len(response.data["data"]), 2)
+        self.assertIn("pagination", response.data["meta"])
+
+    def test_guest_job_list_only_open_status(self):
+        """Test that only open status jobs are returned."""
+        Job.objects.create(
+            homeowner=self.user1,
+            title="Open job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category_plumbing,
+            city=self.city_toronto,
+            address="123 Main St",
+            status="open",
+        )
+        Job.objects.create(
+            homeowner=self.user1,
+            title="Draft job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category_plumbing,
+            city=self.city_toronto,
+            address="123 Main St",
+            status="draft",
+        )
+        Job.objects.create(
+            homeowner=self.user1,
+            title="Completed job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category_plumbing,
+            city=self.city_toronto,
+            address="123 Main St",
+            status="completed",
+        )
+        Job.objects.create(
+            homeowner=self.user1,
+            title="In progress job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category_plumbing,
+            city=self.city_toronto,
+            address="123 Main St",
+            status="in_progress",
+        )
+
+        response = self.client.get(self.url, HTTP_X_PLATFORM="mobile")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Open job")
+
+    def test_guest_job_list_with_pagination(self):
+        """Test pagination works correctly."""
+        for i in range(25):
+            Job.objects.create(
+                homeowner=self.user1,
+                title=f"Job {i}",
+                description="Test",
+                estimated_budget=Decimal("50.00"),
+                category=self.category_plumbing,
+                city=self.city_toronto,
+                address="123 Main St",
+                status="open",
+            )
+
+        response = self.client.get(
+            self.url, {"page": 1, "page_size": 10}, HTTP_X_PLATFORM="mobile"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 10)
+        self.assertEqual(response.data["meta"]["pagination"]["page"], 1)
+        self.assertEqual(response.data["meta"]["pagination"]["total_pages"], 3)
+        self.assertEqual(response.data["meta"]["pagination"]["total_count"], 25)
+        self.assertTrue(response.data["meta"]["pagination"]["has_next"])
+        self.assertFalse(response.data["meta"]["pagination"]["has_previous"])
+
+    def test_guest_job_list_filter_by_category(self):
+        """Test filtering by category."""
+        Job.objects.create(
+            homeowner=self.user1,
+            title="Plumbing job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category_plumbing,
+            city=self.city_toronto,
+            address="123 Main St",
+            status="open",
+        )
+        Job.objects.create(
+            homeowner=self.user1,
+            title="Electrical job",
+            description="Test",
+            estimated_budget=Decimal("60.00"),
+            category=self.category_electrical,
+            city=self.city_toronto,
+            address="456 Oak Ave",
+            status="open",
+        )
+
+        response = self.client.get(
+            self.url,
+            {"category": str(self.category_plumbing.public_id)},
+            HTTP_X_PLATFORM="mobile",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Plumbing job")
+
+    def test_guest_job_list_filter_by_city(self):
+        """Test filtering by city."""
+        Job.objects.create(
+            homeowner=self.user1,
+            title="Toronto job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category_plumbing,
+            city=self.city_toronto,
+            address="123 Main St",
+            status="open",
+        )
+        Job.objects.create(
+            homeowner=self.user1,
+            title="Vancouver job",
+            description="Test",
+            estimated_budget=Decimal("60.00"),
+            category=self.category_plumbing,
+            city=self.city_vancouver,
+            address="456 Oak Ave",
+            status="open",
+        )
+
+        response = self.client.get(
+            self.url,
+            {"city": str(self.city_toronto.public_id)},
+            HTTP_X_PLATFORM="mobile",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Toronto job")
+
+    def test_guest_job_list_with_coordinates(self):
+        """Test that distance is calculated when coordinates are provided."""
+        Job.objects.create(
+            homeowner=self.user1,
+            title="Job with coords",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category_plumbing,
+            city=self.city_toronto,
+            address="123 Main St",
+            latitude=Decimal("43.660000"),
+            longitude=Decimal("-79.350000"),
+            status="open",
+        )
+
+        response = self.client.get(
+            self.url,
+            {"latitude": "43.651070", "longitude": "-79.347015"},
+            HTTP_X_PLATFORM="mobile",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        distance = response.data["data"][0]["distance_km"]
+        self.assertIsNotNone(distance)
+        self.assertLess(distance, 2.0)
+
+    def test_guest_job_list_without_coordinates(self):
+        """Test that distance is null when coordinates not provided."""
+        Job.objects.create(
+            homeowner=self.user1,
+            title="Job with coords",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category_plumbing,
+            city=self.city_toronto,
+            address="123 Main St",
+            latitude=Decimal("43.660000"),
+            longitude=Decimal("-79.350000"),
+            status="open",
+        )
+
+        response = self.client.get(self.url, HTTP_X_PLATFORM="mobile")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertIsNone(response.data["data"][0]["distance_km"])
+
+    def test_guest_job_list_empty_results(self):
+        """Test response when no jobs available."""
+        response = self.client.get(self.url, HTTP_X_PLATFORM="mobile")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+        self.assertEqual(response.data["meta"]["pagination"]["total_count"], 0)
+
+
+class MobileGuestJobDetailViewTests(APITestCase):
+    """Test cases for mobile GuestJobDetailView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.user = User.objects.create_user(
+            email="user@example.com",
+            password="testpass123",
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+        self.open_job = Job.objects.create(
+            homeowner=self.user,
+            title="Open job",
+            description="Test description",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+
+        self.url = f"/api/v1/mobile/guest/jobs/{self.open_job.public_id}/"
+
+    def test_guest_job_detail_success_no_auth(self):
+        """Test successfully getting job detail without authentication."""
+        response = self.client.get(self.url, HTTP_X_PLATFORM="mobile")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Job retrieved successfully")
+        self.assertEqual(response.data["data"]["title"], "Open job")
+        self.assertEqual(
+            response.data["data"]["public_id"], str(self.open_job.public_id)
+        )
+
+    def test_guest_job_detail_not_found(self):
+        """Test 404 for non-existent job."""
+        response = self.client.get(
+            "/api/v1/mobile/guest/jobs/00000000-0000-0000-0000-000000000000/",
+            HTTP_X_PLATFORM="mobile",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_guest_job_detail_non_open_status_returns_404(self):
+        """Test 404 for non-open status jobs."""
+        # Test draft status
+        draft_job = Job.objects.create(
+            homeowner=self.user,
+            title="Draft job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="draft",
+        )
+        response = self.client.get(
+            f"/api/v1/mobile/guest/jobs/{draft_job.public_id}/",
+            HTTP_X_PLATFORM="mobile",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Test completed status
+        completed_job = Job.objects.create(
+            homeowner=self.user,
+            title="Completed job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="completed",
+        )
+        response = self.client.get(
+            f"/api/v1/mobile/guest/jobs/{completed_job.public_id}/",
+            HTTP_X_PLATFORM="mobile",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Test in_progress status
+        in_progress_job = Job.objects.create(
+            homeowner=self.user,
+            title="In progress job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+        )
+        response = self.client.get(
+            f"/api/v1/mobile/guest/jobs/{in_progress_job.public_id}/",
+            HTTP_X_PLATFORM="mobile",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_guest_job_detail_includes_all_fields(self):
+        """Test that response includes all expected fields."""
+        response = self.client.get(self.url, HTTP_X_PLATFORM="mobile")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        # Check essential fields are present
+        self.assertIn("public_id", data)
+        self.assertIn("title", data)
+        self.assertIn("description", data)
+        self.assertIn("estimated_budget", data)
+        self.assertIn("category", data)
+        self.assertIn("city", data)
+        self.assertIn("address", data)
+        self.assertIn("status", data)
+        self.assertIn("created_at", data)
+        self.assertIn("updated_at", data)

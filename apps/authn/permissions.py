@@ -54,6 +54,68 @@ class PlatformGuardPermission(permissions.BasePermission):
         return None
 
 
+class GuestPlatformGuardPermission(permissions.BasePermission):
+    """
+    Guard for guest endpoints that don't require authentication.
+    Validates that the URL platform is 'mobile' for guest endpoints.
+
+    If user is authenticated, also validates that token platform matches URL platform.
+    """
+
+    def has_permission(self, request, view):
+        """
+        Check platform access for guest endpoints.
+        - URL must be for 'mobile' platform
+        - If authenticated, token platform must match URL platform
+        """
+        # Extract platform from URL
+        url_platform = self._extract_platform_from_url(request.path)
+
+        # Guest endpoints only supported on mobile platform
+        if url_platform != "mobile":
+            raise PermissionDenied(
+                {
+                    "message": "Platform not supported",
+                    "data": None,
+                    "errors": {
+                        "platform": "Guest endpoints are only available on mobile platform"
+                    },
+                    "meta": None,
+                }
+            )
+
+        # If user is authenticated, validate token platform matches
+        if request.user and request.user.is_authenticated:
+            token_payload = getattr(request.user, "token_payload", None)
+            if token_payload:
+                token_platform = token_payload.get("plat")
+                if token_platform and token_platform != url_platform:
+                    raise PermissionDenied(
+                        {
+                            "message": "Platform mismatch",
+                            "data": None,
+                            "errors": {
+                                "platform": "Token platform does not match requested platform"
+                            },
+                            "meta": None,
+                        }
+                    )
+
+        return True
+
+    def _extract_platform_from_url(self, path):
+        """
+        Extract platform from URL path.
+        Expected format: /api/v1/{platform}/...
+        """
+        path_parts = path.strip("/").split("/")
+        if len(path_parts) >= 3 and path_parts[0] == "api" and path_parts[1] == "v1":
+            platform = path_parts[2]
+            if platform in ["web", "mobile", "admin"]:
+                return platform
+        return None
+
+
 class RoleGuardPermission(permissions.BasePermission):
     """
     Guard to ensure user has the required role for role-scoped endpoints.

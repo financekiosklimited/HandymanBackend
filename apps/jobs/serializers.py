@@ -538,3 +538,16 @@ JobUpdateResponseSerializer = create_response_serializer(
 ForYouJobListResponseSerializer = create_list_response_serializer(
     ForYouJobSerializer, "ForYouJobListResponse"
 )
+
+
+# Guest serializers (reuse ForYouJobSerializer for list with distance_km)
+GuestJobListSerializer = ForYouJobSerializer
+GuestJobDetailSerializer = JobDetailSerializer
+
+GuestJobListResponseSerializer = create_list_response_serializer(
+    GuestJobListSerializer, "GuestJobListResponse"
+)
+
+GuestJobDetailResponseSerializer = create_response_serializer(
+    GuestJobDetailSerializer, "GuestJobDetailResponse"
+)
