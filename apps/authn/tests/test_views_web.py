@@ -44,9 +44,6 @@ class WebViewDelegationTests(TestCase):
     def test_login_delegates(self):
         self._assert_delegation(web_views.LoginView, "MobileLoginView")
 
-    def test_google_login_delegates(self):
-        self._assert_delegation(web_views.GoogleLoginView, "MobileGoogleLoginView")
-
     def test_activate_role_delegates(self):
         self._assert_delegation(
             web_views.ActivateRoleView, "MobileActivateRoleView", needs_auth=True

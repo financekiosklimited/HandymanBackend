@@ -13,7 +13,6 @@ from apps.authn.serializers import (
     EmailResendSerializer,
     EmailVerificationSerializer,
     ForgotPasswordSerializer,
-    GoogleLoginSerializer,
     LoginSerializer,
     LogoutSerializer,
     RefreshTokenSerializer,
@@ -150,24 +149,6 @@ class LoginSerializerTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("email", serializer.errors)
         self.assertIn("password", serializer.errors)
-
-
-class GoogleLoginSerializerTests(TestCase):
-    """Test cases for GoogleLoginSerializer."""
-
-    def test_serializer_valid_data(self):
-        """Test serializer with valid data."""
-        data = {"id_token": "valid-google-id-token"}
-        serializer = GoogleLoginSerializer(data=data)
-
-        self.assertTrue(serializer.is_valid())
-
-    def test_id_token_required(self):
-        """Test id_token is required."""
-        serializer = GoogleLoginSerializer(data={})
-
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("id_token", serializer.errors)
 
 
 class ActivateRoleSerializerTests(TestCase):

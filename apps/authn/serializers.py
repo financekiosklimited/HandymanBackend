@@ -53,14 +53,6 @@ class LoginSerializer(serializers.Serializer):
         return value.lower()
 
 
-class GoogleLoginSerializer(serializers.Serializer):
-    """
-    Serializer for Google OAuth login.
-    """
-
-    id_token = serializers.CharField()
-
-
 class ActivateRoleSerializer(serializers.Serializer):
     """
     Serializer for role activation.

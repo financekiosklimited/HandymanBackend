@@ -109,7 +109,7 @@ class TestResponseUtilities(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(response.data["message"], "Authentication required")
-        self.assertIn("auth", response.data["errors"])
+        self.assertIn("detail", response.data["errors"])
 
     def test_forbidden_response(self):
         """Test forbidden response."""
@@ -140,4 +140,4 @@ class TestResponseUtilities(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
         self.assertEqual(response.data["message"], "Rate limit exceeded")
-        self.assertIn("throttle", response.data["errors"])
+        self.assertIn("detail", response.data["errors"])

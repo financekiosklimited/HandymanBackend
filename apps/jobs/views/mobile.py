@@ -204,13 +204,13 @@ class JobListCreateView(APIView):
             (total_count + page_size - 1) // page_size if total_count > 0 else 1
         )
 
+        # Optimize queries
+        jobs = jobs.select_related("category", "city").prefetch_related("images")
+
         # Slice queryset
         start = (page - 1) * page_size
         end = start + page_size
         jobs = jobs[start:end]
-
-        # Optimize queries
-        jobs = jobs.select_related("category", "city").prefetch_related("images")
 
         # Serialize
         serializer = JobListSerializer(jobs, many=True)
@@ -897,13 +897,13 @@ class ForYouJobListView(APIView):
             (total_count + page_size - 1) // page_size if total_count > 0 else 1
         )
 
+        # Optimize queries
+        jobs = jobs.select_related("category", "city").prefetch_related("images")
+
         # Slice queryset
         start = (page - 1) * page_size
         end = start + page_size
         jobs = jobs[start:end]
-
-        # Optimize queries
-        jobs = jobs.select_related("category", "city").prefetch_related("images")
 
         # Serialize
         serializer = ForYouJobSerializer(jobs, many=True)
@@ -1142,13 +1142,13 @@ class GuestJobListView(APIView):
             (total_count + page_size - 1) // page_size if total_count > 0 else 1
         )
 
+        # Optimize queries
+        jobs = jobs.select_related("category", "city").prefetch_related("images")
+
         # Slice queryset
         start = (page - 1) * page_size
         end = start + page_size
         jobs = jobs[start:end]
-
-        # Optimize queries
-        jobs = jobs.select_related("category", "city").prefetch_related("images")
 
         # Serialize
         serializer = GuestJobListSerializer(jobs, many=True)

@@ -8,7 +8,6 @@ from ..serializers import (
     EmailResendSerializer,
     EmailVerificationSerializer,
     ForgotPasswordSerializer,
-    GoogleLoginSerializer,
     LoginSerializer,
     LogoutSerializer,
     PasswordResetTokenResponseEnvelope,
@@ -35,9 +34,6 @@ from .mobile import (
     ForgotPasswordView as MobileForgotPasswordView,
 )
 from .mobile import (
-    GoogleLoginView as MobileGoogleLoginView,
-)
-from .mobile import (
     LoginView as MobileLoginView,
 )
 from .mobile import (
@@ -61,6 +57,7 @@ class RegisterView(MobileRegisterView):
     """Register a new user via web."""
 
     platform = "web"
+    throttle_scope = "web:register"
 
     @extend_schema(
         request=RegisterSerializer,
@@ -77,6 +74,7 @@ class LoginView(MobileLoginView):
     """Login a user via web."""
 
     platform = "web"
+    throttle_scope = "web:login"
 
     @extend_schema(
         request=LoginSerializer,
@@ -89,26 +87,11 @@ class LoginView(MobileLoginView):
         return super()._handle_post(request)
 
 
-class GoogleLoginView(MobileGoogleLoginView):
-    """Login with Google OAuth via web."""
-
-    platform = "web"
-
-    @extend_schema(
-        request=GoogleLoginSerializer,
-        responses={200: TokenResponseEnvelope},
-        description="Login with Google OAuth ID token via web app.",
-        summary="Google OAuth login",
-        tags=["Web Authentication"],
-    )
-    def post(self, request):
-        return super()._handle_post(request)
-
-
 class ActivateRoleView(MobileActivateRoleView):
     """Activate a role for the web user."""
 
     platform = "web"
+    throttle_scope = "web:activate_role"
 
     @extend_schema(
         request=ActivateRoleSerializer,
@@ -125,6 +108,7 @@ class EmailVerifyView(MobileEmailVerifyView):
     """Verify email for web users."""
 
     platform = "web"
+    throttle_scope = "web:verify_email"
 
     @extend_schema(
         request=EmailVerificationSerializer,
@@ -141,6 +125,7 @@ class EmailResendView(MobileEmailResendView):
     """Resend verification email for web users."""
 
     platform = "web"
+    throttle_scope = "web:resend_email"
 
     @extend_schema(
         request=EmailResendSerializer,
@@ -157,6 +142,7 @@ class RefreshTokenView(MobileRefreshTokenView):
     """Refresh JWT token for web users."""
 
     platform = "web"
+    throttle_scope = "web:refresh"
 
     @extend_schema(
         request=RefreshTokenSerializer,
@@ -189,6 +175,7 @@ class ForgotPasswordView(MobileForgotPasswordView):
     """Initiate password reset for web users."""
 
     platform = "web"
+    throttle_scope = "web:forgot_password"
 
     @extend_schema(
         request=ForgotPasswordSerializer,
@@ -205,6 +192,7 @@ class VerifyPasswordResetView(MobileVerifyPasswordResetView):
     """Verify password reset code for web users."""
 
     platform = "web"
+    throttle_scope = "web:verify_password_reset"
 
     @extend_schema(
         request=VerifyPasswordResetSerializer,
@@ -221,6 +209,7 @@ class ResetPasswordView(MobileResetPasswordView):
     """Reset password for web users."""
 
     platform = "web"
+    throttle_scope = "web:reset_password"
 
     @extend_schema(
         request=ResetPasswordSerializer,
@@ -237,6 +226,7 @@ class ChangePasswordView(MobileChangePasswordView):
     """Change password for authenticated web users."""
 
     platform = "web"
+    throttle_scope = "web:change_password"
 
     @extend_schema(
         request=ChangePasswordSerializer,

@@ -16,8 +16,15 @@ class WaitlistEntrySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = WaitlistEntry
-        fields = ["id", "user_name", "email", "user_type", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        fields = [
+            "public_id",
+            "user_name",
+            "email",
+            "user_type",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["public_id", "created_at", "updated_at"]
         extra_kwargs = {
             "user_name": {"max_length": 255},
         }

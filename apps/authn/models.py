@@ -257,7 +257,7 @@ class PhoneVerificationCode(BaseModel):
         on_delete=models.CASCADE,
         related_name="phone_verification_codes",
     )
-    phone_number = models.CharField(max_length=20)  # E.164 format
+    phone_number = models.CharField(max_length=20, db_index=True)  # E.164 format
     code_hash = models.CharField(max_length=64)
     expires_at = models.DateTimeField()
     used_at = models.DateTimeField(null=True, blank=True)

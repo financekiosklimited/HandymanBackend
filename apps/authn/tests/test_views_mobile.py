@@ -52,7 +52,10 @@ class MobileRegisterViewTests(TestCase):
             ),
             patch(
                 "apps.authn.views.mobile.auth_service.register_user",
-                return_value=tokens.copy(),
+                return_value=(
+                    SimpleNamespace(is_email_verified=True, active_role="homeowner"),
+                    tokens.copy(),
+                ),
             ),
             patch(
                 "apps.authn.views.mobile.auth_service.get_next_action_for_user",
@@ -84,11 +87,14 @@ class MobileRegisterViewTests(TestCase):
             ),
             patch(
                 "apps.authn.views.mobile.auth_service.register_user",
-                return_value={
-                    "access_token": "a",
-                    "refresh_token": "b",
-                    "token_type": "bearer",
-                },
+                return_value=(
+                    SimpleNamespace(is_email_verified=False, active_role=None),
+                    {
+                        "access_token": "a",
+                        "refresh_token": "b",
+                        "token_type": "bearer",
+                    },
+                ),
             ),
             patch(
                 "apps.authn.views.mobile.auth_service.get_next_action_for_user",
@@ -212,113 +218,6 @@ class MobileLoginViewTests(TestCase):
         request = self.factory.post("/auth/login", {}, format="json")
 
         with patch("apps.authn.views.mobile.LoginSerializer", return_value=serializer):
-            response = self.view(request)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-
-class MobileGoogleLoginViewTests(TestCase):
-    """Tests for GoogleLoginView."""
-
-    def setUp(self):
-        self.factory = APIRequestFactory()
-        self.view = mobile_views.GoogleLoginView.as_view()
-
-    def test_google_login_success_with_user(self):
-        data = {"id_token": "token"}
-        request = self.factory.post("/auth/login/google", data, format="json")
-        serializer = make_serializer(validated_data=data)
-        tokens = {
-            "access_token": "access",
-            "refresh_token": "refresh",
-            "token_type": "bearer",
-        }
-
-        with (
-            patch(
-                "apps.authn.views.mobile.GoogleLoginSerializer", return_value=serializer
-            ),
-            patch(
-                "apps.authn.views.mobile.auth_service.google_login",
-                return_value=tokens.copy(),
-            ),
-            patch(
-                "apps.authn.views.mobile.jwt_service.decode_token",
-                return_value={"sub": "public-id"},
-            ),
-            patch.object(User.objects, "get") as mock_get,
-            patch(
-                "apps.authn.views.mobile.auth_service.get_next_action_for_user",
-                return_value="fill_profile",
-            ),
-        ):
-            mock_get.return_value = SimpleNamespace(
-                is_email_verified=True, active_role="homeowner"
-            )
-            response = self.view(request)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["data"]["email_verified"], True)
-        self.assertEqual(response.data["data"]["active_role"], "homeowner")
-        self.assertEqual(response.data["data"]["next_action"], "fill_profile")
-
-    def test_google_login_fallback_on_missing_user(self):
-        data = {"id_token": "token"}
-        request = self.factory.post("/auth/login/google", data, format="json")
-        serializer = make_serializer(validated_data=data)
-        tokens = {
-            "access_token": "access",
-            "refresh_token": "refresh",
-            "token_type": "bearer",
-        }
-
-        with (
-            patch(
-                "apps.authn.views.mobile.GoogleLoginSerializer", return_value=serializer
-            ),
-            patch(
-                "apps.authn.views.mobile.auth_service.google_login",
-                return_value=tokens.copy(),
-            ),
-            patch(
-                "apps.authn.views.mobile.jwt_service.decode_token",
-                return_value={"sub": "public-id"},
-            ),
-            patch.object(User.objects, "get", side_effect=Exception("boom")),
-        ):
-            response = self.view(request)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        payload = response.data["data"]
-        self.assertEqual(payload["next_action"], "none")
-        self.assertTrue(payload["email_verified"])
-
-    def test_google_login_service_error(self):
-        data = {"id_token": "token"}
-        request = self.factory.post("/auth/login/google", data, format="json")
-        serializer = make_serializer(validated_data=data)
-
-        with (
-            patch(
-                "apps.authn.views.mobile.GoogleLoginSerializer", return_value=serializer
-            ),
-            patch(
-                "apps.authn.views.mobile.auth_service.google_login",
-                side_effect=ValueError("bad"),
-            ),
-        ):
-            response = self.view(request)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data["message"], "Google authentication failed")
-
-    def test_google_login_invalid_serializer(self):
-        serializer = make_serializer(is_valid=False)
-        request = self.factory.post("/auth/login/google", {}, format="json")
-
-        with patch(
-            "apps.authn.views.mobile.GoogleLoginSerializer", return_value=serializer
-        ):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

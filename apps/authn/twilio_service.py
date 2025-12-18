@@ -76,10 +76,6 @@ class TwilioService:
                 "Twilio Verify not configured, skipping verification to %s***",
                 to_number[:6] if to_number else "unknown",
             )
-            # In development/test, return success for testing
-            if getattr(settings, "DEBUG", False):
-                logger.info("DEBUG MODE - Verification would be sent to %s", to_number)
-                return VerificationResult(success=True, status="pending")
             return VerificationResult(success=False, error="Twilio not configured")
 
         try:
@@ -128,16 +124,6 @@ class TwilioService:
                 "Twilio Verify not configured, skipping check for %s***",
                 to_number[:6] if to_number else "unknown",
             )
-            # In development/test, accept code "123456" for testing
-            if getattr(settings, "DEBUG", False):
-                if code == "123456":
-                    logger.info(
-                        "DEBUG MODE - Verification check approved for %s", to_number
-                    )
-                    return VerificationResult(success=True, status="approved")
-                return VerificationResult(
-                    success=False, status="pending", error="Invalid code"
-                )
             return VerificationResult(success=False, error="Twilio not configured")
 
         try:

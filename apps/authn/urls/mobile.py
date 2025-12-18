@@ -15,11 +15,6 @@ urlpatterns = [
     ),
     path("auth/login", mobile_views.LoginView.as_view(), name="mobile_auth_login"),
     path(
-        "auth/login/google",
-        mobile_views.GoogleLoginView.as_view(),
-        name="mobile_auth_google_login",
-    ),
-    path(
         "auth/activate-role",
         mobile_views.ActivateRoleView.as_view(),
         name="mobile_auth_activate_role",

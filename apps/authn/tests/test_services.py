@@ -72,7 +72,7 @@ class AuthServiceTests(TestCase):
     @patch("apps.authn.services.email_service.send_email_verification")
     def test_register_user(self, mock_send_email):
         """Test registering a new user."""
-        tokens = self.service.register_user(
+        user_obj, tokens = self.service.register_user(
             email="test@example.com",
             password="securepass123",
             initial_role="homeowner",
@@ -81,6 +81,7 @@ class AuthServiceTests(TestCase):
 
         # Check user created
         user = User.objects.get(email="test@example.com")
+        self.assertEqual(user_obj, user)
         self.assertTrue(user.check_password("securepass123"))
         self.assertTrue(user.is_active)
 
@@ -103,13 +104,14 @@ class AuthServiceTests(TestCase):
     @patch("apps.authn.services.email_service.send_email_verification")
     def test_register_user_without_initial_role(self, mock_send_email):
         """Test registering user without initial role."""
-        tokens = self.service.register_user(
+        user_obj, tokens = self.service.register_user(
             email="test@example.com",
             password="securepass123",
             platform="web",
         )
 
         user = User.objects.get(email="test@example.com")
+        self.assertEqual(user_obj, user)
 
         # No roles should be created
         self.assertFalse(user.roles.exists())
@@ -127,7 +129,7 @@ class AuthServiceTests(TestCase):
     @patch("apps.authn.services.email_service.send_email_verification")
     def test_register_user_creates_handyman_profile(self, mock_send_email):
         """Test registering user with handyman role creates profile."""
-        tokens = self.service.register_user(
+        user_obj, tokens = self.service.register_user(
             email="handyman@example.com",
             password="securepass123",
             initial_role="handyman",
@@ -135,6 +137,7 @@ class AuthServiceTests(TestCase):
         )
 
         user = User.objects.get(email="handyman@example.com")
+        self.assertEqual(user_obj, user)
 
         # Check handyman profile created
         self.assertTrue(HandymanProfile.objects.filter(user=user).exists())
@@ -580,68 +583,6 @@ class AuthServiceTests(TestCase):
 
         # Admin role doesn't require profile
         self.assertTrue(self.service._has_complete_profile(user, "admin"))
-
-    def test_google_login_existing_user_sets_google_sub(self):
-        """Existing user receives google_sub and verification timestamp."""
-        user = User.objects.create_user(
-            email="demo@example.com",
-            password="securepass123",
-            google_sub=None,
-        )
-
-        with patch(
-            "apps.authn.services.jwt_service.create_token_pair",
-            return_value={"access_token": "a", "refresh_token": "r"},
-        ):
-            tokens = self.service.google_login(id_token="ignored", platform="web")
-
-        user.refresh_from_db()
-        self.assertEqual(user.google_sub, "google_user_id")
-        self.assertIsNotNone(user.email_verified_at)
-        self.assertIn("access_token", tokens)
-
-    def test_google_login_existing_user_retains_google_sub(self):
-        """Existing google_sub should not be overwritten."""
-        user = User.objects.create_user(
-            email="demo@example.com",
-            password="securepass123",
-            google_sub="existing",
-        )
-
-        with patch(
-            "apps.authn.services.jwt_service.create_token_pair",
-            return_value={"access_token": "a", "refresh_token": "r"},
-        ):
-            self.service.google_login(id_token="ignored", platform="web")
-
-        user.refresh_from_db()
-        self.assertEqual(user.google_sub, "existing")
-
-    def test_google_login_creates_new_user(self):
-        """New Google user is created with profile and role."""
-        with patch(
-            "apps.authn.services.jwt_service.create_token_pair",
-            return_value={"access_token": "a", "refresh_token": "r"},
-        ):
-            tokens = self.service.google_login(id_token="ignored", platform="mobile")
-
-        user = User.objects.get(email="demo@example.com")
-        self.assertTrue(user.is_email_verified)
-        self.assertTrue(UserRole.objects.filter(user=user, role="homeowner").exists())
-        self.assertTrue(HomeownerProfile.objects.filter(user=user).exists())
-        # Check active_role is set for new Google user
-        self.assertEqual(user.active_role, "homeowner")
-        self.assertIn("access_token", tokens)
-
-    def test_google_login_errors_wrapped(self):
-        """Underlying errors raise ValueError with helpful message."""
-        with patch(
-            "apps.authn.services.User.objects.get", side_effect=RuntimeError("boom")
-        ):
-            with self.assertRaisesRegex(
-                ValueError, "Google authentication failed: boom"
-            ):
-                self.service.google_login(id_token="ignored", platform="web")
 
     @patch("apps.authn.services.EmailVerificationToken.verify_otp")
     def test_verify_email_sets_fill_profile(self, mock_verify):

@@ -11,11 +11,6 @@ urlpatterns = [
     path("auth/register", web_views.RegisterView.as_view(), name="web_auth_register"),
     path("auth/login", web_views.LoginView.as_view(), name="web_auth_login"),
     path(
-        "auth/login/google",
-        web_views.GoogleLoginView.as_view(),
-        name="web_auth_google_login",
-    ),
-    path(
         "auth/activate-role",
         web_views.ActivateRoleView.as_view(),
         name="web_auth_activate_role",

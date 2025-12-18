@@ -3,7 +3,13 @@ Production settings for sb project.
 """
 
 from .base import *  # noqa: F401, F403
-from .base import env
+from .base import (  # noqa: F401
+    BASE_DIR,
+    INSTALLED_APPS,
+    MIDDLEWARE,
+    REST_FRAMEWORK,
+    env,
+)
 
 # Security settings for production
 SECURE_BROWSER_XSS_FILTER = True
@@ -35,7 +41,9 @@ LOGGING = {
         "file": {
             "level": "INFO",
             "class": "logging.FileHandler",
-            "filename": "/tmp/django.log",
+            "filename": env.str(
+                "DJANGO_LOG_FILE", default=str(BASE_DIR / "django.log")
+            ),
             "formatter": "verbose",
         },
         "console": {

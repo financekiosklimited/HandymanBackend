@@ -92,7 +92,7 @@ def unauthorized_response(message="Authentication required"):
     Create a 401 Unauthorized response.
     """
     return error_response(
-        errors={"auth": "Authentication credentials were not provided"},
+        errors={"detail": "Authentication credentials were not provided"},
         message=message,
         status_code=status.HTTP_401_UNAUTHORIZED,
     )
@@ -128,7 +128,7 @@ def throttled_response(message="Rate limit exceeded"):
     Create a 429 Too Many Requests response.
     """
     return error_response(
-        errors={"throttle": "Request was throttled"},
+        errors={"detail": "Request was throttled"},
         message=message,
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
     )

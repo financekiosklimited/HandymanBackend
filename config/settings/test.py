@@ -57,3 +57,12 @@ MIDDLEWARE = [
     for mw in MIDDLEWARE  # noqa: F405
     if mw != "whitenoise.middleware.WhiteNoiseMiddleware"
 ]
+
+# Disable throttling during tests
+REST_FRAMEWORK = {
+    **REST_FRAMEWORK,  # noqa: F405
+    "DEFAULT_THROTTLE_RATES": dict.fromkeys(
+        REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"],  # noqa: F405
+        "1000/sec",
+    ),
+}

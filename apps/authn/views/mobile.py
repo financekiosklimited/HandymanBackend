@@ -27,7 +27,6 @@ from ..serializers import (
     EmailResendSerializer,
     EmailVerificationSerializer,
     ForgotPasswordSerializer,
-    GoogleLoginSerializer,
     LoginSerializer,
     LogoutSerializer,
     PasswordResetTokenResponseEnvelope,
@@ -51,7 +50,7 @@ User = get_user_model()
 class RegisterView(APIView):
     permission_classes = [AllowAny]
     platform = "mobile"
-    # throttle_scope = 'mobile:register'
+    throttle_scope = "mobile:register"
 
     @extend_schema(
         request=RegisterSerializer,
@@ -68,33 +67,21 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             try:
-                tokens = auth_service.register_user(
+                user, tokens = auth_service.register_user(
                     email=serializer.validated_data["email"],
                     password=serializer.validated_data["password"],
                     initial_role=serializer.validated_data.get("initial_role"),
                     platform=self.platform,
                 )
 
-                # Get user for next action determination
-                try:
-                    user = User.objects.get(email=serializer.validated_data["email"])
-                    next_action = auth_service.get_next_action_for_user(user)
-                    tokens.update(
-                        {
-                            "active_role": user.active_role,
-                            "next_action": next_action,
-                            "email_verified": user.is_email_verified,
-                        }
-                    )
-                except User.DoesNotExist:
-                    # Fallback values
-                    tokens.update(
-                        {
-                            "active_role": None,
-                            "next_action": "verify_email",
-                            "email_verified": False,
-                        }
-                    )
+                next_action = auth_service.get_next_action_for_user(user)
+                tokens.update(
+                    {
+                        "active_role": user.active_role,
+                        "next_action": next_action,
+                        "email_verified": user.is_email_verified,
+                    }
+                )
 
                 return created_response(
                     data=tokens, message="User registered successfully"
@@ -111,7 +98,7 @@ class RegisterView(APIView):
 class LoginView(APIView):
     permission_classes = [AllowAny]
     platform = "mobile"
-    # # throttle_scope = 'mobile:login'
+    throttle_scope = "mobile:login"
 
     @extend_schema(
         request=LoginSerializer,
@@ -162,68 +149,10 @@ class LoginView(APIView):
         return validation_error_response(serializer.errors)
 
 
-class GoogleLoginView(APIView):
-    permission_classes = [AllowAny]
-    platform = "mobile"
-    # throttle_scope = 'mobile:login_google'
-
-    @extend_schema(
-        request=GoogleLoginSerializer,
-        responses={200: TokenResponseEnvelope},
-        description="Login with Google OAuth ID token via mobile app.",
-        summary="Google OAuth login",
-        tags=["Mobile Authentication"],
-    )
-    def post(self, request):
-        """Login with Google OAuth."""
-        return self._handle_post(request)
-
-    def _handle_post(self, request):
-        serializer = GoogleLoginSerializer(data=request.data)
-        if serializer.is_valid():
-            try:
-                tokens = auth_service.google_login(
-                    id_token=serializer.validated_data["id_token"],
-                    platform=self.platform,
-                )
-
-                # Add active_role, next_action and email_verified to Google login response
-                try:
-                    payload = jwt_service.decode_token(tokens["access_token"])
-                    user = User.objects.get(public_id=payload["sub"])
-                    next_action = auth_service.get_next_action_for_user(user)
-                    tokens.update(
-                        {
-                            "active_role": user.active_role,
-                            "next_action": next_action,
-                            "email_verified": user.is_email_verified,
-                        }
-                    )
-                except (User.DoesNotExist, Exception):
-                    # Fallback values for Google users (usually email verified)
-                    tokens.update(
-                        {
-                            "active_role": None,
-                            "next_action": "none",
-                            "email_verified": True,
-                        }
-                    )
-
-                return success_response(data=tokens, message="Google login successful")
-            except ValueError as e:
-                return error_response(
-                    errors={"google": str(e)},
-                    message="Google authentication failed",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
-
-        return validation_error_response(serializer.errors)
-
-
 class ActivateRoleView(APIView):
     permission_classes = [IsAuthenticated]
     platform = "mobile"
-    # throttle_scope = 'mobile:activate_role'
+    throttle_scope = "mobile:activate_role"
 
     @extend_schema(
         request=ActivateRoleSerializer,
@@ -273,7 +202,7 @@ class ActivateRoleView(APIView):
 class EmailVerifyView(APIView):
     permission_classes = [AllowAny]
     platform = "mobile"
-    # # throttle_scope = 'mobile:verify_email'
+    throttle_scope = "mobile:verify_email"
 
     @extend_schema(
         request=EmailVerificationSerializer,
@@ -339,7 +268,7 @@ class EmailVerifyView(APIView):
 class EmailResendView(APIView):
     permission_classes = [AllowAny]
     platform = "mobile"
-    # throttle_scope = 'mobile:resend_email'
+    throttle_scope = "mobile:resend_email"
 
     @extend_schema(
         request=EmailResendSerializer,
@@ -390,7 +319,7 @@ class EmailResendView(APIView):
 class RefreshTokenView(APIView):
     permission_classes = [AllowAny]
     platform = "mobile"
-    # throttle_scope = 'mobile:refresh'
+    throttle_scope = "mobile:refresh"
 
     @extend_schema(
         request=RefreshTokenSerializer,
@@ -453,7 +382,7 @@ class LogoutView(APIView):
 class ForgotPasswordView(APIView):
     permission_classes = [AllowAny]
     platform = "mobile"
-    # throttle_scope = 'mobile:forgot_password'
+    throttle_scope = "mobile:forgot_password"
 
     @extend_schema(
         request=ForgotPasswordSerializer,
@@ -480,7 +409,7 @@ class ForgotPasswordView(APIView):
 class VerifyPasswordResetView(APIView):
     permission_classes = [AllowAny]
     platform = "mobile"
-    # throttle_scope = 'mobile:verify_password_reset'
+    throttle_scope = "mobile:verify_password_reset"
 
     @extend_schema(
         request=VerifyPasswordResetSerializer,
@@ -518,7 +447,7 @@ class VerifyPasswordResetView(APIView):
 class ResetPasswordView(APIView):
     permission_classes = [AllowAny]
     platform = "mobile"
-    # throttle_scope = 'mobile:reset_password'
+    throttle_scope = "mobile:reset_password"
 
     @extend_schema(
         request=ResetPasswordSerializer,
@@ -554,7 +483,7 @@ class ResetPasswordView(APIView):
 class ChangePasswordView(APIView):
     permission_classes = [IsAuthenticated]
     platform = "mobile"
-    # throttle_scope = 'mobile:change_password'
+    throttle_scope = "mobile:change_password"
 
     @extend_schema(
         request=ChangePasswordSerializer,

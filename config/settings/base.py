@@ -238,7 +238,7 @@ REST_FRAMEWORK = {
         # Web throttles - DRF format: num/period (s=second, m=minute, h=hour, d=day)
         "web:register": "5/min",
         "web:login": "10/min",
-        "web:login_google": "10/min",
+        "web:activate_role": "10/min",
         "web:verify_email": "10/min",
         "web:resend_email": "3/min",
         "web:refresh": "30/min",
@@ -249,7 +249,7 @@ REST_FRAMEWORK = {
         # Mobile throttles (same rates)
         "mobile:register": "5/min",
         "mobile:login": "10/min",
-        "mobile:login_google": "10/min",
+        "mobile:activate_role": "10/min",
         "mobile:verify_email": "10/min",
         "mobile:resend_email": "3/min",
         "mobile:refresh": "30/min",

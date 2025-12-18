@@ -54,9 +54,12 @@ class JWTAuthentication(authentication.BaseAuthentication):
 
             return (user, payload)
 
+        except jwt.ExpiredSignatureError:
+            raise exceptions.AuthenticationFailed("Token has expired")
         except jwt.InvalidTokenError as e:
             raise exceptions.AuthenticationFailed(f"Invalid token: {str(e)}")
         except Exception as e:
+            # For debugging purposes, but consider logging this instead of returning to client
             raise exceptions.AuthenticationFailed(f"Authentication failed: {str(e)}")
 
     def authenticate_header(self, request):

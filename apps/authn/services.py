@@ -66,7 +66,7 @@ class AuthService:
         verification_token, otp = EmailVerificationToken.create_for_user(user)
         email_service.send_email_verification(user, otp)
 
-        return tokens
+        return user, tokens
 
     def login_user(self, email, password, platform="web"):
         """
@@ -93,82 +93,6 @@ class AuthService:
             pass
 
         return None
-
-    @transaction.atomic
-    def google_login(self, id_token, platform="web"):
-        """
-        Authenticate or create user with Google OAuth.
-
-        Args:
-            id_token: Google ID token
-            platform: Platform for token generation
-
-        Returns:
-            dict: Token pair
-        """
-        try:
-            # Verify Google ID token
-            # Note: In production, you would verify against Google's public keys
-            # For now, we'll skip actual verification for demo purposes
-            # In real implementation:
-            # idinfo = google_id_token.verify_oauth2_token(
-            #     id_token, google_requests.Request(), settings.GOOGLE_CLIENT_ID
-            # )
-
-            # Mock Google token payload for demo
-            # In production, extract from verified token
-            email = "demo@example.com"  # This would come from idinfo['email']
-            google_sub = "google_user_id"  # This would come from idinfo['sub']
-
-            # Try to find existing user
-            try:
-                user = User.objects.get(email=email)
-
-                # Update Google sub if not set
-                if not user.google_sub:
-                    user.google_sub = google_sub
-                    user.save()
-
-            except User.DoesNotExist:
-                # Create new user
-                user = User.objects.create_user(
-                    email=email, google_sub=google_sub, is_active=True
-                )
-
-                # Auto-verify email for Google users
-                user.email_verified_at = timezone.now()
-
-                # Create default homeowner role and profile
-                UserRole.objects.create(
-                    user=user,
-                    role="homeowner",
-                    next_action="none",  # No need to verify email
-                )
-
-                HomeownerProfile.objects.create(
-                    user=user,
-                    display_name=email.split("@")[0],  # Default display name
-                )
-
-                # Set active_role for new Google user
-                user.active_role = "homeowner"
-                user.save(update_fields=["email_verified_at", "active_role"])
-
-            # Ensure email is verified for Google users
-            if not user.email_verified_at:
-                user.email_verified_at = timezone.now()
-                user.save(update_fields=["email_verified_at"])
-
-            # Generate token pair (use user.active_role if available)
-            tokens = jwt_service.create_token_pair(
-                user=user, platform=platform, active_role=user.active_role
-            )
-
-            return tokens
-
-        except Exception as e:
-            # Log error in production
-            raise ValueError(f"Google authentication failed: {str(e)}")
 
     def activate_role(self, user, role):
         """

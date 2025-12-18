@@ -2,8 +2,10 @@
 
 from django.db import models
 
+from apps.common.models import BaseModel
 
-class WaitlistEntry(models.Model):
+
+class WaitlistEntry(BaseModel):
     """Represents a user who has joined the waitlist."""
 
     HOMEOWNER = "homeowner"
@@ -17,8 +19,6 @@ class WaitlistEntry(models.Model):
     user_name = models.CharField(max_length=255)
     email = models.EmailField()
     user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "waitlist_entries"
