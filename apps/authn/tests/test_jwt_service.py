@@ -1,5 +1,6 @@
 """Tests for JWT service."""
 
+import hashlib
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -496,6 +497,103 @@ class JWTServiceTests(TestCase):
             self.jwt_service.revoke_refresh_token("token")
 
         manager_mock.filter.assert_called_once()
+
+    def test_refresh_token_pair_fallback_to_user_active_role(self):
+        """Test fallback to user.active_role during refresh if payload doesn't have it."""
+        self.user.active_role = "handyman"
+        self.user.save()
+
+        # Create refresh token manually without active_role
+        now = datetime.now(UTC)
+        jti = "test-jti"
+        claims = {
+            "sub": str(self.user.public_id),
+            "type": "refresh",
+            "jti": jti,
+            "plat": "web",
+            "iat": now,
+            "exp": now + timedelta(days=1),
+        }
+        if self.jwt_service._audience:
+            claims["aud"] = self.jwt_service._audience
+
+        refresh_token = jwt.encode(claims, TEST_PRIVATE_KEY, algorithm="RS256")
+
+        # Create session
+        RefreshSession.objects.create(
+            jti_hash=hashlib.sha256(jti.encode()).hexdigest(),
+            user=self.user,
+            platform="web",
+            expires_at=now + timedelta(days=1),
+        )
+
+        new_tokens = self.jwt_service.refresh_token_pair(
+            refresh_token=refresh_token, platform="web"
+        )
+
+        payload = self.jwt_service.decode_token(new_tokens["access_token"])
+        self.assertEqual(payload["active_role"], "handyman")
+
+    def test_refresh_token_pair_preserves_payload_active_role(self):
+        """Test active_role from payload is used during refresh if user still has the role."""
+        # User has both roles
+        self.user.active_role = "homeowner"
+        self.user.save()
+
+        # Create refresh token with active_role='handyman'
+        now = datetime.now(UTC)
+        jti = "test-jti-2"
+        claims = {
+            "sub": str(self.user.public_id),
+            "type": "refresh",
+            "jti": jti,
+            "plat": "web",
+            "active_role": "handyman",
+            "iat": now,
+            "exp": now + timedelta(days=1),
+        }
+        if self.jwt_service._audience:
+            claims["aud"] = self.jwt_service._audience
+
+        refresh_token = jwt.encode(claims, TEST_PRIVATE_KEY, algorithm="RS256")
+
+        RefreshSession.objects.create(
+            jti_hash=hashlib.sha256(jti.encode()).hexdigest(),
+            user=self.user,
+            platform="web",
+            expires_at=now + timedelta(days=1),
+        )
+
+        new_tokens = self.jwt_service.refresh_token_pair(
+            refresh_token=refresh_token, platform="web"
+        )
+
+        payload = self.jwt_service.decode_token(new_tokens["access_token"])
+        # Should be 'handyman' from payload, not 'homeowner' from user.active_role
+        self.assertEqual(payload["active_role"], "handyman")
+
+    def test_get_phone_verified_fallback(self):
+        """Test _get_phone_verified fallback logic when active_role is None."""
+        # No profile exists initially
+        self.assertFalse(self.jwt_service._get_phone_verified(self.user, None))
+
+        # Create handyman profile
+        from django.utils import timezone
+
+        from apps.profiles.models import HandymanProfile
+
+        HandymanProfile.objects.create(
+            user=self.user, display_name="Handy", phone_verified_at=timezone.now()
+        )
+        self.assertTrue(self.jwt_service._get_phone_verified(self.user, None))
+
+        # Create homeowner profile (takes precedence in fallback)
+        from apps.profiles.models import HomeownerProfile
+
+        HomeownerProfile.objects.create(
+            user=self.user, display_name="Home", phone_verified_at=None
+        )
+        self.assertFalse(self.jwt_service._get_phone_verified(self.user, None))
 
     def _create_temp_key_file(self, content):
         """Write PEM content to a temporary file and return its path."""

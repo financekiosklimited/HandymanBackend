@@ -25,7 +25,7 @@ class FirebaseServiceTests(TestCase):
         """Test initialization with credentials path."""
         with patch("firebase_admin._apps", []):
             with override_settings(FIREBASE_CREDENTIALS_PATH="/path/to/json"):
-                service = FirebaseService()
+                FirebaseService()
                 mock_cert.assert_called_once_with("/path/to/json")
                 mock_init.assert_called_once()
 
@@ -38,7 +38,7 @@ class FirebaseServiceTests(TestCase):
             with override_settings(
                 FIREBASE_CREDENTIALS_PATH=None, FIREBASE_CREDENTIALS_JSON=cred_json
             ):
-                service = FirebaseService()
+                FirebaseService()
                 mock_cert.assert_called_once_with({"project_id": "test"})
                 mock_init.assert_called_once()
 
@@ -120,3 +120,19 @@ class FirebaseServiceTests(TestCase):
         result = service.send_multicast_notification(["t1"], "Title", "Body")
         self.assertEqual(result["success_count"], 0)
         self.assertEqual(result["failure_count"], 1)
+
+    def test_initialize_firebase_import_error(self):
+        """Test initialization with ImportError."""
+        with patch("firebase_admin._apps", []):
+            with patch.dict("sys.modules", {"firebase_admin": None}):
+                service = FirebaseService()
+                self.assertIsNone(service._app)
+
+    def test_initialize_firebase_general_exception(self):
+        """Test initialization with general Exception."""
+        with patch("firebase_admin._apps", []):
+            # We need to trigger an exception during initialization
+            # For example, by mocking settings to return something that breaks json.loads
+            with override_settings(FIREBASE_CREDENTIALS_JSON="invalid-json"):
+                service = FirebaseService()
+                self.assertIsNone(service._app)

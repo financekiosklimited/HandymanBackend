@@ -158,8 +158,8 @@ class GenerateDummyDataEdgeCasesTests(TestCase):
         from apps.jobs.models import City, JobCategory
 
         call_command("seed_categories", stdout=StringIO())
-        cat = JobCategory.objects.first()
-        city = City.objects.create(
+        JobCategory.objects.first()
+        City.objects.create(
             name="NoCoordCity", province_code="ON", latitude=None, longitude=None
         )
 
@@ -185,18 +185,55 @@ class GenerateDummyDataEdgeCasesTests(TestCase):
     @patch("apps.common.management.commands.generate_dummy_data.NUM_JOBS", 1)
     def test_generate_dummy_data_no_pillow(self):
         """Test handling when Pillow is not installed."""
-        with patch(
-            "apps.common.management.commands.generate_dummy_data.NUM_HOMEOWNERS", 1
+        with patch.dict(
+            "sys.modules",
+            {
+                "PIL": None,
+                "PIL.Image": None,
+                "PIL.ImageDraw": None,
+                "PIL.ImageFont": None,
+            },
         ):
-            with patch(
-                "apps.common.management.commands.generate_dummy_data.NUM_HANDYMEN", 1
-            ):
-                with patch(
-                    "apps.common.management.commands.generate_dummy_data.NUM_JOBS", 1
-                ):
-                    with patch.dict("sys.modules", {"PIL": None}):
-                        out = StringIO()
-                        call_command("generate_dummy_data", stdout=out)
-                        self.assertIn(
-                            "Pillow not installed, skipping images", out.getvalue()
-                        )
+            out = StringIO()
+            call_command("generate_dummy_data", stdout=out)
+            self.assertIn("Pillow not installed, skipping images", out.getvalue())
+
+    @patch("apps.common.management.commands.delete_dummy_data.input", return_value="n")
+    def test_delete_dummy_data_abort(self, mock_input):
+        """Test aborting delete_dummy_data."""
+        User.objects.create_user(email="dummy@example.com", password="p", is_dummy=True)
+        out = StringIO()
+        call_command("delete_dummy_data", stdout=out)
+        self.assertIn("Aborted", out.getvalue())
+        self.assertTrue(User.objects.filter(is_dummy=True).exists())
+
+    def test_seed_country_codes_force_create(self):
+        """Test seed_country_codes with --force and empty table (hits Created branch)."""
+        from apps.common.models import CountryPhoneCode
+
+        CountryPhoneCode.objects.all().delete()
+        out = StringIO()
+        call_command("seed_country_codes", force=True, stdout=out)
+        self.assertIn("Seeding complete!", out.getvalue())
+        self.assertIn("Created:", out.getvalue())
+
+    @patch("storages.backends.s3boto3.S3Boto3Storage.__init__")
+    def test_storage_init_with_overrides(self, mock_super_init):
+        """Test MediaStorage init with explicit overrides to hit branch gaps."""
+        mock_super_init.return_value = None
+        from apps.common.storage import MediaStorage
+
+        MediaStorage(signature_version="s3v2", object_parameters={"X": "Y"})
+        mock_super_init.assert_called_once()
+        _, kwargs = mock_super_init.call_args
+        self.assertEqual(kwargs["signature_version"], "s3v2")
+        self.assertEqual(kwargs["object_parameters"], {"X": "Y"})
+
+    @patch("builtins.input", return_value="y")
+    def test_delete_dummy_data_manual_yes(self, mock_input):
+        """Test delete_dummy_data with manual 'y' confirmation."""
+        User.objects.create(email="dummy_y@example.com", is_dummy=True)
+        out = StringIO()
+        call_command("delete_dummy_data", stdout=out)
+        self.assertIn("Deleted", out.getvalue())
+        self.assertFalse(User.objects.filter(is_dummy=True).exists())

@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
+import jwt
 from django.test import RequestFactory, TestCase, override_settings
 from rest_framework import exceptions
 
@@ -156,3 +157,36 @@ class JWTAuthenticationTests(TestCase):
     def test_authenticate_header(self):
         """Test authenticate_header method."""
         self.assertEqual(self.auth.authenticate_header(None), "Bearer")
+
+    def test_authenticate_invalid_token_format(self):
+        """Test authentication with invalid token format (e.g. malformed JWT)."""
+        request = self.factory.get("/api/v1/test/")
+        request.META["HTTP_AUTHORIZATION"] = "Bearer malformed.jwt"
+        with self.assertRaisesRegex(exceptions.AuthenticationFailed, "Invalid token"):
+            self.auth.authenticate(request)
+
+    def test_authenticate_expired_signature_error_direct(self):
+        """Test authentication explicitly catching ExpiredSignatureError from service."""
+        with patch(
+            "apps.authn.authentication.jwt_service.decode_token",
+            side_effect=jwt.ExpiredSignatureError,
+        ):
+            request = self.factory.get("/api/v1/test/")
+            request.META["HTTP_AUTHORIZATION"] = "Bearer valid.token.here"
+            with self.assertRaisesRegex(
+                exceptions.AuthenticationFailed, "Token has expired"
+            ):
+                self.auth.authenticate(request)
+
+    def test_authenticate_general_exception(self):
+        """Test authentication catching general Exception."""
+        with patch(
+            "apps.authn.authentication.jwt_service.decode_token",
+            side_effect=Exception("Unknown error"),
+        ):
+            request = self.factory.get("/api/v1/test/")
+            request.META["HTTP_AUTHORIZATION"] = "Bearer valid.token"
+            with self.assertRaisesRegex(
+                exceptions.AuthenticationFailed, "Authentication failed: Unknown error"
+            ):
+                self.auth.authenticate(request)

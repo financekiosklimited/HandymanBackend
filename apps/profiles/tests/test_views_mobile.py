@@ -122,6 +122,85 @@ class MobileHomeownerProfileViewTests(APITestCase):
         self.assertIn("display_name", response.data["errors"])
 
 
+class MobileHomeownerHandymanDetailViewTests(APITestCase):
+    """Test cases for mobile HomeownerHandymanDetailView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.user = User.objects.create_user(
+            email="homeowner_detail@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.user, role="homeowner")
+        self.user.email_verified_at = "2024-01-01T00:00:00Z"
+        self.user.save()
+        self.user.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+        }
+
+        # Handyman user
+        self.handyman_user = User.objects.create_user(
+            email="handyman_detail_ho@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman_user, role="handyman")
+        self.handyman = HandymanProfile.objects.create(
+            user=self.handyman_user,
+            display_name="Detail Handyman",
+            phone_number="+1234567890",
+            address="123 Main St",
+            hourly_rate="75.00",
+            latitude="43.651070",
+            longitude="-79.347015",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+        )
+        self.url = f"/api/v1/mobile/homeowner/handymen/{self.handyman.public_id}/"
+
+    def test_get_handyman_detail_success(self):
+        """Test successfully getting handyman detail as homeowner."""
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Handyman retrieved successfully")
+        self.assertEqual(response.data["data"]["display_name"], "Detail Handyman")
+
+    def test_get_handyman_detail_not_found(self):
+        """Test getting handyman detail fails if criteria not met."""
+        self.client.force_authenticate(user=self.user)
+
+        # 1. Not approved
+        self.handyman.is_approved = False
+        self.handyman.save()
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # 2. Not active
+        self.handyman.is_approved = True
+        self.handyman.is_active = False
+        self.handyman.save()
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # 3. Not available
+        self.handyman.is_active = True
+        self.handyman.is_available = False
+        self.handyman.save()
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # 4. Missing coordinates
+        self.handyman.is_available = True
+        self.handyman.latitude = None
+        self.handyman.save()
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
 class MobileHandymanBrowsingTests(APITestCase):
     """Test cases for homeowner browsing handymen."""
 
@@ -531,6 +610,25 @@ class MobileGuestHandymanListViewTests(APITestCase):
         self.client.force_authenticate(user=user)
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_list_handymen_coordinate_validation_edge_cases(self):
+        """Test guest list coordinate validation failure branches."""
+        # Latitude out of range
+        response = self.client.get(self.url, {"latitude": "91", "longitude": "0"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["data"][0]["distance_km"])
+
+        # Longitude out of range
+        response = self.client.get(self.url, {"latitude": "0", "longitude": "181"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["data"][0]["distance_km"])
+
+        # Radius <= 0
+        response = self.client.get(
+            self.url, {"latitude": "0", "longitude": "0", "radius_km": "0"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["data"][0]["distance_km"])
 
 
 class MobileGuestHandymanDetailViewTests(APITestCase):

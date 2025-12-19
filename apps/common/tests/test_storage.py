@@ -20,7 +20,7 @@ class MediaStorageTests(TestCase):
             AWS_S3_OBJECT_PARAMETERS={"CacheControl": "max-age=86400"},
             AWS_S3_ENDPOINT_URL=None,
         ):
-            storage = MediaStorage()
+            MediaStorage()
             mock_super_init.assert_called_once()
             args, kwargs = mock_super_init.call_args
             self.assertEqual(kwargs["custom_domain"], "cdn.example.com")

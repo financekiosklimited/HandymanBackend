@@ -1327,6 +1327,35 @@ class JobUpdateSerializerValidationTests(TestCase):
         )
         self.assertTrue(serializer.is_valid())
 
+    def test_update_coordinate_none_explicit(self):
+        """Test explicitly setting both coordinates to None."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # Set job with coordinates
+        self.job.latitude = Decimal("43.651070")
+        self.job.longitude = Decimal("-79.347015")
+        self.job.save()
+
+        data = {"latitude": None, "longitude": None}
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        updated_job = serializer.save()
+        self.assertIsNone(updated_job.latitude)
+        self.assertIsNone(updated_job.longitude)
+
+    def test_update_coordinate_validation_skips_when_not_in_attrs(self):
+        """Test that coordinate validation is skipped when neither is in attrs."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        data = {"title": "New Title"}
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid())
+
 
 class JobApplicationCreateSerializerTests(TestCase):
     """Test cases for JobApplicationCreateSerializer."""

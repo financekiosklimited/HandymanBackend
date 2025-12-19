@@ -42,11 +42,7 @@ class TwilioServiceTests(TestCase):
         ):
             service = TwilioService()
             with patch("builtins.__import__", side_effect=ImportError):
-                # We need to be careful with patching __import__
-                # Instead, let's mock the internal import logic if possible or rely on the fact
-                # that we can't easily trigger it without breaking the world.
-                # Actually, TwilioService.client uses `from twilio.rest import Client` inside the method.
-                pass
+                self.assertIsNone(service.client)
 
     def test_verify_service_sid(self):
         """Test getting verify service sid."""
@@ -217,3 +213,13 @@ class TwilioServiceTests(TestCase):
         self.assertEqual(self.service.mask_phone_number("+123456"), "+123456")
         # 9 characters: prefix(5) + suffix(4) = 9. masked_length = 0, max(0, 4) = 4 stars.
         self.assertEqual(self.service.mask_phone_number("+62812345"), "+6281****2345")
+
+    def test_client_lazy_load_import_error_real(self):
+        """Test client lazy load with a real ImportError during twilio.rest import."""
+        with override_settings(
+            TWILIO_ACCOUNT_SID="AC123", TWILIO_AUTH_TOKEN="token123"
+        ):
+            service = TwilioService()
+            with patch.dict("sys.modules", {"twilio.rest": None}):
+                client = service.client
+                self.assertIsNone(client)

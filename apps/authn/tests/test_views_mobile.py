@@ -1131,3 +1131,63 @@ class MobilePhoneVerifyViewTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         profile.refresh_from_db()
         self.assertEqual(profile.phone_number, "+6281234567893")
+
+    def test_phone_verify_active_role_other(self):
+        """Test fallback when active_role is set but not homeowner/handyman."""
+        self.user.active_role = "admin"
+        self.user.save()
+        profile = HomeownerProfile.objects.create(
+            user=self.user,
+            display_name="Admin Home",
+        )
+
+        data = {"phone_number": "+6281234567894", "otp": "123456"}
+        request = self.factory.post("/auth/phone/verify", data, format="json")
+        force_authenticate(request, user=self.user)
+        serializer = make_serializer(validated_data=data)
+
+        with (
+            patch(
+                "apps.authn.views.mobile.PhoneVerifySerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.twilio_service.check_verification",
+                return_value=VerificationResult(success=True, status="approved"),
+            ),
+        ):
+            response = self.view(request)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        profile.refresh_from_db()
+        self.assertEqual(profile.phone_number, "+6281234567894")
+
+    def test_phone_verify_no_active_role_but_handyman_only(self):
+        """Test fallback to handyman_profile when no active_role and no homeowner_profile."""
+        from apps.profiles.models import HandymanProfile
+
+        self.user.active_role = None
+        self.user.save()
+        profile = HandymanProfile.objects.create(
+            user=self.user,
+            display_name="Handyman Only",
+        )
+
+        data = {"phone_number": "+6281234567895", "otp": "123456"}
+        request = self.factory.post("/auth/phone/verify", data, format="json")
+        force_authenticate(request, user=self.user)
+        serializer = make_serializer(validated_data=data)
+
+        with (
+            patch(
+                "apps.authn.views.mobile.PhoneVerifySerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.twilio_service.check_verification",
+                return_value=VerificationResult(success=True, status="approved"),
+            ),
+        ):
+            response = self.view(request)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        profile.refresh_from_db()
+        self.assertEqual(profile.phone_number, "+6281234567895")

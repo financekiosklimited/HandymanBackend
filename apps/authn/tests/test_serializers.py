@@ -501,3 +501,19 @@ class PhoneVerifySerializerValidationTests(TestCase):
             )
             self.assertFalse(serializer.is_valid(), f"Should fail for OTP: {otp}")
             self.assertIn("otp", serializer.errors)
+
+
+class PhoneSendSerializerTests(TestCase):
+    """Additional tests for PhoneSendSerializer."""
+
+    def test_phone_number_regex_coverage(self):
+        """Test the E.164 regex more thoroughly."""
+        from apps.authn.serializers import PhoneSendSerializer
+
+        # Leading zero after + is not allowed by [1-9]
+        serializer = PhoneSendSerializer(data={"phone_number": "+0123456789"})
+        self.assertFalse(serializer.is_valid())
+
+        # Valid one
+        serializer = PhoneSendSerializer(data={"phone_number": "+16475551234"})
+        self.assertTrue(serializer.is_valid())

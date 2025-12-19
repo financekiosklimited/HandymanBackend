@@ -387,3 +387,50 @@ class HandymanProfileUpdateSerializerValidationTests(TestCase):
         )
         self.assertFalse(serializer.is_valid())
         self.assertIn("longitude", serializer.errors)
+
+    def test_update_serializer_cross_field_validation_with_existing_instance(self):
+        """Test coordinate cross-field validation with existing instance data."""
+        # Case: instance has lat/lng, update provides only lat as None
+        self.profile.latitude = Decimal("43.65")
+        self.profile.longitude = Decimal("-79.34")
+        self.profile.save()
+
+        # Try to set latitude to None without setting longitude to None
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile, data={"latitude": None}, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("non_field_errors", serializer.errors)
+
+        # Try to set longitude to None without setting latitude to None
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile, data={"longitude": None}, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("non_field_errors", serializer.errors)
+
+        # Setting both to None is valid
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile, data={"latitude": None, "longitude": None}, partial=True
+        )
+        self.assertTrue(serializer.is_valid())
+
+    def test_update_serializer_latitude_out_of_range_branch_coverage(self):
+        """Specifically target the latitude branch coverage."""
+        # This targets line 143->148 branch part (lat is None but lng is not None - should fail cross-field first though)
+        # Wait, if lat is None, it should have failed cross-field validation if lng is not None.
+        # If both are None, it skips these blocks.
+        # The coverage tool says 149->154 branch is missing.
+        # Line 148 is `if new_lng is not None:`
+        # Line 149 is `if not (-180 <= new_lng <= 180):`
+        # 149->154 missing means it never saw a case where new_lng is not None AND it's valid?
+        # No, 149->154 means the "else" branch of the "if" at 149 (where it IS in range) was not taken?
+        # Or that it didn't see it NOT taken?
+
+        # Let's provide a valid lat and valid lng.
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile,
+            data={"latitude": Decimal("10"), "longitude": Decimal("10")},
+            partial=True,
+        )
+        self.assertTrue(serializer.is_valid())
