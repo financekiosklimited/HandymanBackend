@@ -25,7 +25,10 @@ All APIs return: `{"message": "...", "data": {...}, "errors": null, "meta": null
 
 ## Workflow
 - **Always run `make format`, `make lint` and `make test` after any code changes**
-- **New APIs**: Add detailed OpenAPI spec using `drf-spectacular` decorators (`@extend_schema`) - see below
+- **New APIs/Changes**:
+    - Add detailed OpenAPI spec using `drf-spectacular` decorators (`@extend_schema`) - see below.
+    - **MUST** write/update unit tests for any new API or code changes.
+    - **MUST** run `make format`, `make lint` and `make test` and ensure they pass. If tests fail, adjust the code or tests until they pass.
 
 ## OpenAPI Documentation Guidelines
 

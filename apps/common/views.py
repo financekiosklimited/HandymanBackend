@@ -2,7 +2,7 @@
 Common views for the application.
 """
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
@@ -21,6 +21,14 @@ from .serializers import (
     description="Health check endpoint for deployment monitoring.",
     tags=["Common"],
     responses={200: ResponseEnvelopeSerializer},
+    examples=[
+        OpenApiExample(
+            "Success Response",
+            value={"message": "ok", "data": None, "errors": None, "meta": None},
+            response_only=True,
+            status_codes=["200"],
+        ),
+    ],
 )
 @api_view(["GET"])
 @permission_classes([AllowAny])
@@ -41,6 +49,32 @@ class CountryPhoneCodeListView(APIView):
         description="Get list of active country phone codes for phone number input.",
         summary="List country phone codes",
         tags=["Common"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Country codes retrieved successfully",
+                    "data": [
+                        {
+                            "country_code": "CA",
+                            "country_name": "Canada",
+                            "dial_code": "+1",
+                            "flag_emoji": "🇨🇦",
+                        },
+                        {
+                            "country_code": "ID",
+                            "country_name": "Indonesia",
+                            "dial_code": "+62",
+                            "flag_emoji": "🇮🇩",
+                        },
+                    ],
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request):
         """Get list of active country phone codes."""

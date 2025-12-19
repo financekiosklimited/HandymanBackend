@@ -2,7 +2,7 @@
 Web profile views.
 """
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
@@ -41,6 +41,25 @@ class HomeownerProfileView(APIView):
         description="Get homeowner profile information for web app. Requires authenticated user with homeowner role and verified email.",
         summary="Get homeowner profile",
         tags=["Web Homeowner Profile"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Profile retrieved successfully",
+                    "data": {
+                        "display_name": "Jane Homeowner",
+                        "avatar_url": "https://example.com/avatar.jpg",
+                        "phone_number": "+16471234567",
+                        "is_phone_verified": True,
+                        "address": "123 Main St, Toronto, ON",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request):
         """Get homeowner profile."""
@@ -59,6 +78,33 @@ class HomeownerProfileView(APIView):
         description="Update homeowner profile information via web app. All fields are optional and will only update provided values.",
         summary="Update homeowner profile",
         tags=["Web Homeowner Profile"],
+        examples=[
+            OpenApiExample(
+                "Update Request",
+                value={
+                    "display_name": "Jane Doe",
+                    "address": "456 New St, Toronto, ON",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Profile updated successfully",
+                    "data": {
+                        "display_name": "Jane Doe",
+                        "avatar_url": "https://example.com/avatar.jpg",
+                        "phone_number": "+16471234567",
+                        "is_phone_verified": True,
+                        "address": "456 New St, Toronto, ON",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def put(self, request):
         """Update homeowner profile."""
@@ -91,6 +137,29 @@ class HandymanProfileView(APIView):
         description="Get handyman profile information including rating for web app. Requires authenticated user with handyman role and verified email.",
         summary="Get handyman profile",
         tags=["Web Handyman Profile"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Profile retrieved successfully",
+                    "data": {
+                        "display_name": "John Handyman",
+                        "avatar_url": "https://example.com/avatar2.jpg",
+                        "rating": 4.8,
+                        "hourly_rate": 80.0,
+                        "is_active": True,
+                        "is_available": True,
+                        "phone_number": "+16479876543",
+                        "is_phone_verified": True,
+                        "address": "789 Work Rd, Toronto, ON",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request):
         """Get handyman profile."""
@@ -109,6 +178,38 @@ class HandymanProfileView(APIView):
         description="Update handyman profile information via web app including rating, contact details and address. All fields are optional.",
         summary="Update handyman profile",
         tags=["Web Handyman Profile"],
+        examples=[
+            OpenApiExample(
+                "Update Request",
+                value={
+                    "display_name": "John Builder",
+                    "hourly_rate": 85.0,
+                    "is_available": False,
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Profile updated successfully",
+                    "data": {
+                        "display_name": "John Builder",
+                        "avatar_url": "https://example.com/avatar2.jpg",
+                        "rating": 4.8,
+                        "hourly_rate": 85.0,
+                        "is_active": True,
+                        "is_available": False,
+                        "phone_number": "+16479876543",
+                        "is_phone_verified": True,
+                        "address": "789 Work Rd, Toronto, ON",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def put(self, request):
         """Update handyman profile."""

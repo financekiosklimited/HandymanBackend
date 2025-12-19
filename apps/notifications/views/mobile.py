@@ -66,6 +66,37 @@ class NotificationListView(APIView):
         description="List all notifications for the authenticated user with pagination and filtering.",
         summary="List notifications",
         tags=["Mobile Notifications"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Notifications retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "notification_type": "job_application_received",
+                            "title": "New Application",
+                            "body": "You have received a new application for your job.",
+                            "is_read": False,
+                            "created_at": "2024-01-15T10:30:00Z",
+                        }
+                    ],
+                    "errors": None,
+                    "meta": {
+                        "pagination": {
+                            "page": 1,
+                            "page_size": 20,
+                            "total_pages": 1,
+                            "total_count": 1,
+                            "has_next": False,
+                            "has_previous": False,
+                        }
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request):
         """List all notifications for the user."""
@@ -131,6 +162,23 @@ class NotificationMarkAsReadView(APIView):
         description="Mark a specific notification as read.",
         summary="Mark as read",
         tags=["Mobile Notifications"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Notification marked as read",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "is_read": True,
+                        "read_at": "2024-01-15T10:35:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request, public_id):
         """Mark a notification as read."""
@@ -165,6 +213,19 @@ class NotificationMarkAllAsReadView(APIView):
         description="Mark all unread notifications as read for the authenticated user.",
         summary="Mark all as read",
         tags=["Mobile Notifications"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "5 notifications marked as read",
+                    "data": {"count": 5},
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         """Mark all notifications as read."""
@@ -195,6 +256,19 @@ class NotificationUnreadCountView(APIView):
         description="Get the count of unread notifications for the authenticated user.",
         summary="Get unread count",
         tags=["Mobile Notifications"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Unread count retrieved successfully",
+                    "data": {"unread_count": 3},
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request):
         """Get unread notification count."""
@@ -281,6 +355,19 @@ class DeviceUnregisterView(APIView):
         description="Unregister a device from receiving push notifications.",
         summary="Unregister device",
         tags=["Mobile Devices"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Device unregistered successfully",
+                    "data": None,
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def delete(self, request, public_id):
         """Unregister a device."""

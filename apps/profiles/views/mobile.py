@@ -53,6 +53,25 @@ class HomeownerProfileView(APIView):
         description="Get homeowner profile information for mobile app. Requires authenticated user with homeowner role and verified email.",
         summary="Get homeowner profile",
         tags=["Mobile Homeowner Profile"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Profile retrieved successfully",
+                    "data": {
+                        "display_name": "Jane Homeowner",
+                        "avatar_url": "https://example.com/avatar.jpg",
+                        "phone_number": "+16471234567",
+                        "is_phone_verified": True,
+                        "address": "123 Main St, Toronto, ON",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request):
         """Get homeowner profile."""
@@ -71,6 +90,33 @@ class HomeownerProfileView(APIView):
         description="Update homeowner profile information via mobile app. All fields are optional and will only update provided values.",
         summary="Update homeowner profile",
         tags=["Mobile Homeowner Profile"],
+        examples=[
+            OpenApiExample(
+                "Update Request",
+                value={
+                    "display_name": "Jane Doe",
+                    "address": "456 New St, Toronto, ON",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Profile updated successfully",
+                    "data": {
+                        "display_name": "Jane Doe",
+                        "avatar_url": "https://example.com/avatar.jpg",
+                        "phone_number": "+16471234567",
+                        "is_phone_verified": True,
+                        "address": "456 New St, Toronto, ON",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def put(self, request):
         """Update homeowner profile."""
@@ -106,6 +152,29 @@ class HandymanProfileView(APIView):
         ),
         summary="Get handyman profile",
         tags=["Mobile Handyman Profile"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Profile retrieved successfully",
+                    "data": {
+                        "display_name": "John Handyman",
+                        "avatar_url": "https://example.com/avatar2.jpg",
+                        "rating": 4.8,
+                        "hourly_rate": 80.0,
+                        "is_active": True,
+                        "is_available": True,
+                        "phone_number": "+16479876543",
+                        "is_phone_verified": True,
+                        "address": "789 Work Rd, Toronto, ON",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request):
         """Get handyman profile."""
@@ -127,6 +196,38 @@ class HandymanProfileView(APIView):
         ),
         summary="Update handyman profile",
         tags=["Mobile Handyman Profile"],
+        examples=[
+            OpenApiExample(
+                "Update Request",
+                value={
+                    "display_name": "John Builder",
+                    "hourly_rate": 85.0,
+                    "is_available": False,
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Profile updated successfully",
+                    "data": {
+                        "display_name": "John Builder",
+                        "avatar_url": "https://example.com/avatar2.jpg",
+                        "rating": 4.8,
+                        "hourly_rate": 85.0,
+                        "is_active": True,
+                        "is_available": False,
+                        "phone_number": "+16479876543",
+                        "is_phone_verified": True,
+                        "address": "789 Work Rd, Toronto, ON",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def put(self, request):
         """Update handyman profile."""

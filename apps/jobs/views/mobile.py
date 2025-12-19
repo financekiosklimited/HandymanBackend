@@ -72,6 +72,27 @@ class JobCategoryListView(APIView):
         description="List all active job categories for mobile app. No authentication required.",
         summary="List job categories",
         tags=["Mobile Job Categories"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Categories retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                            "name": "Plumbing",
+                            "slug": "plumbing",
+                            "description": "Plumbing services",
+                            "icon": "plumbing",
+                        }
+                    ],
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request):
         """List all active job categories."""
@@ -107,6 +128,27 @@ class CityListView(APIView):
         description="List all active Canadian cities for mobile app with optional province filter. No authentication required.",
         summary="List cities",
         tags=["Mobile Cities"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Cities retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                            "name": "Toronto",
+                            "province": "Ontario",
+                            "province_code": "ON",
+                            "slug": "toronto-on",
+                        }
+                    ],
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request):
         """List all active cities with optional province filter."""
@@ -188,6 +230,41 @@ class JobListCreateView(APIView):
         description="List all jobs for authenticated homeowner with pagination and filtering. Returns only jobs created by the homeowner.",
         summary="List homeowner jobs",
         tags=["Mobile Homeowner Jobs"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Jobs retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "title": "Fix leaking kitchen faucet",
+                            "description": "Kitchen faucet has been leaking for a few days.",
+                            "estimated_budget": 50.0,
+                            "category": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                                "name": "Plumbing",
+                            },
+                            "status": "open",
+                            "created_at": "2024-01-15T10:30:00Z",
+                        }
+                    ],
+                    "errors": None,
+                    "meta": {
+                        "pagination": {
+                            "page": 1,
+                            "page_size": 20,
+                            "total_pages": 1,
+                            "total_count": 1,
+                            "has_next": False,
+                            "has_previous": False,
+                        }
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request):
         """List homeowner's jobs with pagination and filtering."""
@@ -1343,6 +1420,37 @@ class HandymanForYouJobListView(APIView):
         description="List open jobs for handymen to browse and apply to. Jobs are sorted by distance (if coordinates provided) and recency.",
         summary="Browse available jobs",
         tags=["Mobile Handyman Jobs"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Jobs retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "title": "Fix Kitchen Sink",
+                            "description": "Leaky sink needs repair",
+                            "estimated_budget": 100.0,
+                            "distance_km": 5.2,
+                            "created_at": "2024-01-15T10:30:00Z",
+                        }
+                    ],
+                    "errors": None,
+                    "meta": {
+                        "pagination": {
+                            "page": 1,
+                            "page_size": 20,
+                            "total_pages": 1,
+                            "total_count": 1,
+                            "has_next": False,
+                            "has_previous": False,
+                        }
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request):
         """List open jobs for handymen."""
@@ -1454,6 +1562,27 @@ class HandymanJobDetailView(APIView):
         description="Get details of a specific job. Includes has_applied flag and application info if handyman has applied.",
         summary="Get job detail",
         tags=["Mobile Handyman Jobs"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Job retrieved successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "title": "Fix Kitchen Sink",
+                        "has_applied": True,
+                        "my_application": {
+                            "public_id": "423e4567-e89b-12d3-a456-426614174000",
+                            "status": "pending",
+                        },
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request, public_id):
         """Get job detail with application status."""
@@ -1699,6 +1828,23 @@ class HandymanJobApplicationDetailView(APIView):
         description="Get details of a specific job application.",
         summary="Get application detail",
         tags=["Mobile Handyman Applications"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Application retrieved successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "status": "pending",
+                        "job": {"title": "Fix Kitchen Sink"},
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request, public_id):
         """Get application detail."""
@@ -1739,6 +1885,22 @@ class HandymanJobApplicationWithdrawView(APIView):
         description="Withdraw a pending job application. Only pending applications can be withdrawn.",
         summary="Withdraw application",
         tags=["Mobile Handyman Applications"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Application withdrawn successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "status": "withdrawn",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request, public_id):
         """Withdraw a job application."""
@@ -1814,6 +1976,34 @@ class HomeownerApplicationListView(APIView):
         description="List ALL applications across all homeowner's jobs. Supports filtering by job and status.",
         summary="List all applications",
         tags=["Mobile Homeowner Applications"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Applications retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "handyman_profile": {"display_name": "John Handyman"},
+                            "status": "pending",
+                        }
+                    ],
+                    "errors": None,
+                    "meta": {
+                        "pagination": {
+                            "page": 1,
+                            "page_size": 20,
+                            "total_pages": 1,
+                            "total_count": 1,
+                            "has_next": False,
+                            "has_previous": False,
+                        }
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request):
         """List all applications for homeowner."""
@@ -1889,6 +2079,23 @@ class HomeownerApplicationDetailView(APIView):
         description="Get details of a specific application. Validates that application belongs to homeowner's job.",
         summary="Get application detail",
         tags=["Mobile Homeowner Applications"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Application retrieved successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "handyman_profile": {"display_name": "John Handyman"},
+                        "status": "pending",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request, public_id):
         """Get application detail."""
@@ -1930,6 +2137,22 @@ class HomeownerApplicationApproveView(APIView):
         description="Approve a pending application. The job status will change to 'in_progress' and all other pending applications will be automatically rejected. Only pending applications can be approved.",
         summary="Approve application",
         tags=["Mobile Homeowner Applications"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Application approved successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "status": "approved",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request, public_id):
         """Approve a job application."""
@@ -1978,6 +2201,22 @@ class HomeownerApplicationRejectView(APIView):
         description="Reject a pending application. Only pending applications can be rejected.",
         summary="Reject application",
         tags=["Mobile Homeowner Applications"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Application rejected successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "status": "rejected",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request, public_id):
         """Reject a job application."""

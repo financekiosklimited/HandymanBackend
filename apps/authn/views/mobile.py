@@ -4,7 +4,7 @@ Mobile authentication views.
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
@@ -58,6 +58,46 @@ class RegisterView(APIView):
         description="Register a new user account. Creates user with optional initial role and sends email verification.",
         summary="Register new user",
         tags=["Mobile Authentication"],
+        examples=[
+            OpenApiExample(
+                "Register Request",
+                value={
+                    "email": "user@example.com",
+                    "password": "SecureP@ss123",
+                    "initial_role": "homeowner",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "User registered successfully",
+                    "data": {
+                        "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "token_type": "bearer",
+                        "active_role": "homeowner",
+                        "next_action": "verify_email",
+                        "email_verified": False,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["201"],
+            ),
+            OpenApiExample(
+                "Validation Error",
+                value={
+                    "message": "Validation failed",
+                    "data": None,
+                    "errors": {"email": ["A user with this email already exists."]},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["400"],
+            ),
+        ],
     )
     def post(self, request):
         """Register a new user."""
@@ -106,6 +146,42 @@ class LoginView(APIView):
         description="Login with email and password via mobile app. Returns JWT tokens for authenticated access.",
         summary="User login",
         tags=["Mobile Authentication"],
+        examples=[
+            OpenApiExample(
+                "Login Request",
+                value={"email": "user@example.com", "password": "SecureP@ss123"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Login successful",
+                    "data": {
+                        "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "token_type": "bearer",
+                        "active_role": "homeowner",
+                        "next_action": "none",
+                        "email_verified": True,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Invalid Credentials",
+                value={
+                    "message": "Invalid credentials",
+                    "data": None,
+                    "errors": {"detail": "Invalid credentials"},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["401"],
+            ),
+        ],
     )
     def post(self, request):
         """Login with email and password."""
@@ -160,6 +236,31 @@ class ActivateRoleView(APIView):
         description="Activate a role for authenticated user. Issues new tokens with active role and determines next action.",
         summary="Activate user role",
         tags=["Mobile Authentication"],
+        examples=[
+            OpenApiExample(
+                "Activate Role Request",
+                value={"role": "handyman"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Role activated successfully",
+                    "data": {
+                        "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "token_type": "bearer",
+                        "active_role": "handyman",
+                        "email_verified": True,
+                        "next_action": "fill_profile",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         """Activate a role for the user."""
@@ -210,6 +311,42 @@ class EmailVerifyView(APIView):
         description="Verify email address using 6-digit OTP code sent via email for mobile users.",
         summary="Verify email with OTP",
         tags=["Mobile Authentication"],
+        examples=[
+            OpenApiExample(
+                "Verify Email Request",
+                value={"email": "user@example.com", "otp": "123456"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Email verified successfully",
+                    "data": {
+                        "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "token_type": "bearer",
+                        "active_role": "homeowner",
+                        "next_action": "fill_profile",
+                        "email_verified": True,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Invalid OTP",
+                value={
+                    "message": "Email verification failed",
+                    "data": None,
+                    "errors": {"otp": "Invalid or expired OTP"},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["400"],
+            ),
+        ],
     )
     def post(self, request):
         """Verify email with OTP."""
@@ -276,6 +413,24 @@ class EmailResendView(APIView):
         description="Resend email verification OTP via mobile app.",
         summary="Resend verification email",
         tags=["Mobile Authentication"],
+        examples=[
+            OpenApiExample(
+                "Resend Email Request",
+                value={"email": "user@example.com"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Verification email sent if account exists",
+                    "data": None,
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         """Resend email verification."""
@@ -327,6 +482,42 @@ class RefreshTokenView(APIView):
         description="Refresh access token using refresh token via mobile app.",
         summary="Refresh access token",
         tags=["Mobile Authentication"],
+        examples=[
+            OpenApiExample(
+                "Refresh Token Request",
+                value={"refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Token refreshed successfully",
+                    "data": {
+                        "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "token_type": "bearer",
+                        "active_role": "homeowner",
+                        "next_action": "none",
+                        "email_verified": True,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Invalid Token",
+                value={
+                    "message": "Token is invalid or expired",
+                    "data": None,
+                    "errors": {"detail": "Token is invalid or expired"},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["401"],
+            ),
+        ],
     )
     def post(self, request):
         """Refresh access token."""
@@ -361,6 +552,24 @@ class LogoutView(APIView):
         description="Logout user via mobile app.",
         summary="User logout",
         tags=["Mobile Authentication"],
+        examples=[
+            OpenApiExample(
+                "Logout Request",
+                value={"refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Logout successful",
+                    "data": None,
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         """Logout user and optionally revoke refresh token."""
@@ -390,6 +599,24 @@ class ForgotPasswordView(APIView):
         description="Initiate password reset process via mobile app.",
         summary="Forgot password",
         tags=["Mobile Authentication"],
+        examples=[
+            OpenApiExample(
+                "Forgot Password Request",
+                value={"email": "user@example.com"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Password reset code sent if account exists",
+                    "data": None,
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         """Initiate password reset process."""
@@ -417,6 +644,35 @@ class VerifyPasswordResetView(APIView):
         description="Verify password reset code via mobile app.",
         summary="Verify reset code",
         tags=["Mobile Authentication"],
+        examples=[
+            OpenApiExample(
+                "Verify Reset Code Request",
+                value={"email": "user@example.com", "otp": "123456"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Reset code verified successfully",
+                    "data": {"reset_token": "abc123def456...", "expires_in": 900},
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Invalid OTP",
+                value={
+                    "message": "Code verification failed",
+                    "data": None,
+                    "errors": {"otp": "Invalid or expired reset code"},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["400"],
+            ),
+        ],
     )
     def post(self, request):
         """Verify password reset code."""
@@ -455,6 +711,38 @@ class ResetPasswordView(APIView):
         description="Reset password with reset token via mobile app.",
         summary="Reset password",
         tags=["Mobile Authentication"],
+        examples=[
+            OpenApiExample(
+                "Reset Password Request",
+                value={
+                    "reset_token": "abc123def456...",
+                    "new_password": "NewSecureP@ss123",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Password reset successfully",
+                    "data": None,
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Invalid Token",
+                value={
+                    "message": "Password reset failed",
+                    "data": None,
+                    "errors": {"token": "Invalid or expired reset token"},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["400"],
+            ),
+        ],
     )
     def post(self, request):
         """Reset password with reset token."""
@@ -491,6 +779,38 @@ class ChangePasswordView(APIView):
         description="Change password for authenticated user via mobile app.",
         summary="Change password",
         tags=["Mobile Authentication"],
+        examples=[
+            OpenApiExample(
+                "Change Password Request",
+                value={
+                    "current_password": "OldSecureP@ss123",
+                    "new_password": "NewSecureP@ss123",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Password changed successfully",
+                    "data": None,
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Wrong Current Password",
+                value={
+                    "message": "Password change failed",
+                    "data": None,
+                    "errors": {"current_password": "Current password is incorrect"},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["400"],
+            ),
+        ],
     )
     def post(self, request):
         """Change user password."""
@@ -530,6 +850,35 @@ class PhoneSendView(APIView):
         description="Send OTP code to phone number for verification via SMS.",
         summary="Send phone verification OTP",
         tags=["Mobile Authentication"],
+        examples=[
+            OpenApiExample(
+                "Send Phone OTP Request",
+                value={"phone_number": "+16471234567"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Verification code sent",
+                    "data": {"masked_phone": "+1****4567", "expires_in": 600},
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Service Error",
+                value={
+                    "message": "Failed to send verification code",
+                    "data": None,
+                    "errors": {"phone_number": "Failed to send verification"},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["503"],
+            ),
+        ],
     )
     def post(self, request):
         """Send phone verification OTP."""
@@ -576,6 +925,35 @@ class PhoneVerifyView(APIView):
         description="Verify phone number using the OTP code sent via SMS.",
         summary="Verify phone OTP",
         tags=["Mobile Authentication"],
+        examples=[
+            OpenApiExample(
+                "Verify Phone OTP Request",
+                value={"phone_number": "+16471234567", "otp": "123456"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Phone number verified successfully",
+                    "data": {"phone_verified": True, "phone_number": "+16471234567"},
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Invalid OTP",
+                value={
+                    "message": "Phone verification failed",
+                    "data": None,
+                    "errors": {"otp": "Invalid or expired OTP"},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["400"],
+            ),
+        ],
     )
     def post(self, request):
         """Verify phone number with OTP."""

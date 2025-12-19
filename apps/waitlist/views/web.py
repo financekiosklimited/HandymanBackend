@@ -1,6 +1,6 @@
 """Web-facing API views for waitlist operations."""
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 
@@ -27,6 +27,33 @@ class WaitlistSignupView(APIView):
         summary="Join waitlist",
         description="Create or update a waitlist entry for the provided email and user type.",
         tags=["Waitlist"],
+        examples=[
+            OpenApiExample(
+                "Signup Request",
+                value={
+                    "user_name": "Jane Doe",
+                    "email": "jane@example.com",
+                    "user_type": "homeowner",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response (Created)",
+                value={
+                    "message": "Joined waitlist successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "user_name": "Jane Doe",
+                        "email": "jane@example.com",
+                        "user_type": "homeowner",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["201"],
+            ),
+        ],
     )
     def post(self, request):
         """Add or refresh a waitlist entry."""

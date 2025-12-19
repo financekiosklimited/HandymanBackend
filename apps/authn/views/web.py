@@ -1,6 +1,6 @@
 """Web authentication views reusing mobile implementations."""
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiExample, extend_schema
 
 from ..serializers import (
     ActivateRoleSerializer,
@@ -65,6 +65,35 @@ class RegisterView(MobileRegisterView):
         description="Register a new user account for the web app. Creates user with optional initial role and sends email verification.",
         summary="Register new user",
         tags=["Web Authentication"],
+        examples=[
+            OpenApiExample(
+                "Register Request",
+                value={
+                    "email": "user@example.com",
+                    "password": "SecureP@ss123",
+                    "initial_role": "homeowner",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "User registered successfully",
+                    "data": {
+                        "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "token_type": "bearer",
+                        "active_role": "homeowner",
+                        "next_action": "verify_email",
+                        "email_verified": False,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["201"],
+            ),
+        ],
     )
     def post(self, request):
         return super()._handle_post(request)
@@ -82,6 +111,31 @@ class LoginView(MobileLoginView):
         description="Login with email and password via web app. Returns JWT tokens for authenticated access.",
         summary="User login",
         tags=["Web Authentication"],
+        examples=[
+            OpenApiExample(
+                "Login Request",
+                value={"email": "user@example.com", "password": "SecureP@ss123"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Login successful",
+                    "data": {
+                        "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "token_type": "bearer",
+                        "active_role": "homeowner",
+                        "next_action": "none",
+                        "email_verified": True,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         return super()._handle_post(request)
@@ -99,6 +153,31 @@ class ActivateRoleView(MobileActivateRoleView):
         description="Activate a role for authenticated user via web app and receive updated tokens.",
         summary="Activate user role",
         tags=["Web Authentication"],
+        examples=[
+            OpenApiExample(
+                "Activate Role Request",
+                value={"role": "handyman"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Role activated successfully",
+                    "data": {
+                        "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "token_type": "bearer",
+                        "active_role": "handyman",
+                        "email_verified": True,
+                        "next_action": "fill_profile",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         return super()._handle_post(request)
@@ -116,6 +195,31 @@ class EmailVerifyView(MobileEmailVerifyView):
         description="Verify email address using 6-digit OTP code sent via email for web users.",
         summary="Verify email with OTP",
         tags=["Web Authentication"],
+        examples=[
+            OpenApiExample(
+                "Verify Email Request",
+                value={"email": "user@example.com", "otp": "123456"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Email verified successfully",
+                    "data": {
+                        "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "token_type": "bearer",
+                        "active_role": "homeowner",
+                        "next_action": "fill_profile",
+                        "email_verified": True,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         return super()._handle_post(request)
@@ -133,6 +237,24 @@ class EmailResendView(MobileEmailResendView):
         description="Resend email verification OTP via web app.",
         summary="Resend verification email",
         tags=["Web Authentication"],
+        examples=[
+            OpenApiExample(
+                "Resend Email Request",
+                value={"email": "user@example.com"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Verification email sent if account exists",
+                    "data": None,
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         return super()._handle_post(request)
@@ -150,6 +272,31 @@ class RefreshTokenView(MobileRefreshTokenView):
         description="Refresh access token using refresh token via web app.",
         summary="Refresh access token",
         tags=["Web Authentication"],
+        examples=[
+            OpenApiExample(
+                "Refresh Token Request",
+                value={"refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Token refreshed successfully",
+                    "data": {
+                        "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "token_type": "bearer",
+                        "active_role": "homeowner",
+                        "next_action": "none",
+                        "email_verified": True,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         return super()._handle_post(request)
@@ -166,6 +313,24 @@ class LogoutView(MobileLogoutView):
         description="Logout user via web app.",
         summary="User logout",
         tags=["Web Authentication"],
+        examples=[
+            OpenApiExample(
+                "Logout Request",
+                value={"refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Logout successful",
+                    "data": None,
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         return super()._handle_post(request)
@@ -183,6 +348,24 @@ class ForgotPasswordView(MobileForgotPasswordView):
         description="Initiate password reset process via web app.",
         summary="Forgot password",
         tags=["Web Authentication"],
+        examples=[
+            OpenApiExample(
+                "Forgot Password Request",
+                value={"email": "user@example.com"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Password reset code sent if account exists",
+                    "data": None,
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         return super()._handle_post(request)
@@ -200,6 +383,24 @@ class VerifyPasswordResetView(MobileVerifyPasswordResetView):
         description="Verify password reset code via web app.",
         summary="Verify reset code",
         tags=["Web Authentication"],
+        examples=[
+            OpenApiExample(
+                "Verify Reset Code Request",
+                value={"email": "user@example.com", "otp": "123456"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Reset code verified successfully",
+                    "data": {"reset_token": "abc123def456...", "expires_in": 900},
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         return super()._handle_post(request)
@@ -217,6 +418,27 @@ class ResetPasswordView(MobileResetPasswordView):
         description="Reset password with reset token via web app.",
         summary="Reset password",
         tags=["Web Authentication"],
+        examples=[
+            OpenApiExample(
+                "Reset Password Request",
+                value={
+                    "reset_token": "abc123def456...",
+                    "new_password": "NewSecureP@ss123",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Password reset successfully",
+                    "data": None,
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         return super()._handle_post(request)
@@ -234,6 +456,27 @@ class ChangePasswordView(MobileChangePasswordView):
         description="Change password for authenticated user via web app.",
         summary="Change password",
         tags=["Web Authentication"],
+        examples=[
+            OpenApiExample(
+                "Change Password Request",
+                value={
+                    "current_password": "OldSecureP@ss123",
+                    "new_password": "NewSecureP@ss123",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Password changed successfully",
+                    "data": None,
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def post(self, request):
         return super()._handle_post(request)
