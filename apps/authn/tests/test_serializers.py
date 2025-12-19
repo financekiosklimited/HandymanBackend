@@ -448,3 +448,56 @@ class ChangePasswordSerializerTests(TestCase):
         ):
             with self.assertRaises(drf_serializers.ValidationError):
                 serializer.validate_new_password("weak")
+
+
+class PhoneSendSerializerValidationTests(TestCase):
+    """Test cases for PhoneSendSerializer validation."""
+
+    def test_invalid_phone_format_fails(self):
+        """Test that invalid phone format raises validation error."""
+        from apps.authn.serializers import PhoneSendSerializer
+
+        invalid_phones = [
+            "1234567890",  # No + prefix
+            "+1",  # Too short
+            "abc",  # Not a number
+            "+1-647-555-1234",  # Contains dashes
+            "",  # Empty
+        ]
+
+        for phone in invalid_phones:
+            serializer = PhoneSendSerializer(data={"phone_number": phone})
+            self.assertFalse(serializer.is_valid(), f"Should fail for: {phone}")
+            self.assertIn("phone_number", serializer.errors)
+
+
+class PhoneVerifySerializerValidationTests(TestCase):
+    """Test cases for PhoneVerifySerializer validation."""
+
+    def test_invalid_phone_format_fails(self):
+        """Test that invalid phone format raises validation error."""
+        from apps.authn.serializers import PhoneVerifySerializer
+
+        serializer = PhoneVerifySerializer(
+            data={"phone_number": "1234567890", "otp": "123456"}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("phone_number", serializer.errors)
+
+    def test_invalid_otp_format_fails(self):
+        """Test that invalid OTP format raises validation error."""
+        from apps.authn.serializers import PhoneVerifySerializer
+
+        invalid_otps = [
+            "12345",  # Too short
+            "1234567",  # Too long
+            "abcdef",  # Not digits
+            "",  # Empty
+        ]
+
+        for otp in invalid_otps:
+            serializer = PhoneVerifySerializer(
+                data={"phone_number": "+16475551234", "otp": otp}
+            )
+            self.assertFalse(serializer.is_valid(), f"Should fail for OTP: {otp}")
+            self.assertIn("otp", serializer.errors)

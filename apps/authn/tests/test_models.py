@@ -11,6 +11,7 @@ from apps.authn.models import (
     EmailVerificationToken,
     PasswordResetCode,
     PasswordResetToken,
+    PhoneVerificationCode,
     RefreshSession,
 )
 
@@ -476,3 +477,105 @@ class RefreshSessionModelTests(TestCase):
         self.user.delete()
 
         self.assertFalse(RefreshSession.objects.filter(id=session_id).exists())
+
+
+class PhoneVerificationCodeModelTests(TestCase):
+    """Test cases for PhoneVerificationCode model."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.user = User.objects.create_user(
+            email="test@example.com",
+            password="testpass123",
+        )
+        self.phone_number = "+16475551234"
+
+    def test_create_for_user(self):
+        """Test creating a verification code for user."""
+        code, otp = PhoneVerificationCode.create_for_user(self.user, self.phone_number)
+
+        self.assertEqual(code.user, self.user)
+        self.assertEqual(code.phone_number, self.phone_number)
+        self.assertIsNotNone(code.code_hash)
+        self.assertIsNotNone(code.expires_at)
+        self.assertIsNone(code.used_at)
+        self.assertEqual(len(otp), 6)
+        self.assertTrue(otp.isdigit())
+
+    def test_code_hash_matches_otp(self):
+        """Test that code hash matches the OTP."""
+        code, otp = PhoneVerificationCode.create_for_user(self.user, self.phone_number)
+        expected_hash = hashlib.sha256(otp.encode()).hexdigest()
+
+        self.assertEqual(code.code_hash, expected_hash)
+
+    def test_verify_code_success(self):
+        """Test verifying code successfully."""
+        code, otp = PhoneVerificationCode.create_for_user(self.user, self.phone_number)
+
+        verified_code = PhoneVerificationCode.verify_code(
+            self.user, self.phone_number, otp
+        )
+
+        self.assertIsNotNone(verified_code)
+        self.assertEqual(verified_code.user, self.user)
+        self.assertIsNotNone(verified_code.used_at)
+
+    def test_verify_code_invalid_otp(self):
+        """Test verifying code with invalid OTP."""
+        code, otp = PhoneVerificationCode.create_for_user(self.user, self.phone_number)
+
+        verified_code = PhoneVerificationCode.verify_code(
+            self.user, self.phone_number, "000000"
+        )
+
+        self.assertIsNone(verified_code)
+
+    def test_verify_code_expired(self):
+        """Test verifying expired code."""
+        code, otp = PhoneVerificationCode.create_for_user(self.user, self.phone_number)
+
+        # Manually expire the code
+        code.expires_at = timezone.now() - timedelta(minutes=1)
+        code.save()
+
+        verified_code = PhoneVerificationCode.verify_code(
+            self.user, self.phone_number, otp
+        )
+
+        self.assertIsNone(verified_code)
+
+    def test_verify_code_already_used(self):
+        """Test verifying code that was already used."""
+        code, otp = PhoneVerificationCode.create_for_user(self.user, self.phone_number)
+
+        # Verify once
+        PhoneVerificationCode.verify_code(self.user, self.phone_number, otp)
+
+        # Try to verify again
+        verified_code = PhoneVerificationCode.verify_code(
+            self.user, self.phone_number, otp
+        )
+
+        self.assertIsNone(verified_code)
+
+    def test_is_valid_method(self):
+        """Test is_valid method."""
+        code, otp = PhoneVerificationCode.create_for_user(self.user, self.phone_number)
+
+        self.assertTrue(code.is_valid())
+
+        # Mark as used
+        code.used_at = timezone.now()
+        code.save()
+
+        self.assertFalse(code.is_valid())
+
+        # Test with expired code
+        code2, otp2 = PhoneVerificationCode.create_for_user(
+            self.user, self.phone_number
+        )
+        code2.expires_at = timezone.now() - timedelta(minutes=1)
+        code2.save()
+
+        self.assertFalse(code2.is_valid())

@@ -21,7 +21,7 @@ from apps.common.responses import (
     success_response,
     validation_error_response,
 )
-from apps.jobs.models import City, Job, JobCategory
+from apps.jobs.models import City, Job, JobApplication, JobCategory
 from apps.jobs.serializers import (
     CityListResponseSerializer,
     CitySerializer,
@@ -31,6 +31,18 @@ from apps.jobs.serializers import (
     GuestJobDetailSerializer,
     GuestJobListResponseSerializer,
     GuestJobListSerializer,
+    HandymanForYouJobListResponseSerializer,
+    HandymanJobDetailResponseSerializer,
+    HandymanJobDetailSerializer,
+    HomeownerJobApplicationDetailResponseSerializer,
+    HomeownerJobApplicationDetailSerializer,
+    HomeownerJobApplicationListResponseSerializer,
+    HomeownerJobApplicationListSerializer,
+    JobApplicationCreateSerializer,
+    JobApplicationDetailResponseSerializer,
+    JobApplicationDetailSerializer,
+    JobApplicationListResponseSerializer,
+    JobApplicationListSerializer,
     JobCategoryListResponseSerializer,
     JobCategorySerializer,
     JobCreateResponseSerializer,
@@ -1261,3 +1273,730 @@ class GuestJobDetailView(APIView):
 
         serializer = GuestJobDetailSerializer(job)
         return success_response(serializer.data, message="Job retrieved successfully")
+
+
+# ========================
+# Job Views - Handyman
+# ========================
+
+
+class HandymanForYouJobListView(APIView):
+    """
+    View for handymen to browse available open jobs.
+    Jobs are sorted by distance (if coordinates provided) and recency.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_for_you",
+        responses={200: HandymanForYouJobListResponseSerializer},
+        parameters=[
+            OpenApiParameter(
+                name="latitude",
+                type=OpenApiTypes.DECIMAL,
+                location=OpenApiParameter.QUERY,
+                description="User's current latitude for distance calculation",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="longitude",
+                type=OpenApiTypes.DECIMAL,
+                location=OpenApiParameter.QUERY,
+                description="User's current longitude for distance calculation",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="page",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Page number",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="page_size",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Items per page (max 100)",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="category",
+                type=OpenApiTypes.UUID,
+                location=OpenApiParameter.QUERY,
+                description="Filter by category public_id",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="city",
+                type=OpenApiTypes.UUID,
+                location=OpenApiParameter.QUERY,
+                description="Filter by city public_id",
+                required=False,
+            ),
+        ],
+        description="List open jobs for handymen to browse and apply to. Jobs are sorted by distance (if coordinates provided) and recency.",
+        summary="Browse available jobs",
+        tags=["Mobile Handyman Jobs"],
+    )
+    def get(self, request):
+        """List open jobs for handymen."""
+        # Get all open jobs (exclude jobs created by this user if they're also a homeowner)
+        jobs = (
+            Job.objects.filter(status="open")
+            .select_related("category", "city")
+            .prefetch_related("images")
+        )
+
+        # Exclude own jobs if user is also a homeowner
+        jobs = jobs.exclude(homeowner=request.user)
+
+        # Filter by category if provided
+        category_id = request.query_params.get("category")
+        if category_id:
+            jobs = jobs.filter(category__public_id=category_id)
+
+        # Filter by city if provided
+        city_id = request.query_params.get("city")
+        if city_id:
+            jobs = jobs.filter(city__public_id=city_id)
+
+        # Get user's location for distance calculation
+        user_lat = request.query_params.get("latitude")
+        user_lon = request.query_params.get("longitude")
+
+        if user_lat and user_lon:
+            try:
+                user_lat = float(user_lat)
+                user_lon = float(user_lon)
+
+                # Calculate distance using Haversine formula
+                jobs = jobs.annotate(
+                    distance_km=Case(
+                        When(
+                            latitude__isnull=False,
+                            longitude__isnull=False,
+                            then=6371
+                            * ACos(
+                                Cos(Radians(Value(user_lat)))
+                                * Cos(Radians("latitude"))
+                                * Cos(Radians("longitude") - Radians(Value(user_lon)))
+                                + Sin(Radians(Value(user_lat)))
+                                * Sin(Radians("latitude"))
+                            ),
+                        ),
+                        default=Value(None),
+                        output_field=FloatField(),
+                    )
+                ).order_by("distance_km", "-created_at")
+            except (ValueError, TypeError):
+                # Invalid coordinates, just order by created_at
+                jobs = jobs.order_by("-created_at")
+        else:
+            # No coordinates provided, order by recency
+            jobs = jobs.order_by("-created_at")
+
+        # Pagination
+        page = int(request.query_params.get("page", 1))
+        page_size = min(int(request.query_params.get("page_size", 20)), 100)
+        total_count = jobs.count()
+        total_pages = (
+            (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        )
+
+        start = (page - 1) * page_size
+        end = start + page_size
+        jobs = jobs[start:end]
+
+        serializer = ForYouJobSerializer(jobs, many=True)
+
+        meta = {
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "total_count": total_count,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+            }
+        }
+
+        return success_response(
+            serializer.data,
+            message="Jobs retrieved successfully",
+            meta=meta,
+        )
+
+
+class HandymanJobDetailView(APIView):
+    """
+    View for handymen to view job details, including whether they've applied.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_detail",
+        responses={
+            200: HandymanJobDetailResponseSerializer,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Get details of a specific job. Includes has_applied flag and application info if handyman has applied.",
+        summary="Get job detail",
+        tags=["Mobile Handyman Jobs"],
+    )
+    def get(self, request, public_id):
+        """Get job detail with application status."""
+        job = get_object_or_404(
+            Job.objects.select_related("category", "city")
+            .prefetch_related("images", "applications")
+            .filter(status="open"),
+            public_id=public_id,
+        )
+
+        serializer = HandymanJobDetailSerializer(job, context={"request": request})
+        return success_response(serializer.data, message="Job retrieved successfully")
+
+
+# ========================
+# Job Application Views - Handyman
+# ========================
+
+
+class HandymanJobApplicationListCreateView(APIView):
+    """
+    View for listing handyman's job applications and creating new applications.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+        PhoneVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_applications_list",
+        responses={200: JobApplicationListResponseSerializer},
+        parameters=[
+            OpenApiParameter(
+                name="page",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Page number",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="page_size",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Number of items per page (max 100)",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="status",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Filter by status (pending, approved, rejected, withdrawn)",
+                required=False,
+            ),
+        ],
+        description="List all job applications for the authenticated handyman with pagination and filtering. Requires phone verification.",
+        summary="List my applications",
+        tags=["Mobile Handyman Applications"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Applications retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "job": {
+                                "public_id": "223e4567-e89b-12d3-a456-426614174000",
+                                "title": "Fix Kitchen Sink",
+                                "description": "Need help fixing leaky kitchen sink",
+                                "estimated_budget": 150.00,
+                                "category": {
+                                    "public_id": "323e4567-e89b-12d3-a456-426614174000",
+                                    "name": "Plumbing",
+                                    "slug": "plumbing",
+                                },
+                                "city": {
+                                    "public_id": "423e4567-e89b-12d3-a456-426614174000",
+                                    "name": "Toronto",
+                                    "province": "Ontario",
+                                    "province_code": "ON",
+                                },
+                                "status": "open",
+                            },
+                            "status": "pending",
+                            "status_at": "2024-01-15T10:30:00Z",
+                            "created_at": "2024-01-15T10:30:00Z",
+                            "updated_at": "2024-01-15T10:30:00Z",
+                        }
+                    ],
+                    "errors": None,
+                    "meta": {
+                        "pagination": {
+                            "page": 1,
+                            "page_size": 20,
+                            "total_pages": 1,
+                            "total_count": 1,
+                            "has_next": False,
+                            "has_previous": False,
+                        }
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    def get(self, request):
+        """List all job applications for the handyman."""
+        applications = (
+            JobApplication.objects.filter(handyman=request.user)
+            .select_related("job__category", "job__city")
+            .prefetch_related("job__images")
+        )
+
+        # Filter by status if provided
+        status = request.query_params.get("status")
+        if status:
+            applications = applications.filter(status=status)
+
+        # Pagination
+        page = int(request.query_params.get("page", 1))
+        page_size = min(int(request.query_params.get("page_size", 20)), 100)
+        total_count = applications.count()
+        total_pages = (
+            (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        )
+
+        start = (page - 1) * page_size
+        end = start + page_size
+        applications = applications[start:end]
+
+        serializer = JobApplicationListSerializer(applications, many=True)
+
+        meta = {
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "total_count": total_count,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+            }
+        }
+
+        return success_response(
+            serializer.data,
+            message="Applications retrieved successfully",
+            meta=meta,
+        )
+
+    @extend_schema(
+        operation_id="mobile_handyman_applications_create",
+        request=JobApplicationCreateSerializer,
+        responses={
+            201: JobApplicationDetailResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Apply to a job. The job must be in 'open' status. Requires phone verification.",
+        summary="Apply to a job",
+        tags=["Mobile Handyman Applications"],
+        examples=[
+            OpenApiExample(
+                "Request Example",
+                value={"job_id": "223e4567-e89b-12d3-a456-426614174000"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Application created successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "job": {
+                            "public_id": "223e4567-e89b-12d3-a456-426614174000",
+                            "title": "Fix Kitchen Sink",
+                        },
+                        "status": "pending",
+                        "status_at": "2024-01-15T10:30:00Z",
+                        "created_at": "2024-01-15T10:30:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["201"],
+            ),
+            OpenApiExample(
+                "Validation Error",
+                value={
+                    "message": "Validation failed",
+                    "data": None,
+                    "errors": {"job_id": ["This job is not accepting applications."]},
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["400"],
+            ),
+        ],
+    )
+    def post(self, request):
+        """Create a new job application."""
+        serializer = JobApplicationCreateSerializer(
+            data=request.data, context={"request": request}
+        )
+
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            application = serializer.save()
+            response_serializer = JobApplicationDetailSerializer(application)
+            return created_response(
+                response_serializer.data, message="Application created successfully"
+            )
+        except Exception as e:
+            return validation_error_response({"detail": str(e)})
+
+
+class HandymanJobApplicationDetailView(APIView):
+    """
+    View for retrieving and withdrawing a job application.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_applications_retrieve",
+        responses={
+            200: JobApplicationDetailResponseSerializer,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Get details of a specific job application.",
+        summary="Get application detail",
+        tags=["Mobile Handyman Applications"],
+    )
+    def get(self, request, public_id):
+        """Get application detail."""
+        application = get_object_or_404(
+            JobApplication.objects.select_related(
+                "job__category", "job__city"
+            ).prefetch_related("job__images"),
+            public_id=public_id,
+            handyman=request.user,
+        )
+
+        serializer = JobApplicationDetailSerializer(application)
+        return success_response(
+            serializer.data, message="Application retrieved successfully"
+        )
+
+
+class HandymanJobApplicationWithdrawView(APIView):
+    """
+    View for withdrawing a job application.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_applications_withdraw",
+        request=None,
+        responses={
+            200: JobApplicationDetailResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Withdraw a pending job application. Only pending applications can be withdrawn.",
+        summary="Withdraw application",
+        tags=["Mobile Handyman Applications"],
+    )
+    def post(self, request, public_id):
+        """Withdraw a job application."""
+        application = get_object_or_404(
+            JobApplication, public_id=public_id, handyman=request.user
+        )
+
+        try:
+            from apps.jobs.services import job_application_service
+
+            application = job_application_service.withdraw_application(
+                handyman=request.user, application=application
+            )
+
+            serializer = JobApplicationDetailSerializer(application)
+            return success_response(
+                serializer.data, message="Application withdrawn successfully"
+            )
+        except Exception as e:
+            return validation_error_response({"detail": str(e)})
+
+
+# ========================
+# Job Application Views - Homeowner
+# ========================
+
+
+class HomeownerApplicationListView(APIView):
+    """
+    View for listing ALL applications across all homeowner's jobs.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_homeowner_applications_list",
+        responses={200: HomeownerJobApplicationListResponseSerializer},
+        parameters=[
+            OpenApiParameter(
+                name="job_id",
+                type=OpenApiTypes.UUID,
+                location=OpenApiParameter.QUERY,
+                description="Filter by job public_id",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="status",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Filter by status (pending, approved, rejected, withdrawn)",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="page",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Page number",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="page_size",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Items per page (max 100)",
+                required=False,
+            ),
+        ],
+        description="List ALL applications across all homeowner's jobs. Supports filtering by job and status.",
+        summary="List all applications",
+        tags=["Mobile Homeowner Applications"],
+    )
+    def get(self, request):
+        """List all applications for homeowner."""
+        # Get all applications for this homeowner's jobs
+        applications = JobApplication.objects.filter(
+            job__homeowner=request.user
+        ).select_related("job__category", "job__city", "handyman__handyman_profile")
+
+        # Filter by job if provided
+        job_id = request.query_params.get("job_id")
+        if job_id:
+            applications = applications.filter(job__public_id=job_id)
+
+        # Filter by status if provided
+        status = request.query_params.get("status")
+        if status:
+            applications = applications.filter(status=status)
+
+        # Order by created_at (newest first)
+        applications = applications.order_by("-created_at")
+
+        # Pagination
+        page = int(request.query_params.get("page", 1))
+        page_size = min(int(request.query_params.get("page_size", 20)), 100)
+        total_count = applications.count()
+        total_pages = (
+            (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        )
+
+        start = (page - 1) * page_size
+        end = start + page_size
+        applications = applications[start:end]
+
+        serializer = HomeownerJobApplicationListSerializer(applications, many=True)
+
+        meta = {
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "total_count": total_count,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+            }
+        }
+
+        return success_response(
+            serializer.data,
+            message="Applications retrieved successfully",
+            meta=meta,
+        )
+
+
+class HomeownerApplicationDetailView(APIView):
+    """
+    View for retrieving a specific application.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_homeowner_applications_retrieve",
+        responses={
+            200: HomeownerJobApplicationDetailResponseSerializer,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Get details of a specific application. Validates that application belongs to homeowner's job.",
+        summary="Get application detail",
+        tags=["Mobile Homeowner Applications"],
+    )
+    def get(self, request, public_id):
+        """Get application detail."""
+        application = get_object_or_404(
+            JobApplication.objects.select_related(
+                "job__category", "job__city", "handyman__handyman_profile"
+            ),
+            public_id=public_id,
+            job__homeowner=request.user,
+        )
+
+        serializer = HomeownerJobApplicationDetailSerializer(application)
+        return success_response(
+            serializer.data, message="Application retrieved successfully"
+        )
+
+
+class HomeownerApplicationApproveView(APIView):
+    """
+    View for approving a job application.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_homeowner_applications_approve",
+        request=None,
+        responses={
+            200: HomeownerJobApplicationDetailResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Approve a pending application. The job status will change to 'in_progress' and all other pending applications will be automatically rejected. Only pending applications can be approved.",
+        summary="Approve application",
+        tags=["Mobile Homeowner Applications"],
+    )
+    def post(self, request, public_id):
+        """Approve a job application."""
+        application = get_object_or_404(
+            JobApplication.objects.select_related("job"),
+            public_id=public_id,
+            job__homeowner=request.user,
+        )
+
+        try:
+            from apps.jobs.services import job_application_service
+
+            application = job_application_service.approve_application(
+                homeowner=request.user, application=application
+            )
+
+            serializer = HomeownerJobApplicationDetailSerializer(application)
+            return success_response(
+                serializer.data, message="Application approved successfully"
+            )
+        except Exception as e:
+            return validation_error_response({"detail": str(e)})
+
+
+class HomeownerApplicationRejectView(APIView):
+    """
+    View for rejecting a job application.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_homeowner_applications_reject",
+        request=None,
+        responses={
+            200: HomeownerJobApplicationDetailResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Reject a pending application. Only pending applications can be rejected.",
+        summary="Reject application",
+        tags=["Mobile Homeowner Applications"],
+    )
+    def post(self, request, public_id):
+        """Reject a job application."""
+        application = get_object_or_404(
+            JobApplication.objects.select_related("job"),
+            public_id=public_id,
+            job__homeowner=request.user,
+        )
+
+        try:
+            from apps.jobs.services import job_application_service
+
+            application = job_application_service.reject_application(
+                homeowner=request.user, application=application
+            )
+
+            serializer = HomeownerJobApplicationDetailSerializer(application)
+            return success_response(
+                serializer.data, message="Application rejected successfully"
+            )
+        except Exception as e:
+            return validation_error_response({"detail": str(e)})

@@ -322,3 +322,68 @@ class HomeownerHandymanPublicSerializersTests(TestCase):
         self.assertNotIn("address", serializer.data)
         self.assertNotIn("latitude", serializer.data)
         self.assertNotIn("longitude", serializer.data)
+
+
+class HandymanProfileUpdateSerializerValidationTests(TestCase):
+    """Test cases for HandymanProfileUpdateSerializer validation."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.user = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        UserRole.objects.create(user=self.user, role="handyman")
+        self.profile = HandymanProfile.objects.create(
+            user=self.user,
+            display_name="Test Handyman",
+            latitude=Decimal("43.651070"),
+            longitude=Decimal("-79.347015"),
+        )
+
+    def test_latitude_out_of_range_fails(self):
+        """Test that latitude out of range raises validation error."""
+        from apps.profiles.serializers import HandymanProfileUpdateSerializer
+
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile,
+            data={"latitude": "91.0"},
+            partial=True,
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("latitude", serializer.errors)
+
+    def test_longitude_out_of_range_fails(self):
+        """Test that longitude out of range raises validation error."""
+        from apps.profiles.serializers import HandymanProfileUpdateSerializer
+
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile,
+            data={"longitude": "181.0"},
+            partial=True,
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("longitude", serializer.errors)
+
+    def test_negative_latitude_out_of_range_fails(self):
+        """Test that negative latitude out of range fails."""
+        from apps.profiles.serializers import HandymanProfileUpdateSerializer
+
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile,
+            data={"latitude": "-91.0"},
+            partial=True,
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("latitude", serializer.errors)
+
+    def test_negative_longitude_out_of_range_fails(self):
+        """Test that negative longitude out of range fails."""
+        from apps.profiles.serializers import HandymanProfileUpdateSerializer
+
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile,
+            data={"longitude": "-181.0"},
+            partial=True,
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("longitude", serializer.errors)

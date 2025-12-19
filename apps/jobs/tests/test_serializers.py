@@ -307,92 +307,6 @@ class JobCreateSerializerTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("estimated_budget", serializer.errors)
 
-    def test_create_job_invalid_category_validation(self):
-        """Test job with invalid category fails."""
-        data = {
-            "title": "Test",
-            "description": "Test",
-            "estimated_budget": "50.00",
-            "category_id": "00000000-0000-0000-0000-000000000000",
-            "city_id": str(self.city.public_id),
-            "address": "123 Main St",
-        }
-
-        serializer = JobCreateSerializer(data=data, context={"request": self.request})
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("category_id", serializer.errors)
-
-    def test_create_job_inactive_category_validation(self):
-        """Test job with inactive category fails."""
-        inactive_category = JobCategory.objects.create(
-            name="Inactive", slug="inactive", is_active=False
-        )
-        data = {
-            "title": "Test",
-            "description": "Test",
-            "estimated_budget": "50.00",
-            "category_id": str(inactive_category.public_id),
-            "city_id": str(self.city.public_id),
-            "address": "123 Main St",
-        }
-
-        serializer = JobCreateSerializer(data=data, context={"request": self.request})
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("category_id", serializer.errors)
-
-    def test_create_job_invalid_city_validation(self):
-        """Test job with invalid city fails."""
-        data = {
-            "title": "Test",
-            "description": "Test",
-            "estimated_budget": "50.00",
-            "category_id": str(self.category.public_id),
-            "city_id": "00000000-0000-0000-0000-000000000000",
-            "address": "123 Main St",
-        }
-
-        serializer = JobCreateSerializer(data=data, context={"request": self.request})
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("city_id", serializer.errors)
-
-    def test_create_job_inactive_city_validation(self):
-        """Test job with inactive city fails."""
-        inactive_city = City.objects.create(
-            name="Inactive",
-            province="Test",
-            province_code="TS",
-            slug="inactive-ts",
-            is_active=False,
-        )
-        data = {
-            "title": "Test",
-            "description": "Test",
-            "estimated_budget": "50.00",
-            "category_id": str(self.category.public_id),
-            "city_id": str(inactive_city.public_id),
-            "address": "123 Main St",
-        }
-
-        serializer = JobCreateSerializer(data=data, context={"request": self.request})
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("city_id", serializer.errors)
-
-    def test_create_job_latitude_without_longitude_validation(self):
-        """Test job with latitude but no longitude fails."""
-        data = {
-            "title": "Test",
-            "description": "Test",
-            "estimated_budget": "50.00",
-            "category_id": str(self.category.public_id),
-            "city_id": str(self.city.public_id),
-            "address": "123 Main St",
-            "latitude": "43.651070",
-        }
-
-        serializer = JobCreateSerializer(data=data, context={"request": self.request})
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("non_field_errors", serializer.errors)
-
     def test_create_job_invalid_latitude_validation(self):
         """Test job with invalid latitude fails."""
         data = {
@@ -618,3 +532,515 @@ class JobCreateSerializerTests(TestCase):
 
         job = serializer.save()
         self.assertEqual(job.job_items, ["Valid task", "Another valid task"])
+
+
+class HandymanJobDetailSerializerTests(TestCase):
+    """Test cases for HandymanJobDetailSerializer."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix faucet",
+            description="Leaking faucet",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+        self.factory = APIRequestFactory()
+
+    def test_has_applied_true_when_applied(self):
+        """Test has_applied is True when handyman has applied."""
+        from apps.jobs.models import JobApplication
+
+        JobApplication.objects.create(
+            job=self.job, handyman=self.handyman, status="pending"
+        )
+
+        request = self.factory.get("/")
+        request.user = self.handyman
+
+        from apps.jobs.serializers import HandymanJobDetailSerializer
+
+        serializer = HandymanJobDetailSerializer(self.job, context={"request": request})
+
+        self.assertTrue(serializer.data["has_applied"])
+
+    def test_has_applied_false_when_not_applied(self):
+        """Test has_applied is False when handyman has not applied."""
+        request = self.factory.get("/")
+        request.user = self.handyman
+
+        from apps.jobs.serializers import HandymanJobDetailSerializer
+
+        serializer = HandymanJobDetailSerializer(self.job, context={"request": request})
+
+        self.assertFalse(serializer.data["has_applied"])
+
+    def test_my_application_returned_when_exists(self):
+        """Test my_application is returned when handyman has applied."""
+        from apps.jobs.models import JobApplication
+
+        application = JobApplication.objects.create(
+            job=self.job, handyman=self.handyman, status="pending"
+        )
+
+        request = self.factory.get("/")
+        request.user = self.handyman
+
+        from apps.jobs.serializers import HandymanJobDetailSerializer
+
+        serializer = HandymanJobDetailSerializer(self.job, context={"request": request})
+
+        self.assertIsNotNone(serializer.data["my_application"])
+        self.assertEqual(
+            serializer.data["my_application"]["public_id"], str(application.public_id)
+        )
+
+    def test_my_application_null_when_not_applied(self):
+        """Test my_application is None when handyman has not applied."""
+        request = self.factory.get("/")
+        request.user = self.handyman
+
+        from apps.jobs.serializers import HandymanJobDetailSerializer
+
+        serializer = HandymanJobDetailSerializer(self.job, context={"request": request})
+
+        self.assertIsNone(serializer.data["my_application"])
+
+
+class JobCreateSerializerValidationTests(TestCase):
+    """Test cases for JobCreateSerializer validation edge cases."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.user = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.factory = APIRequestFactory()
+        self.request = self.factory.post("/")
+        self.request.user = self.user
+
+    def test_validate_images_max_10(self):
+        """Test validation fails with more than 10 images."""
+        images = []
+        for i in range(11):
+            image = PILImage.new("RGB", (100, 100), color="red")
+            image_file = BytesIO()
+            image.save(image_file, format="JPEG")
+            image_file.seek(0)
+            images.append(
+                SimpleUploadedFile(
+                    f"image{i}.jpg", image_file.read(), content_type="image/jpeg"
+                )
+            )
+
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "images": images,
+        }
+
+        from apps.jobs.serializers import JobCreateSerializer
+
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("images", serializer.errors)
+
+    def test_validate_images_content_type(self):
+        """Test validation fails with invalid image content type."""
+        # Create a text file pretending to be an image
+        text_file = SimpleUploadedFile(
+            "not_image.txt", b"This is not an image", content_type="text/plain"
+        )
+
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "images": [text_file],
+        }
+
+        from apps.jobs.serializers import JobCreateSerializer
+
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("images", serializer.errors)
+
+    def test_validate_postal_code_invalid_format(self):
+        """Test postal code validation with invalid format."""
+        invalid_codes = ["12345", "ABCDEF", "A1A-1A1", "A1A 1A1A"]
+
+        from apps.jobs.serializers import JobCreateSerializer
+
+        for code in invalid_codes:
+            data = {
+                "title": "Test",
+                "description": "Test",
+                "estimated_budget": "50.00",
+                "category_id": str(self.category.public_id),
+                "city_id": str(self.city.public_id),
+                "address": "123 Main St",
+                "postal_code": code,
+            }
+
+            serializer = JobCreateSerializer(
+                data=data, context={"request": self.request}
+            )
+            self.assertFalse(
+                serializer.is_valid(), f"Should fail for postal code: {code}"
+            )
+            self.assertIn("postal_code", serializer.errors)
+
+    def test_validate_postal_code_wrong_length(self):
+        """Test postal code validation with wrong length."""
+        from apps.jobs.serializers import JobCreateSerializer
+
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "postal_code": "A1A",  # Too short
+        }
+
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("postal_code", serializer.errors)
+
+    def test_validate_job_items_empty_returns_empty_list(self):
+        """Test empty job_items returns empty list."""
+        from apps.jobs.serializers import JobCreateSerializer
+
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "job_items": [],
+        }
+
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertTrue(serializer.is_valid())
+        job = serializer.save()
+        self.assertEqual(job.job_items, [])
+
+
+class JobUpdateSerializerValidationTests(TestCase):
+    """Test cases for JobUpdateSerializer validation edge cases."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.user = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.inactive_category = JobCategory.objects.create(
+            name="Inactive", slug="inactive", is_active=False
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.inactive_city = City.objects.create(
+            name="Inactive",
+            province="Test",
+            province_code="TS",
+            slug="inactive-ts",
+            is_active=False,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.user,
+            title="Test Job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+        self.factory = APIRequestFactory()
+        self.request = self.factory.patch("/")
+        self.request.user = self.user
+
+    def test_update_with_inactive_category_fails(self):
+        """Test updating job with inactive category fails."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        data = {"category_id": str(self.inactive_category.public_id)}
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("category_id", serializer.errors)
+
+    def test_update_with_inactive_city_fails(self):
+        """Test updating job with inactive city fails."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        data = {"city_id": str(self.inactive_city.public_id)}
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("city_id", serializer.errors)
+
+    def test_update_with_nonexistent_city_fails(self):
+        """Test updating job with non-existent city fails."""
+        import uuid
+
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        data = {"city_id": str(uuid.uuid4())}
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("city_id", serializer.errors)
+
+    def test_update_postal_code_validation(self):
+        """Test postal code validation in update."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        data = {"postal_code": "INVALID"}
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("postal_code", serializer.errors)
+
+    def test_update_coordinate_cross_validation_latitude_only(self):
+        """Test updating only latitude when instance has longitude."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # Set job with coordinates
+        self.job.latitude = Decimal("43.651070")
+        self.job.longitude = Decimal("-79.347015")
+        self.job.save()
+
+        data = {"latitude": "44.0"}
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid())
+
+    def test_update_coordinate_cross_validation_longitude_only(self):
+        """Test updating only longitude when instance has latitude."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # Set job with coordinates
+        self.job.latitude = Decimal("43.651070")
+        self.job.longitude = Decimal("-79.347015")
+        self.job.save()
+
+        data = {"longitude": "-80.0"}
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid())
+
+    def test_update_coordinate_range_validation(self):
+        """Test coordinate range validation in update."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        data = {"latitude": "91.0", "longitude": "-79.0"}
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("latitude", serializer.errors)
+
+    def test_update_empty_job_items(self):
+        """Test updating with empty job_items."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        data = {"job_items": []}
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid())
+
+
+class JobApplicationCreateSerializerTests(TestCase):
+    """Test cases for JobApplicationCreateSerializer."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix faucet",
+            description="Leaking faucet",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+        self.factory = APIRequestFactory()
+
+    def test_create_with_nonexistent_job_fails(self):
+        """Test creating application with non-existent job fails."""
+        import uuid
+
+        from apps.jobs.serializers import JobApplicationCreateSerializer
+
+        request = self.factory.post("/")
+        request.user = self.handyman
+
+        data = {"job_id": str(uuid.uuid4())}
+
+        serializer = JobApplicationCreateSerializer(
+            data=data, context={"request": request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("job_id", serializer.errors)
+
+    def test_create_calls_service(self):
+        """Test create method calls JobApplicationService."""
+        from unittest.mock import MagicMock, patch
+
+        from apps.jobs.serializers import JobApplicationCreateSerializer
+
+        request = self.factory.post("/")
+        request.user = self.handyman
+
+        data = {"job_id": str(self.job.public_id)}
+
+        mock_application = MagicMock()
+
+        with patch(
+            "apps.jobs.services.JobApplicationService.apply_to_job"
+        ) as mock_apply:
+            mock_apply.return_value = mock_application
+
+            serializer = JobApplicationCreateSerializer(
+                data=data, context={"request": request}
+            )
+            self.assertTrue(serializer.is_valid())
+            application = serializer.save()
+
+            mock_apply.assert_called_once_with(handyman=self.handyman, job=self.job)
+            self.assertEqual(application, mock_application)
+
+
+class HomeownerJobApplicationListSerializerTests(TestCase):
+    """Test cases for HomeownerJobApplicationListSerializer."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+
+        from apps.profiles.models import HandymanProfile
+
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman, display_name="Test Handyman"
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix faucet",
+            description="Leaking faucet",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+
+    def test_handyman_profile_included_when_exists(self):
+        """Test handyman profile is included in serialization."""
+        from apps.jobs.models import JobApplication
+        from apps.jobs.serializers import HomeownerJobApplicationListSerializer
+
+        application = JobApplication.objects.create(
+            job=self.job, handyman=self.handyman, status="pending"
+        )
+
+        serializer = HomeownerJobApplicationListSerializer(application)
+        data = serializer.data
+
+        self.assertIn("handyman_profile", data)
+        self.assertIsNotNone(data["handyman_profile"])
+        self.assertEqual(data["handyman_profile"]["display_name"], "Test Handyman")

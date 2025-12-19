@@ -83,35 +83,35 @@ test: ## Run tests
 .PHONY: coverage
 coverage: ## Run tests with coverage report
 	@echo "$(BLUE)Running tests with coverage...$(NC)"
-	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run coverage run --source='apps,config' manage.py test
+	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run python -m coverage run --source='apps,config' manage.py test
 	@echo "$(GREEN)Generating coverage report...$(NC)"
-	$(UV) run coverage report
+	$(UV) run python -m coverage report
 
 .PHONY: coverage-html
 coverage-html: ## Generate HTML coverage report
 	@echo "$(BLUE)Running tests with coverage...$(NC)"
-	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run coverage run --source='apps,config' manage.py test
+	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run python -m coverage run --source='apps,config' manage.py test
 	@echo "$(GREEN)Generating HTML coverage report...$(NC)"
-	$(UV) run coverage html
+	$(UV) run python -m coverage html
 	@echo "$(GREEN)✅ Coverage report generated in htmlcov/index.html$(NC)"
 
 .PHONY: coverage-xml
 coverage-xml: ## Generate XML coverage report (for CI)
 	@echo "$(BLUE)Running tests with coverage...$(NC)"
-	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run coverage run --source='apps,config' manage.py test
+	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run python -m coverage run --source='apps,config' manage.py test
 	@echo "$(GREEN)Generating XML coverage report...$(NC)"
-	$(UV) run coverage xml
+	$(UV) run python -m coverage xml
 	@echo "$(GREEN)✅ Coverage report generated in coverage.xml$(NC)"
 
 .PHONY: coverage-erase
 coverage-erase: ## Erase coverage data
 	@echo "$(BLUE)Erasing coverage data...$(NC)"
-	$(UV) run coverage erase
+	$(UV) run python -m coverage erase
 
 .PHONY: coverage-report
 coverage-report: ## Show coverage report (no test run)
 	@echo "$(BLUE)Displaying coverage report...$(NC)"
-	$(UV) run coverage report --sort=cover
+	$(UV) run python -m coverage report --sort=cover
 
 # Linting and formatting
 .PHONY: lint

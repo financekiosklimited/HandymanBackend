@@ -66,6 +66,7 @@ LOCAL_APPS = [
     "apps.common",
     "apps.waitlist",
     "apps.jobs",
+    "apps.notifications",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -222,6 +223,11 @@ REFRESH_TOKEN_EXPIRE_MINUTES = env("REFRESH_TOKEN_EXPIRE_MIN")
 TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default=None)
 TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default=None)
 TWILIO_VERIFY_SERVICE_SID = env("TWILIO_VERIFY_SERVICE_SID", default=None)
+
+# Firebase Configuration (Push Notifications)
+FIREBASE_CREDENTIALS_PATH = env("FIREBASE_CREDENTIALS_PATH", default=None)
+FIREBASE_CREDENTIALS_JSON = env("FIREBASE_CREDENTIALS_JSON", default=None)
+
 
 # DRF Configuration
 REST_FRAMEWORK = {
@@ -403,6 +409,27 @@ UNFOLD = {
                         "title": "Job Listings",
                         "icon": "work",
                         "link": lambda request: "/admin/jobs/job/",
+                    },
+                    {
+                        "title": "Job Applications",
+                        "icon": "assignment",
+                        "link": lambda request: "/admin/jobs/jobapplication/",
+                    },
+                ],
+            },
+            {
+                "title": "Notifications",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "All Notifications",
+                        "icon": "notifications",
+                        "link": lambda request: "/admin/notifications/notification/",
+                    },
+                    {
+                        "title": "User Devices",
+                        "icon": "smartphone",
+                        "link": lambda request: "/admin/notifications/userdevice/",
                     },
                 ],
             },

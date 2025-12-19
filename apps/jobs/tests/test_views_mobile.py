@@ -2,12 +2,14 @@ from decimal import Decimal
 from io import BytesIO
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 from PIL import Image as PILImage
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import User, UserRole
-from apps.jobs.models import City, Job, JobCategory
+from apps.jobs.models import City, Job, JobApplication, JobCategory
+from apps.profiles.models import HandymanProfile, HomeownerProfile
 
 
 class MobileJobCategoryListViewTests(APITestCase):
@@ -1856,3 +1858,729 @@ class MobileGuestJobDetailViewTests(APITestCase):
         self.assertIn("status", data)
         self.assertIn("created_at", data)
         self.assertIn("updated_at", data)
+
+
+class HandymanForYouJobListViewTests(APITestCase):
+    """Test cases for handyman ForYouJobListView (job browsing)."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.url = "/api/v1/mobile/handyman/jobs/for-you/"
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "phone_verified": True,
+            "email_verified": True,
+        }
+
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+            latitude=Decimal("43.651070"),
+            longitude=Decimal("-79.347015"),
+        )
+
+        # Create open jobs
+        for i in range(3):
+            Job.objects.create(
+                homeowner=self.homeowner,
+                title=f"Job {i}",
+                description="Test job",
+                estimated_budget=Decimal("50.00"),
+                category=self.category,
+                city=self.city,
+                address="123 Main St",
+                latitude=Decimal("43.651070"),
+                longitude=Decimal("-79.347015"),
+                status="open",
+            )
+
+        self.client.force_authenticate(user=self.handyman)
+
+    def test_list_jobs_success(self):
+        """Test successfully listing jobs for handyman."""
+        response = self.client.get(
+            self.url, {"latitude": "43.651070", "longitude": "-79.347015"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 3)
+
+    def test_list_jobs_with_category_filter(self):
+        """Test filtering jobs by category."""
+        response = self.client.get(
+            self.url,
+            {
+                "latitude": "43.651070",
+                "longitude": "-79.347015",
+                "category": str(self.category.public_id),
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 3)
+
+    def test_list_jobs_with_city_filter(self):
+        """Test filtering jobs by city."""
+        response = self.client.get(
+            self.url,
+            {
+                "latitude": "43.651070",
+                "longitude": "-79.347015",
+                "city": str(self.city.public_id),
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 3)
+
+    def test_list_jobs_excludes_own_jobs(self):
+        """Test that handyman's own jobs are excluded if they're also a homeowner."""
+        # Create job owned by handyman
+        Job.objects.create(
+            homeowner=self.handyman,
+            title="Own Job",
+            description="Test job",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+
+        response = self.client.get(
+            self.url, {"latitude": "43.651070", "longitude": "-79.347015"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should still be 3, not 4
+        self.assertEqual(len(response.data["data"]), 3)
+
+
+class HandymanJobDetailViewTests(APITestCase):
+    """Test cases for handyman JobDetailView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "phone_verified": True,
+            "email_verified": True,
+        }
+
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix faucet",
+            description="Leaking faucet",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+
+        self.url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/"
+        self.client.force_authenticate(user=self.handyman)
+
+    def test_get_job_detail_success(self):
+        """Test successfully getting job detail."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["title"], "Fix faucet")
+        self.assertIn("has_applied", response.data["data"])
+
+    def test_get_job_detail_not_found(self):
+        """Test getting non-existent job returns 404."""
+        import uuid
+
+        url = f"/api/v1/mobile/handyman/jobs/{uuid.uuid4()}/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class HandymanJobApplicationListCreateViewTests(APITestCase):
+    """Test cases for handyman JobApplicationListCreateView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.url = "/api/v1/mobile/handyman/applications/"
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "phone_verified": True,
+            "email_verified": True,
+        }
+
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix faucet",
+            description="Leaking faucet",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+
+    def test_list_applications_success(self):
+        """Test successfully listing handyman's applications."""
+
+        JobApplication.objects.create(
+            job=self.job, handyman=self.handyman, status="pending"
+        )
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+    def test_list_applications_with_status_filter(self):
+        """Test filtering applications by status."""
+
+        JobApplication.objects.create(
+            job=self.job, handyman=self.handyman, status="pending"
+        )
+        job2 = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Another job",
+            description="Test",
+            estimated_budget=Decimal("60.00"),
+            category=self.category,
+            city=self.city,
+            address="456 Oak St",
+            status="open",
+        )
+        JobApplication.objects.create(
+            job=job2, handyman=self.handyman, status="approved"
+        )
+
+        response = self.client.get(self.url, {"status": "pending"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+    def test_create_application_success(self):
+        """Test successfully creating a job application."""
+        data = {"job_id": str(self.job.public_id)}
+
+        response = self.client.post(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn("status", response.data["data"])
+        self.assertEqual(response.data["data"]["status"], "pending")
+
+
+class HandymanJobApplicationWithdrawViewTests(APITestCase):
+    """Test cases for handyman JobApplicationWithdrawView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "phone_verified": True,
+            "email_verified": True,
+        }
+
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix faucet",
+            description="Leaking faucet",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+
+        self.application = JobApplication.objects.create(
+            job=self.job, handyman=self.handyman, status="pending"
+        )
+
+        self.url = f"/api/v1/mobile/handyman/applications/{self.application.public_id}/withdraw/"
+        self.client.force_authenticate(user=self.handyman)
+
+    def test_withdraw_application_success(self):
+        """Test successfully withdrawing application."""
+        from unittest.mock import patch
+
+        with patch(
+            "apps.jobs.services.JobApplicationService.withdraw_application"
+        ) as mock_withdraw:
+            mock_withdraw.return_value = self.application
+
+            response = self.client.post(self.url)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+class HandymanJobApplicationDetailViewTests(APITestCase):
+    """Test cases for handyman JobApplicationDetailView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        self.other_handyman = User.objects.create_user(
+            email="otherhandyman@example.com", password="testpass123"
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "phone_verified": True,
+            "email_verified": True,
+        }
+
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix faucet",
+            description="Leaking faucet",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+
+        self.application = JobApplication.objects.create(
+            job=self.job, handyman=self.handyman, status="pending"
+        )
+
+        self.url = f"/api/v1/mobile/handyman/applications/{self.application.public_id}/"
+        self.client.force_authenticate(user=self.handyman)
+
+    def test_get_application_detail_success(self):
+        """Test successfully getting application detail as the owner."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["status"], "pending")
+        self.assertEqual(response.data["data"]["job"]["title"], "Fix faucet")
+
+    def test_get_application_detail_not_owner_returns_404(self):
+        """Test getting application detail as another handyman returns 404."""
+        self.other_handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "phone_verified": True,
+            "email_verified": True,
+        }
+        self.client.force_authenticate(user=self.other_handyman)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_application_detail_not_found(self):
+        """Test getting non-existent application returns 404."""
+        import uuid
+
+        url = f"/api/v1/mobile/handyman/applications/{uuid.uuid4()}/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_application_detail_unauthenticated(self):
+        """Test getting application detail without authentication returns 401."""
+        self.client.force_authenticate(user=None)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class HomeownerApplicationListViewTests(APITestCase):
+    """Test cases for homeowner ApplicationListView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.url = "/api/v1/mobile/homeowner/applications/"
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.other_homeowner = User.objects.create_user(
+            email="otherhomeowner@example.com", password="testpass123"
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "phone_verified": True,
+            "email_verified": True,
+        }
+
+        HomeownerProfile.objects.create(
+            user=self.homeowner, display_name="Test Homeowner"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        HandymanProfile.objects.create(user=self.handyman, display_name="Test Handyman")
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+        self.job1 = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Job 1",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+        self.job2 = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Job 2",
+            description="Test",
+            estimated_budget=Decimal("60.00"),
+            category=self.category,
+            city=self.city,
+            address="456 Oak St",
+            status="open",
+        )
+        self.other_job = Job.objects.create(
+            homeowner=self.other_homeowner,
+            title="Other Job",
+            description="Test",
+            estimated_budget=Decimal("70.00"),
+            category=self.category,
+            city=self.city,
+            address="789 Pine St",
+            status="open",
+        )
+
+        # Create applications
+        self.app1 = JobApplication.objects.create(
+            job=self.job1, handyman=self.handyman, status="pending"
+        )
+        self.app2 = JobApplication.objects.create(
+            job=self.job2, handyman=self.handyman, status="approved"
+        )
+        self.other_app = JobApplication.objects.create(
+            job=self.other_job, handyman=self.handyman, status="pending"
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+
+    def test_list_applications_success(self):
+        """Test successfully listing all applications for homeowner's jobs."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+        self.assertIn("pagination", response.data["meta"])
+
+    def test_list_applications_filter_by_job(self):
+        """Test filtering applications by job ID."""
+        response = self.client.get(self.url, {"job_id": str(self.job1.public_id)})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(
+            response.data["data"][0]["job"]["public_id"], str(self.job1.public_id)
+        )
+
+    def test_list_applications_filter_by_status(self):
+        """Test filtering applications by status."""
+        response = self.client.get(self.url, {"status": "approved"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["status"], "approved")
+
+    def test_list_applications_pagination(self):
+        """Test application listing pagination."""
+        # Create 20 more applications for job1
+        for i in range(20):
+            u = User.objects.create_user(email=f"h{i}@example.com", password="pass")
+            HandymanProfile.objects.create(user=u, display_name=f"H{i}")
+            JobApplication.objects.create(job=self.job1, handyman=u)
+
+        response = self.client.get(self.url, {"page": 1, "page_size": 10})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 10)
+        self.assertEqual(response.data["meta"]["pagination"]["total_count"], 22)
+
+    def test_list_applications_unauthenticated(self):
+        """Test listing applications without authentication returns 401."""
+        self.client.force_authenticate(user=None)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class HomeownerApplicationRejectViewTests(APITestCase):
+    """Test cases for homeowner ApplicationRejectView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "phone_verified": True,
+            "email_verified": True,
+        }
+
+        HomeownerProfile.objects.create(
+            user=self.homeowner, display_name="Test Homeowner"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        self.other_homeowner = User.objects.create_user(
+            email="otherhomeowner@example.com", password="testpass123"
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix faucet",
+            description="Leaking faucet",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+
+        self.application = JobApplication.objects.create(
+            job=self.job, handyman=self.handyman, status="pending"
+        )
+
+        self.url = f"/api/v1/mobile/homeowner/applications/{self.application.public_id}/reject/"
+        self.client.force_authenticate(user=self.homeowner)
+
+    def test_reject_application_success(self):
+        """Test successfully rejecting application."""
+        from unittest.mock import patch
+
+        with patch(
+            "apps.jobs.services.JobApplicationService.reject_application"
+        ) as mock_reject:
+            mock_reject.return_value = self.application
+            self.application.status = "rejected"
+
+            response = self.client.post(self.url)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(
+                response.data["message"], "Application rejected successfully"
+            )
+
+    def test_reject_application_not_owner_returns_404(self):
+        """Test rejecting application that doesn't belong to homeowner's job returns 404."""
+        self.other_homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "phone_verified": True,
+            "email_verified": True,
+        }
+        self.client.force_authenticate(user=self.other_homeowner)
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_reject_application_not_found(self):
+        """Test rejecting non-existent application returns 404."""
+        import uuid
+
+        url = f"/api/v1/mobile/homeowner/applications/{uuid.uuid4()}/reject/"
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_reject_application_unauthenticated(self):
+        """Test rejecting application without authentication returns 401."""
+        self.client.force_authenticate(user=None)
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(
+            response.data["message"], "Authentication credentials were not provided."
+        )
+
+
+class HomeownerApplicationApproveViewTests(APITestCase):
+    """Test cases for homeowner ApplicationApproveView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "phone_verified": True,
+            "email_verified": True,
+        }
+
+        HomeownerProfile.objects.create(
+            user=self.homeowner, display_name="Test Homeowner"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix faucet",
+            description="Leaking faucet",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+
+        self.application = JobApplication.objects.create(
+            job=self.job, handyman=self.handyman, status="pending"
+        )
+
+        self.url = f"/api/v1/mobile/homeowner/applications/{self.application.public_id}/approve/"
+        self.client.force_authenticate(user=self.homeowner)
+
+    def test_approve_application_success(self):
+        """Test successfully approving application."""
+        from unittest.mock import patch
+
+        with patch(
+            "apps.jobs.services.JobApplicationService.approve_application"
+        ) as mock_approve:
+            mock_approve.return_value = self.application
+
+            response = self.client.post(self.url)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)

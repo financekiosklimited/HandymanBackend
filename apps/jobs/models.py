@@ -233,3 +233,64 @@ class JobImage(BaseModel):
 
     def __str__(self):
         return f"Image {self.order} for {self.job.title}"
+
+
+class JobApplication(BaseModel):
+    """
+    Job application model for handymen to apply to jobs.
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+        ("withdrawn", "Withdrawn"),
+    ]
+
+    job = models.ForeignKey(
+        "Job", on_delete=models.CASCADE, related_name="applications"
+    )
+    handyman = models.ForeignKey(
+        "accounts.User", on_delete=models.CASCADE, related_name="job_applications"
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    status_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when status was last changed",
+    )
+
+    class Meta:
+        db_table = "job_applications"
+        ordering = ["-created_at"]
+        verbose_name = "Job Application"
+        verbose_name_plural = "Job Applications"
+        unique_together = [["job", "handyman"]]
+        indexes = [
+            models.Index(fields=["job"]),
+            models.Index(fields=["handyman"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.handyman.email} → {self.job.title} ({self.status})"
+
+    def save(self, *args, **kwargs):
+        """
+        Override save to track status changes.
+        """
+        from django.utils import timezone
+
+        # Track status changes
+        if self.pk:
+            old_status = (
+                JobApplication.objects.filter(pk=self.pk).values("status").first()
+            )
+            if old_status and old_status["status"] != self.status:
+                self.status_at = timezone.now()
+        elif self.status:
+            # New instance with status set
+            self.status_at = timezone.now()
+
+        super().save(*args, **kwargs)

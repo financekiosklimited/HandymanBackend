@@ -1,8 +1,11 @@
 """Tests for profile models."""
 
 from decimal import Decimal
+from io import BytesIO
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from PIL import Image as PILImage
 
 from apps.accounts.models import User, UserRole
 from apps.profiles.models import HandymanProfile, HomeownerProfile
@@ -88,6 +91,30 @@ class HandymanProfileModelTests(TestCase):
         profile = HandymanProfile.objects.create(user=self.user, display_name="Test")
         self.assertEqual(self.user.handyman_profile, profile)
 
+    def test_handyman_avatar_url_when_avatar_exists(self):
+        """Test avatar_url property returns URL when avatar is set."""
+        # Create a simple image
+        image = PILImage.new("RGB", (100, 100), color="red")
+        image_file = BytesIO()
+        image.save(image_file, format="JPEG")
+        image_file.seek(0)
+
+        avatar = SimpleUploadedFile(
+            "avatar.jpg", image_file.read(), content_type="image/jpeg"
+        )
+
+        profile = HandymanProfile.objects.create(
+            user=self.user, display_name="Test", avatar=avatar
+        )
+
+        self.assertIsNotNone(profile.avatar_url)
+        self.assertIn("avatar.jpg", profile.avatar_url)
+
+    def test_handyman_avatar_url_when_no_avatar(self):
+        """Test avatar_url property returns None when no avatar."""
+        profile = HandymanProfile.objects.create(user=self.user, display_name="Test")
+        self.assertIsNone(profile.avatar_url)
+
 
 class HomeownerProfileModelTests(TestCase):
     """Test cases for HomeownerProfile model."""
@@ -157,3 +184,27 @@ class HomeownerProfileModelTests(TestCase):
         """Test one-to-one relationship with user."""
         profile = HomeownerProfile.objects.create(user=self.user, display_name="Test")
         self.assertEqual(self.user.homeowner_profile, profile)
+
+    def test_homeowner_avatar_url_when_avatar_exists(self):
+        """Test avatar_url property returns URL when avatar is set."""
+        # Create a simple image
+        image = PILImage.new("RGB", (100, 100), color="blue")
+        image_file = BytesIO()
+        image.save(image_file, format="JPEG")
+        image_file.seek(0)
+
+        avatar = SimpleUploadedFile(
+            "avatar.jpg", image_file.read(), content_type="image/jpeg"
+        )
+
+        profile = HomeownerProfile.objects.create(
+            user=self.user, display_name="Test", avatar=avatar
+        )
+
+        self.assertIsNotNone(profile.avatar_url)
+        self.assertIn("avatar.jpg", profile.avatar_url)
+
+    def test_homeowner_avatar_url_when_no_avatar(self):
+        """Test avatar_url property returns None when no avatar."""
+        profile = HomeownerProfile.objects.create(user=self.user, display_name="Test")
+        self.assertIsNone(profile.avatar_url)

@@ -13,6 +13,7 @@ from apps.jobs.models import (
     MAX_JOB_ITEMS,
     City,
     Job,
+    JobApplication,
     JobCategory,
     JobImage,
 )
@@ -116,6 +117,39 @@ class ForYouJobSerializer(JobListSerializer):
 
     class Meta(JobListSerializer.Meta):
         fields = JobListSerializer.Meta.fields + ["distance_km"]
+
+
+class HandymanJobDetailSerializer(JobDetailSerializer):
+    """
+    Job detail serializer for handyman - includes application status.
+    """
+
+    has_applied = serializers.SerializerMethodField()
+    my_application = serializers.SerializerMethodField()
+
+    class Meta(JobDetailSerializer.Meta):
+        fields = JobDetailSerializer.Meta.fields + ["has_applied", "my_application"]
+
+    def get_has_applied(self, obj):
+        """Check if the current user (handyman) has applied to this job."""
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            return obj.applications.filter(handyman=request.user).exists()
+        return False
+
+    def get_my_application(self, obj):
+        """Get the current user's application if exists."""
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            application = obj.applications.filter(handyman=request.user).first()
+            if application:
+                return {
+                    "public_id": str(application.public_id),
+                    "status": application.status,
+                    "created_at": application.created_at,
+                    "status_at": application.status_at,
+                }
+        return None
 
 
 class JobCreateSerializer(serializers.Serializer):
@@ -550,4 +584,166 @@ GuestJobListResponseSerializer = create_list_response_serializer(
 
 GuestJobDetailResponseSerializer = create_response_serializer(
     GuestJobDetailSerializer, "GuestJobDetailResponse"
+)
+
+
+# ========================
+# Job Application Serializers
+# ========================
+
+
+class JobApplicationListSerializer(serializers.ModelSerializer):
+    """
+    Serializer for job application listing (read-only).
+    """
+
+    job = JobListSerializer(read_only=True)
+
+    class Meta:
+        model = JobApplication
+        fields = [
+            "public_id",
+            "job",
+            "status",
+            "status_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class JobApplicationDetailSerializer(serializers.ModelSerializer):
+    """
+    Serializer for job application detail (read-only).
+    """
+
+    job = JobDetailSerializer(read_only=True)
+
+    class Meta:
+        model = JobApplication
+        fields = [
+            "public_id",
+            "job",
+            "status",
+            "status_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class JobApplicationCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating a job application.
+    """
+
+    job_id = serializers.UUIDField(required=True)
+
+    def validate_job_id(self, value):
+        """
+        Validate that job exists and is open.
+        """
+        try:
+            job = Job.objects.get(public_id=value)
+            return job
+        except Job.DoesNotExist:
+            raise serializers.ValidationError("Invalid job.")
+
+    def create(self, validated_data):
+        """
+        Create job application using the service.
+        """
+        from apps.jobs.services import job_application_service
+
+        job = validated_data["job_id"]
+        handyman = self.context["request"].user
+
+        application = job_application_service.apply_to_job(handyman=handyman, job=job)
+        return application
+
+
+# Homeowner-specific serializers for viewing applications
+
+
+class HandymanProfileSerializer(serializers.Serializer):
+    """
+    Serializer for handyman profile in application (read-only).
+    """
+
+    public_id = serializers.UUIDField(read_only=True)
+    display_name = serializers.CharField(read_only=True)
+    avatar_url = serializers.CharField(read_only=True)
+    rating = serializers.DecimalField(
+        max_digits=3, decimal_places=2, coerce_to_string=False, read_only=True
+    )
+    hourly_rate = serializers.DecimalField(
+        max_digits=10, decimal_places=2, coerce_to_string=False, read_only=True
+    )
+
+
+class HomeownerJobApplicationListSerializer(serializers.ModelSerializer):
+    """
+    Serializer for job applications seen by homeowner (read-only).
+    Includes handyman profile information.
+    """
+
+    job = JobListSerializer(read_only=True)
+    handyman_profile = serializers.SerializerMethodField()
+
+    class Meta:
+        model = JobApplication
+        fields = [
+            "public_id",
+            "job",
+            "handyman_profile",
+            "status",
+            "status_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_handyman_profile(self, obj):
+        """
+        Get handyman profile information.
+        """
+        if hasattr(obj.handyman, "handyman_profile"):
+            profile = obj.handyman.handyman_profile
+            return HandymanProfileSerializer(profile).data
+        return None
+
+
+class HomeownerJobApplicationDetailSerializer(HomeownerJobApplicationListSerializer):
+    """
+    Serializer for job application detail seen by homeowner (read-only).
+    Same as list for now.
+    """
+
+    pass
+
+
+# Response envelope serializers
+
+JobApplicationListResponseSerializer = create_list_response_serializer(
+    JobApplicationListSerializer, "JobApplicationListResponse"
+)
+
+JobApplicationDetailResponseSerializer = create_response_serializer(
+    JobApplicationDetailSerializer, "JobApplicationDetailResponse"
+)
+
+HomeownerJobApplicationListResponseSerializer = create_list_response_serializer(
+    HomeownerJobApplicationListSerializer, "HomeownerJobApplicationListResponse"
+)
+
+HomeownerJobApplicationDetailResponseSerializer = create_response_serializer(
+    HomeownerJobApplicationDetailSerializer, "HomeownerJobApplicationDetailResponse"
+)
+
+HandymanJobDetailResponseSerializer = create_response_serializer(
+    HandymanJobDetailSerializer, "HandymanJobDetailResponse"
+)
+
+HandymanForYouJobListResponseSerializer = create_list_response_serializer(
+    ForYouJobSerializer, "HandymanForYouJobListResponse"
 )

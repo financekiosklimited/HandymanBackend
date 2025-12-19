@@ -10,6 +10,7 @@ from apps.jobs.models import (
     MAX_JOB_ITEMS,
     City,
     Job,
+    JobApplication,
     JobCategory,
     JobImage,
 )
@@ -215,7 +216,7 @@ class JobModelTests(TestCase):
         inactive_category = JobCategory.objects.create(
             name="Inactive", slug="inactive", is_active=False
         )
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(ValidationError) as context:
             job = Job(
                 homeowner=self.user,
                 title="Test",
@@ -226,6 +227,7 @@ class JobModelTests(TestCase):
                 address="123 Main St",
             )
             job.save()
+        self.assertIn("category", context.exception.message_dict)
 
     def test_job_inactive_city_validation(self):
         """Test job cannot use inactive city."""
@@ -445,6 +447,42 @@ class JobModelTests(TestCase):
             job.save()
         self.assertIn("job_items", context.exception.message_dict)
 
+    def test_job_save_sets_status_at_on_new_instance(self):
+        """Test that status_at is set when creating a new job with status."""
+        job = Job.objects.create(
+            homeowner=self.user,
+            title="Test Job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+        self.assertIsNotNone(job.status_at)
+
+    def test_job_save_updates_status_at_on_status_change(self):
+        """Test that status_at is updated when job status changes."""
+        job = Job.objects.create(
+            homeowner=self.user,
+            title="Test Job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+        original_status_at = job.status_at
+
+        # Change status
+        job.status = "in_progress"
+        job.save()
+
+        job.refresh_from_db()
+        self.assertIsNotNone(job.status_at)
+        self.assertNotEqual(job.status_at, original_status_at)
+
 
 class JobImageModelTests(TestCase):
     """Test cases for JobImage model."""
@@ -497,3 +535,64 @@ class JobImageModelTests(TestCase):
         self.assertEqual(images[0].id, image0.id)
         self.assertEqual(images[1].id, image1.id)
         self.assertEqual(images[2].id, image2.id)
+
+
+class JobApplicationModelTests(TestCase):
+    """Test cases for JobApplication model."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com",
+            password="testpass123",
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com",
+            password="testpass123",
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix leaking faucet",
+            description="Kitchen faucet is leaking",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+
+    def test_job_application_save_sets_status_at_on_new_instance(self):
+        """Test that status_at is set when creating a new job application."""
+        application = JobApplication.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            status="pending",
+        )
+        self.assertIsNotNone(application.status_at)
+
+    def test_job_application_save_updates_status_at_on_status_change(self):
+        """Test that status_at is updated when application status changes."""
+        application = JobApplication.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            status="pending",
+        )
+        original_status_at = application.status_at
+
+        # Change status
+        application.status = "approved"
+        application.save()
+
+        application.refresh_from_db()
+        self.assertIsNotNone(application.status_at)
+        self.assertNotEqual(application.status_at, original_status_at)
