@@ -118,3 +118,6 @@ static_collected/
 
 # User-uploaded files
 uploads/
+
+# Secrets and credentials
+secrets/
