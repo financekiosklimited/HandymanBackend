@@ -1037,4 +1037,3 @@ class MobilePhoneVerifyViewTests(TestCase):
         request = self.factory.post("/auth/phone/verify", data, format="json")
         response = self.view(request)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-
