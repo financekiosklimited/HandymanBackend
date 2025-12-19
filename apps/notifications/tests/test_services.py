@@ -1,0 +1,243 @@
+"""Tests for notification services."""
+
+from unittest.mock import patch
+
+from django.test import TestCase
+
+from apps.accounts.models import User
+from apps.notifications.models import Notification, UserDevice
+from apps.notifications.services import NotificationService
+
+
+class NotificationServiceTests(TestCase):
+    """Test cases for NotificationService."""
+
+    def setUp(self):
+        self.service = NotificationService()
+        self.user = User.objects.create_user(
+            email="test@example.com",
+            password="password123",
+            first_name="Test",
+            last_name="User",
+        )
+
+    def test_create_notification(self):
+        """Test creating an in-app notification."""
+        notification = self.service.create_notification(
+            user=self.user,
+            notification_type="job_application_received",
+            title="New Application",
+            body="You have a new job application.",
+            data={"job_id": "123"},
+        )
+
+        self.assertEqual(notification.user, self.user)
+        self.assertEqual(notification.notification_type, "job_application_received")
+        self.assertEqual(notification.title, "New Application")
+        self.assertEqual(notification.body, "You have a new job application.")
+        self.assertEqual(notification.data, {"job_id": "123"})
+        self.assertFalse(notification.is_read)
+
+    @patch("apps.notifications.services.firebase_service")
+    def test_send_push_notification_success(self, mock_firebase):
+        """Test sending push notification success."""
+        # Create active device
+        UserDevice.objects.create(
+            user=self.user,
+            device_token="token123",
+            device_type="ios",
+            is_active=True,
+        )
+
+        mock_firebase.send_multicast_notification.return_value = {
+            "success_count": 1,
+            "failure_count": 0,
+        }
+
+        result = self.service.send_push_notification(
+            user=self.user,
+            title="Push Title",
+            body="Push Body",
+            data={"key": "value"},
+        )
+
+        self.assertTrue(result)
+        mock_firebase.send_multicast_notification.assert_called_once_with(
+            device_tokens=["token123"],
+            title="Push Title",
+            body="Push Body",
+            data={"key": "value"},
+        )
+
+        # Verify last_used_at was updated
+        device = UserDevice.objects.get(device_token="token123")
+        self.assertIsNotNone(device.last_used_at)
+
+    @patch("apps.notifications.services.firebase_service")
+    def test_send_push_notification_no_devices(self, mock_firebase):
+        """Test sending push notification when no active devices exist."""
+        result = self.service.send_push_notification(
+            user=self.user,
+            title="Title",
+            body="Body",
+        )
+
+        self.assertFalse(result)
+        mock_firebase.send_multicast_notification.assert_not_called()
+
+    @patch("apps.notifications.services.firebase_service")
+    def test_send_push_notification_failure(self, mock_firebase):
+        """Test sending push notification failure."""
+        UserDevice.objects.create(
+            user=self.user,
+            device_token="token123",
+            device_type="ios",
+            is_active=True,
+        )
+
+        mock_firebase.send_multicast_notification.return_value = {
+            "success_count": 0,
+            "failure_count": 1,
+        }
+
+        result = self.service.send_push_notification(
+            user=self.user,
+            title="Title",
+            body="Body",
+        )
+
+        self.assertFalse(result)
+
+    def test_create_and_send_notification(self):
+        """Test create_and_send_notification utility."""
+        with patch.object(self.service, "create_notification") as mock_create:
+            with patch.object(self.service, "send_push_notification") as mock_send:
+                self.service.create_and_send_notification(
+                    user=self.user,
+                    notification_type="job_application_received",
+                    title="Title",
+                    body="Body",
+                    data={"d": "v"},
+                )
+
+                mock_create.assert_called_once_with(
+                    user=self.user,
+                    notification_type="job_application_received",
+                    title="Title",
+                    body="Body",
+                    data={"d": "v"},
+                )
+                mock_send.assert_called_once_with(
+                    user=self.user,
+                    title="Title",
+                    body="Body",
+                    data={"d": "v"},
+                )
+
+    def test_mark_as_read(self):
+        """Test marking a notification as read."""
+        notification = Notification.objects.create(
+            user=self.user,
+            notification_type="job_application_received",
+            title="Title",
+            body="Body",
+            is_read=False,
+        )
+
+        updated_notif = self.service.mark_as_read(notification)
+
+        self.assertTrue(updated_notif.is_read)
+        self.assertIsNotNone(updated_notif.read_at)
+
+        # Test marking again (should not update read_at)
+        old_read_at = updated_notif.read_at
+        again_notif = self.service.mark_as_read(updated_notif)
+        self.assertEqual(again_notif.read_at, old_read_at)
+
+    def test_mark_all_as_read(self):
+        """Test marking all notifications as read for a user."""
+        Notification.objects.create(
+            user=self.user,
+            notification_type="job_application_received",
+            title="T1",
+            body="B1",
+            is_read=False,
+        )
+        Notification.objects.create(
+            user=self.user,
+            notification_type="job_application_received",
+            title="T2",
+            body="B2",
+            is_read=False,
+        )
+
+        # Another user's notification
+        other_user = User.objects.create_user(
+            email="other@example.com", password="password123"
+        )
+        Notification.objects.create(
+            user=other_user,
+            notification_type="job_application_received",
+            title="T3",
+            body="B3",
+            is_read=False,
+        )
+
+        count = self.service.mark_all_as_read(self.user)
+        self.assertEqual(count, 2)
+        self.assertEqual(
+            Notification.objects.filter(user=self.user, is_read=True).count(), 2
+        )
+        self.assertEqual(
+            Notification.objects.filter(user=other_user, is_read=False).count(), 1
+        )
+
+    def test_get_unread_count(self):
+        """Test getting unread count."""
+        Notification.objects.create(
+            user=self.user,
+            notification_type="job_application_received",
+            title="T1",
+            body="B1",
+            is_read=False,
+        )
+        Notification.objects.create(
+            user=self.user,
+            notification_type="job_application_received",
+            title="T2",
+            body="B2",
+            is_read=True,
+        )
+
+        count = self.service.get_unread_count(self.user)
+        self.assertEqual(count, 1)
+
+    def test_register_device(self):
+        """Test registering/updating a device."""
+        # New registration
+        device = self.service.register_device(
+            user=self.user, device_token="new_token", device_type="android"
+        )
+        self.assertEqual(device.device_token, "new_token")
+        self.assertEqual(device.user, self.user)
+        self.assertTrue(device.is_active)
+
+        # Update existing registration
+        device2 = self.service.register_device(
+            user=self.user, device_token="new_token", device_type="ios"
+        )
+        self.assertEqual(device.id, device2.id)
+        self.assertEqual(device2.device_type, "ios")
+
+    def test_unregister_device(self):
+        """Test unregistering a device."""
+        device = UserDevice.objects.create(
+            user=self.user,
+            device_token="token",
+            device_type="ios",
+            is_active=True,
+        )
+
+        self.service.unregister_device(device)
+        device.refresh_from_db()
+        self.assertFalse(device.is_active)

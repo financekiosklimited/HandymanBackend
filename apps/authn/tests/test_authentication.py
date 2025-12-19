@@ -1,8 +1,10 @@
 """Tests for authentication and permissions."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 from django.test import RequestFactory, TestCase, override_settings
+from rest_framework import exceptions
 
 from apps.accounts.models import User, UserRole
 from apps.authn.authentication import JWTAuthentication
@@ -84,3 +86,73 @@ class JWTAuthenticationTests(TestCase):
         self.assertEqual(user, self.user)
         self.assertEqual(payload["plat"], "web")
         self.assertEqual(payload["active_role"], "homeowner")
+
+    def test_authenticate_no_header(self):
+        """Test authentication with no header."""
+        request = self.factory.get("/api/v1/test/")
+        result = self.auth.authenticate(request)
+        self.assertIsNone(result)
+
+    def test_authenticate_invalid_prefix(self):
+        """Test authentication with invalid prefix."""
+        request = self.factory.get("/api/v1/test/")
+        request.META["HTTP_AUTHORIZATION"] = "Token some-token"
+        result = self.auth.authenticate(request)
+        self.assertIsNone(result)
+
+    def test_authenticate_invalid_token_type(self):
+        """Test authentication with refresh token (wrong type)."""
+        tokens = jwt_service.create_token_pair(user=self.user, platform="web")
+        request = self.factory.get("/api/v1/test/")
+        request.META["HTTP_AUTHORIZATION"] = f"Bearer {tokens['refresh_token']}"
+        with self.assertRaisesRegex(
+            exceptions.AuthenticationFailed, "Invalid token type"
+        ):
+            self.auth.authenticate(request)
+
+    def test_authenticate_user_not_found(self):
+        """Test authentication with non-existent user."""
+        tokens = jwt_service.create_token_pair(user=self.user, platform="web")
+        self.user.delete()
+        request = self.factory.get("/api/v1/test/")
+        request.META["HTTP_AUTHORIZATION"] = f"Bearer {tokens['access_token']}"
+        with self.assertRaisesRegex(exceptions.AuthenticationFailed, "User not found"):
+            self.auth.authenticate(request)
+
+    def test_authenticate_user_inactive(self):
+        """Test authentication with inactive user."""
+        tokens = jwt_service.create_token_pair(user=self.user, platform="web")
+        self.user.is_active = False
+        self.user.save()
+        request = self.factory.get("/api/v1/test/")
+        request.META["HTTP_AUTHORIZATION"] = f"Bearer {tokens['access_token']}"
+        with self.assertRaisesRegex(
+            exceptions.AuthenticationFailed, "User is inactive"
+        ):
+            self.auth.authenticate(request)
+
+    def test_authenticate_expired_token(self):
+        """Test authentication with expired token."""
+        # Create a token that is already expired
+        with patch("apps.authn.jwt_service.datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime.now(UTC) - timedelta(days=1)
+            mock_datetime.UTC = UTC
+            tokens = jwt_service.create_token_pair(user=self.user, platform="web")
+
+        request = self.factory.get("/api/v1/test/")
+        request.META["HTTP_AUTHORIZATION"] = f"Bearer {tokens['access_token']}"
+        with self.assertRaisesRegex(
+            exceptions.AuthenticationFailed, "Token has expired"
+        ):
+            self.auth.authenticate(request)
+
+    def test_authenticate_invalid_token(self):
+        """Test authentication with invalid token."""
+        request = self.factory.get("/api/v1/test/")
+        request.META["HTTP_AUTHORIZATION"] = "Bearer invalid-token"
+        with self.assertRaisesRegex(exceptions.AuthenticationFailed, "Invalid token"):
+            self.auth.authenticate(request)
+
+    def test_authenticate_header(self):
+        """Test authenticate_header method."""
+        self.assertEqual(self.auth.authenticate_header(None), "Bearer")

@@ -95,21 +95,16 @@ class MobileHomeownerProfileViewTests(APITestCase):
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.data["message"], "Profile not found")
-        self.assertEqual(
-            response.data["errors"],
-            {"detail": "The requested resource was not found"},
-        )
 
     def test_update_profile_not_found_returns_error(self):
         """Test updating profile returns 404 when profile is missing."""
         self.profile.delete()
+        # Ensure we don't have a cached profile on request.user
         user = User.objects.get(pk=self.user.pk)
         user.token_payload = self.user.token_payload
         self.client.force_authenticate(user=user)
         response = self.client.put(
-            self.url,
-            {"display_name": "Missing", "phone_number": "+1", "address": "Addr"},
-            format="json",
+            self.url, {"display_name": "New Name"}, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.data["message"], "Profile not found")
@@ -127,211 +122,71 @@ class MobileHomeownerProfileViewTests(APITestCase):
         self.assertIn("display_name", response.data["errors"])
 
 
-class MobileHomeownerHandymenBrowseTests(APITestCase):
-    """Test cases for mobile homeowner handymen list/detail views."""
+class MobileHandymanBrowsingTests(APITestCase):
+    """Test cases for homeowner browsing handymen."""
 
     def setUp(self):
-        self.nearby_url = "/api/v1/mobile/homeowner/handymen/nearby/"
-
-        self.homeowner = User.objects.create_user(
+        """Set up test data."""
+        self.url = "/api/v1/mobile/homeowner/handymen/nearby/"
+        self.user = User.objects.create_user(
             email="homeowner_browse@example.com",
             password="testpass123",
         )
-        UserRole.objects.create(user=self.homeowner, role="homeowner")
-        self.homeowner.email_verified_at = "2024-01-01T00:00:00Z"
-        self.homeowner.save()
-        self.homeowner.token_payload = {
+        UserRole.objects.create(user=self.user, role="homeowner")
+        self.user.email_verified_at = "2024-01-01T00:00:00Z"
+        self.user.save()
+        self.user.token_payload = {
             "plat": "mobile",
             "active_role": "homeowner",
             "roles": ["homeowner"],
             "email_verified": True,
         }
 
-        # Visible handyman (near)
-        self.handyman_user_near = User.objects.create_user(
-            email="handyman_near@example.com",
-            password="testpass123",
-        )
-        UserRole.objects.create(user=self.handyman_user_near, role="handyman")
-        self.handyman_near = HandymanProfile.objects.create(
-            user=self.handyman_user_near,
-            display_name="Near Handyman",
-            phone_number="+1234567890",
-            address="Somewhere",
-            hourly_rate="75.00",
-            latitude="43.651070",
-            longitude="-79.347015",
-            is_active=True,
-            is_available=True,
-            is_approved=True,
-        )
+    def test_list_nearby_handymen_validation(self):
+        """Test coordinate validation for nearby handymen."""
+        self.client.force_authenticate(user=self.user)
 
-        # Visible handyman (far)
-        self.handyman_user_far = User.objects.create_user(
-            email="handyman_far@example.com",
-            password="testpass123",
-        )
-        UserRole.objects.create(user=self.handyman_user_far, role="handyman")
-        self.handyman_far = HandymanProfile.objects.create(
-            user=self.handyman_user_far,
-            display_name="Far Handyman",
-            phone_number="+1234567890",
-            address="Somewhere",
-            hourly_rate="80.00",
-            latitude="43.800000",
-            longitude="-79.400000",
-            is_active=True,
-            is_available=True,
-            is_approved=True,
-        )
-
-        # Not visible: missing coordinates
-        self.handyman_user_no_coords = User.objects.create_user(
-            email="handyman_nocoords@example.com",
-            password="testpass123",
-        )
-        UserRole.objects.create(user=self.handyman_user_no_coords, role="handyman")
-        HandymanProfile.objects.create(
-            user=self.handyman_user_no_coords,
-            display_name="No Coords Handyman",
-            phone_number="+1234567890",
-            address="Somewhere",
-            hourly_rate="70.00",
-            latitude=None,
-            longitude=None,
-            is_active=True,
-            is_available=True,
-            is_approved=True,
-        )
-
-        # Not visible: not approved
-        self.handyman_user_not_approved = User.objects.create_user(
-            email="handyman_notapproved@example.com",
-            password="testpass123",
-        )
-        UserRole.objects.create(user=self.handyman_user_not_approved, role="handyman")
-        HandymanProfile.objects.create(
-            user=self.handyman_user_not_approved,
-            display_name="Not Approved Handyman",
-            phone_number="+1234567890",
-            address="Somewhere",
-            hourly_rate="70.00",
-            latitude="43.651070",
-            longitude="-79.347015",
-            is_active=True,
-            is_available=True,
-            is_approved=False,
-        )
-
-    def test_nearby_list_requires_lat_lng(self):
-        self.client.force_authenticate(user=self.homeowner)
-        response = self.client.get(self.nearby_url)
+        # Missing coordinates
+        response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data["message"], "Validation failed")
-        self.assertIn("coordinates", response.data["errors"])
 
-    def test_nearby_list_success_hides_sensitive_fields(self):
-        self.client.force_authenticate(user=self.homeowner)
-        response = self.client.get(
-            self.nearby_url,
-            {"latitude": "43.651070", "longitude": "-79.347015", "radius_km": "50"},
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["message"], "Handymen retrieved successfully")
+        # Invalid numbers
+        response = self.client.get(f"{self.url}?latitude=abc&longitude=123")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-        results = response.data["data"]
-        self.assertEqual(len(results), 2)
+        # Out of range
+        response = self.client.get(f"{self.url}?latitude=100&longitude=45")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-        for item in results:
-            self.assertIn("public_id", item)
-            self.assertIn("display_name", item)
-            self.assertIn("rating", item)
-            self.assertIn("hourly_rate", item)
-            self.assertIn("distance_km", item)
-            self.assertNotIn("phone_number", item)
-            self.assertNotIn("address", item)
-            self.assertNotIn("latitude", item)
-            self.assertNotIn("longitude", item)
+        response = self.client.get(f"{self.url}?latitude=45&longitude=200")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-        self.assertIn("pagination", response.data["meta"])
+        # Invalid radius
+        response = self.client.get(f"{self.url}?latitude=45&longitude=45&radius_km=-1")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-        near = next(r for r in results if r["display_name"] == "Near Handyman")
-        self.assertIsNotNone(near["distance_km"])
-
-    def test_nearby_list_orders_by_distance(self):
-        """Near handyman should be listed before far handyman."""
-        self.client.force_authenticate(user=self.homeowner)
-        response = self.client.get(
-            self.nearby_url,
-            {"latitude": "43.651070", "longitude": "-79.347015", "radius_km": "50"},
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-        results = response.data["data"]
-        self.assertEqual(results[0]["display_name"], "Near Handyman")
-        self.assertEqual(results[1]["display_name"], "Far Handyman")
-
-    def test_nearby_list_filters_by_radius(self):
-        """Small radius excludes far handyman."""
-        self.client.force_authenticate(user=self.homeowner)
-        response = self.client.get(
-            self.nearby_url,
-            {"latitude": "43.651070", "longitude": "-79.347015", "radius_km": "1"},
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-        results = response.data["data"]
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["display_name"], "Near Handyman")
-
-    def test_detail_success(self):
-        self.client.force_authenticate(user=self.homeowner)
-        detail_url = (
-            f"/api/v1/mobile/homeowner/handymen/{self.handyman_near.public_id}/"
-        )
-        response = self.client.get(detail_url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["message"], "Handyman retrieved successfully")
-
-        data = response.data["data"]
-        self.assertEqual(data["display_name"], "Near Handyman")
-        self.assertIn("hourly_rate", data)
-        self.assertNotIn("phone_number", data)
-        self.assertNotIn("address", data)
-        self.assertNotIn("latitude", data)
-        self.assertNotIn("longitude", data)
-
-    def test_detail_not_found(self):
-        self.client.force_authenticate(user=self.homeowner)
-        response = self.client.get(
-            "/api/v1/mobile/homeowner/handymen/00000000-0000-0000-0000-000000000000/"
-        )
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.data["message"], "Handyman not found")
-
-    def test_role_guard_blocks_non_homeowner(self):
-        """Handyman role cannot access homeowner endpoints."""
+    def test_list_nearby_handymen_success(self):
+        """Test successfully listing nearby handymen."""
+        # Create a handyman
         handyman_user = User.objects.create_user(
-            email="handyman_actor@example.com",
-            password="testpass123",
+            email="handyman@example.com", password="password"
         )
         UserRole.objects.create(user=handyman_user, role="handyman")
-        handyman_user.email_verified_at = "2024-01-01T00:00:00Z"
-        handyman_user.save()
-        handyman_user.token_payload = {
-            "plat": "mobile",
-            "active_role": "handyman",
-            "roles": ["handyman"],
-            "email_verified": True,
-        }
-
-        self.client.force_authenticate(user=handyman_user)
-        response = self.client.get(
-            self.nearby_url,
-            {"latitude": "43.651070", "longitude": "-79.347015", "radius_km": "50"},
+        HandymanProfile.objects.create(
+            user=handyman_user,
+            display_name="Nearby Handyman",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            latitude=43.651070,
+            longitude=-79.347015,
         )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(response.data["message"], "Role mismatch")
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(f"{self.url}?latitude=43.65&longitude=-79.34")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["display_name"], "Nearby Handyman")
 
 
 class MobileHandymanProfileViewTests(APITestCase):

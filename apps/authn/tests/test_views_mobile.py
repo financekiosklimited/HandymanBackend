@@ -1037,3 +1037,97 @@ class MobilePhoneVerifyViewTests(TestCase):
         request = self.factory.post("/auth/phone/verify", data, format="json")
         response = self.view(request)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_phone_verify_handyman_profile_fallback(self):
+        """Test fallback to handyman_profile if active_role is not set."""
+        from apps.profiles.models import HandymanProfile
+
+        HandymanProfile.objects.create(
+            user=self.user,
+            display_name="Handy Man",
+            phone_number="",
+        )
+        self.user.active_role = None
+        self.user.save()
+
+        data = {"phone_number": "+6281234567891", "otp": "123456"}
+        request = self.factory.post("/auth/phone/verify", data, format="json")
+        force_authenticate(request, user=self.user)
+        serializer = make_serializer(validated_data=data)
+
+        with (
+            patch(
+                "apps.authn.views.mobile.PhoneVerifySerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.twilio_service.check_verification",
+                return_value=VerificationResult(success=True, status="approved"),
+            ),
+        ):
+            response = self.view(request)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.handyman_profile.refresh_from_db()
+        self.assertEqual(self.user.handyman_profile.phone_number, "+6281234567891")
+
+    def test_phone_verify_active_role_handyman(self):
+        """Test using handyman_profile when active_role is 'handyman'."""
+        from apps.profiles.models import HandymanProfile
+
+        HandymanProfile.objects.create(
+            user=self.user,
+            display_name="Handy Man",
+            phone_number="",
+        )
+        self.user.active_role = "handyman"
+        self.user.save()
+
+        data = {"phone_number": "+6281234567892", "otp": "123456"}
+        request = self.factory.post("/auth/phone/verify", data, format="json")
+        force_authenticate(request, user=self.user)
+        serializer = make_serializer(validated_data=data)
+
+        with (
+            patch(
+                "apps.authn.views.mobile.PhoneVerifySerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.twilio_service.check_verification",
+                return_value=VerificationResult(success=True, status="approved"),
+            ),
+        ):
+            response = self.view(request)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.handyman_profile.refresh_from_db()
+        self.assertEqual(self.user.handyman_profile.phone_number, "+6281234567892")
+
+    def test_phone_verify_active_role_homeowner(self):
+        """Test using homeowner_profile when active_role is 'homeowner'."""
+        profile = HomeownerProfile.objects.create(
+            user=self.user,
+            display_name="Home Owner",
+            phone_number="",
+        )
+        self.user.active_role = "homeowner"
+        self.user.save()
+
+        data = {"phone_number": "+6281234567893", "otp": "123456"}
+        request = self.factory.post("/auth/phone/verify", data, format="json")
+        force_authenticate(request, user=self.user)
+        serializer = make_serializer(validated_data=data)
+
+        with (
+            patch(
+                "apps.authn.views.mobile.PhoneVerifySerializer", return_value=serializer
+            ),
+            patch(
+                "apps.authn.views.mobile.twilio_service.check_verification",
+                return_value=VerificationResult(success=True, status="approved"),
+            ),
+        ):
+            response = self.view(request)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        profile.refresh_from_db()
+        self.assertEqual(profile.phone_number, "+6281234567893")

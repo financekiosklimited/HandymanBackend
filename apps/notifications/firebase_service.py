@@ -153,7 +153,7 @@ class FirebaseService:
             )
 
             # Send message
-            response = messaging.send_multicast(message)
+            response = messaging.send_each_for_multicast(message)
             logger.info(
                 f"Successfully sent {response.success_count} messages, "
                 f"{response.failure_count} failures"

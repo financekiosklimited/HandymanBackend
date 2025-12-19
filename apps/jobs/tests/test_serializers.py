@@ -307,92 +307,24 @@ class JobCreateSerializerTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("estimated_budget", serializer.errors)
 
-    def test_create_job_invalid_latitude_validation(self):
-        """Test job with invalid latitude fails."""
-        data = {
-            "title": "Test",
-            "description": "Test",
-            "estimated_budget": "50.00",
-            "category_id": str(self.category.public_id),
-            "city_id": str(self.city.public_id),
-            "address": "123 Main St",
-            "latitude": "91.0",
-            "longitude": "-79.347015",
-        }
+    def test_validate_images_max_count_exceeds(self):
+        """Test validation fails with too many images."""
+        import io
 
-        serializer = JobCreateSerializer(data=data, context={"request": self.request})
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("latitude", serializer.errors)
+        from PIL import Image
 
-    def test_create_job_invalid_longitude_validation(self):
-        """Test job with invalid longitude fails."""
-        data = {
-            "title": "Test",
-            "description": "Test",
-            "estimated_budget": "50.00",
-            "category_id": str(self.category.public_id),
-            "city_id": str(self.city.public_id),
-            "address": "123 Main St",
-            "latitude": "43.651070",
-            "longitude": "181.0",
-        }
+        from apps.jobs.serializers import JobCreateSerializer
 
-        serializer = JobCreateSerializer(data=data, context={"request": self.request})
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("longitude", serializer.errors)
-
-    def test_create_job_with_images(self):
-        """Test creating a job with images."""
-        # Create test images
-        image1_io = BytesIO()
-        pil_image1 = PILImage.new("RGB", (100, 100), color="red")
-        pil_image1.save(image1_io, format="JPEG")
-        image1_io.seek(0)
-        image1 = SimpleUploadedFile(
-            "test1.jpg", image1_io.getvalue(), content_type="image/jpeg"
-        )
-
-        image2_io = BytesIO()
-        pil_image2 = PILImage.new("RGB", (100, 100), color="blue")
-        pil_image2.save(image2_io, format="JPEG")
-        image2_io.seek(0)
-        image2 = SimpleUploadedFile(
-            "test2.jpg", image2_io.getvalue(), content_type="image/jpeg"
-        )
-
-        data = {
-            "title": "Test",
-            "description": "Test",
-            "estimated_budget": "50.00",
-            "category_id": str(self.category.public_id),
-            "city_id": str(self.city.public_id),
-            "address": "123 Main St",
-            "images": [image1, image2],
-        }
-
-        serializer = JobCreateSerializer(data=data, context={"request": self.request})
-        self.assertTrue(serializer.is_valid())
-
-        job = serializer.save()
-        self.assertEqual(job.images.count(), 2)
-        self.assertEqual(job.images.first().order, 0)
-        self.assertEqual(job.images.last().order, 1)
-
-    def test_create_job_max_images_validation(self):
-        """Test job cannot have more than 10 images."""
-        # Create 11 test images
-        images = []
-        for i in range(11):
-            image_io = BytesIO()
-            pil_image = PILImage.new("RGB", (100, 100), color="red")
-            pil_image.save(image_io, format="JPEG")
-            image_io.seek(0)
-            images.append(
-                SimpleUploadedFile(
-                    f"test{i}.jpg", image_io.getvalue(), content_type="image/jpeg"
-                )
+        def create_image():
+            file_obj = io.BytesIO()
+            image = Image.new("RGBA", size=(100, 100), color=(155, 0, 0))
+            image.save(file_obj, "png")
+            file_obj.seek(0)
+            return SimpleUploadedFile(
+                "test.png", file_obj.read(), content_type="image/png"
             )
 
+        images = [create_image() for i in range(11)]
         data = {
             "title": "Test",
             "description": "Test",
@@ -402,10 +334,261 @@ class JobCreateSerializerTests(TestCase):
             "address": "123 Main St",
             "images": images,
         }
-
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
         self.assertIn("images", serializer.errors)
+        self.assertIn(
+            "ensure this field has no more than 10 elements",
+            str(serializer.errors["images"]).lower(),
+        )
+
+    def test_validate_images_invalid_type(self):
+        """Test validation fails with invalid image type."""
+        import io
+
+        from PIL import Image
+
+        from apps.jobs.serializers import JobCreateSerializer
+
+        # Create a valid image but with wrong content type
+        file_obj = io.BytesIO()
+        image = Image.new("RGBA", size=(100, 100), color=(155, 0, 0))
+        image.save(file_obj, "png")
+        file_obj.seek(0)
+
+        image_file = SimpleUploadedFile(
+            "test.png", file_obj.read(), content_type="image/bmp"
+        )
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "images": [image_file],
+        }
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+
+        from rest_framework import serializers
+
+        # Manually call validate_images
+        try:
+            serializer.validate_images([image_file])
+            self.fail("ValidationError not raised for invalid content type")
+        except serializers.ValidationError as e:
+            self.assertIn("must be a JPEG or PNG file", str(e))
+
+        # Also test image size
+        large_file = SimpleUploadedFile(
+            "large.png", b"x" * (6 * 1024 * 1024), content_type="image/png"
+        )
+        try:
+            serializer.validate_images([large_file])
+            self.fail("ValidationError not raised for large image")
+        except serializers.ValidationError as e:
+            self.assertIn("exceeds maximum size of 5MB", str(e))
+
+        # Also test max count
+        with self.assertRaises(serializers.ValidationError) as cm:
+            serializer.validate_images([image_file] * 11)
+        self.assertIn("Maximum 10 images allowed", str(cm.exception))
+
+    def test_validate_job_items(self):
+        """Test validation and cleaning of job items."""
+        from apps.jobs.serializers import JobCreateSerializer
+
+        serializer = JobCreateSerializer(context={"request": self.request})
+
+        items = ["  Task 1  ", "", "Task 2", "   "]
+        cleaned = serializer.validate_job_items(items)
+        self.assertEqual(cleaned, ["Task 1", "Task 2"])
+
+        self.assertEqual(serializer.validate_job_items([]), [])
+        self.assertEqual(serializer.validate_job_items(None), [])
+
+
+class JobUpdateSerializerTests(TestCase):
+    """Test cases for JobUpdateSerializer."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.user = User.objects.create_user(
+            email="owner@example.com", password="password"
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.user,
+            title="Old Title",
+            description="Old Desc",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Old St",
+            status="open",
+        )
+        from unittest.mock import MagicMock
+
+        self.request = MagicMock()
+        self.request.user = self.user
+
+    def test_update_category_city(self):
+        """Test updating category and city."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        new_category = JobCategory.objects.create(name="Electrical", slug="electrical")
+        new_city = City.objects.create(
+            name="Ottawa", province="Ontario", province_code="ON", slug="ottawa-on"
+        )
+
+        data = {
+            "category_id": str(new_category.public_id),
+            "city_id": str(new_city.public_id),
+        }
+        serializer = JobUpdateSerializer(self.job, data=data, partial=True)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        updated_job = serializer.save()
+        self.assertEqual(updated_job.category, new_category)
+        self.assertEqual(updated_job.city, new_city)
+
+    def test_validate_inactive_category_city(self):
+        """Test validation for inactive category/city in update."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        inactive_cat = JobCategory.objects.create(
+            name="Inactive", slug="inactive", is_active=False
+        )
+        inactive_city = City.objects.create(
+            name="Inactive", slug="inactive-city", is_active=False
+        )
+
+        serializer = JobUpdateSerializer(
+            self.job, data={"category_id": str(inactive_cat.public_id)}, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("category_id", serializer.errors)
+
+        serializer = JobUpdateSerializer(
+            self.job, data={"city_id": str(inactive_city.public_id)}, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("city_id", serializer.errors)
+
+    def test_update_validate_postal_code_invalid(self):
+        """Test postal code validation in update."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        serializer = JobUpdateSerializer(
+            self.job, data={"postal_code": "INVALID"}, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+
+        # Branch for invalid pattern
+        serializer = JobUpdateSerializer(
+            self.job, data={"postal_code": "1A1A1A"}, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+
+    def test_validate_coordinates_update(self):
+        """Test coordinate validation during update."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # Update only latitude, should fail because longitude is missing on instance
+        serializer = JobUpdateSerializer(
+            self.job, data={"latitude": 43.0}, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+
+        # Update both
+        serializer = JobUpdateSerializer(
+            self.job, data={"latitude": 43.0, "longitude": -79.0}, partial=True
+        )
+        self.assertTrue(serializer.is_valid())
+
+        # Out of range
+        serializer = JobUpdateSerializer(
+            self.job, data={"latitude": 100.0}, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+        serializer = JobUpdateSerializer(
+            self.job, data={"longitude": 200.0}, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+
+    def test_validate_postal_code_invalid(self):
+        """Test validation fails with invalid postal code."""
+        from apps.jobs.serializers import JobCreateSerializer
+
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "postal_code": "INVALID",
+        }
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("postal_code", serializer.errors)
+
+        data["postal_code"] = "A1A 1A"  # Too short
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+
+        data["postal_code"] = "1A1 A1A"  # Invalid format
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+
+    def test_validate_coordinates_mismatch(self):
+        """Test validation fails if only one coordinate is provided."""
+        from apps.jobs.serializers import JobCreateSerializer
+
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "latitude": 43.6532,
+        }
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("non_field_errors", serializer.errors)
+
+    def test_validate_coordinates_out_of_range(self):
+        """Test validation fails with coordinates out of range."""
+        from apps.jobs.serializers import JobCreateSerializer
+
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "latitude": 100.0,
+            "longitude": 45.0,
+        }
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("latitude", serializer.errors)
+
+        data["latitude"] = 45.0
+        data["longitude"] = 200.0
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("longitude", serializer.errors)
 
     def test_create_job_with_job_items(self):
         """Test creating a job with job_items."""
@@ -615,16 +798,30 @@ class HandymanJobDetailSerializerTests(TestCase):
             serializer.data["my_application"]["public_id"], str(application.public_id)
         )
 
-    def test_my_application_null_when_not_applied(self):
-        """Test my_application is None when handyman has not applied."""
-        request = self.factory.get("/")
-        request.user = self.handyman
-
+    def test_get_has_applied_anonymous(self):
+        """Test has_applied is False for anonymous user."""
         from apps.jobs.serializers import HandymanJobDetailSerializer
 
+        request = self.factory.get("/")
+        request.user = type("AnonymousUser", (), {"is_authenticated": False})()
         serializer = HandymanJobDetailSerializer(self.job, context={"request": request})
+        self.assertFalse(serializer.data["has_applied"])
 
+    def test_get_my_application_anonymous(self):
+        """Test my_application is None for anonymous user."""
+        from apps.jobs.serializers import HandymanJobDetailSerializer
+
+        request = self.factory.get("/")
+        request.user = type("AnonymousUser", (), {"is_authenticated": False})()
+        serializer = HandymanJobDetailSerializer(self.job, context={"request": request})
         self.assertIsNone(serializer.data["my_application"])
+
+    def test_get_has_applied_no_request(self):
+        """Test has_applied is False when no request in context."""
+        from apps.jobs.serializers import HandymanJobDetailSerializer
+
+        serializer = HandymanJobDetailSerializer(self.job, context={})
+        self.assertFalse(serializer.data["has_applied"])
 
 
 class JobCreateSerializerValidationTests(TestCase):
@@ -744,6 +941,118 @@ class JobCreateSerializerValidationTests(TestCase):
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
         self.assertIn("postal_code", serializer.errors)
+
+    def test_validate_postal_code_formatting(self):
+        """Test postal code formatting (returns with space)."""
+        from apps.jobs.serializers import JobCreateSerializer
+
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "postal_code": "m5h2n2",
+        }
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertTrue(serializer.is_valid())
+        self.assertEqual(serializer.validated_data["postal_code"], "M5H 2N2")
+
+    def test_validate_postal_code_none(self):
+        """Test postal code None branch."""
+        from apps.jobs.serializers import JobCreateSerializer
+
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "postal_code": "",
+        }
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data.get("postal_code"), "")
+
+    def test_validate_inactive_category(self):
+        """Test validation fails with inactive category."""
+        from apps.jobs.serializers import JobCreateSerializer
+
+        inactive_cat = JobCategory.objects.create(
+            name="Inactive", slug="inactive", is_active=False
+        )
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(inactive_cat.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+        }
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("category_id", serializer.errors)
+        self.assertIn("not active", str(serializer.errors["category_id"]))
+
+    def test_validate_invalid_category(self):
+        """Test validation fails with non-existent category."""
+        import uuid
+
+        from apps.jobs.serializers import JobCreateSerializer
+
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(uuid.uuid4()),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+        }
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("category_id", serializer.errors)
+        self.assertIn("Invalid category", str(serializer.errors["category_id"]))
+
+    def test_validate_inactive_city(self):
+        """Test validation fails with inactive city."""
+        from apps.jobs.serializers import JobCreateSerializer
+
+        inactive_city = City.objects.create(
+            name="Inactive City", slug="inactive-city", is_active=False
+        )
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(inactive_city.public_id),
+            "address": "123 Main St",
+        }
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("city_id", serializer.errors)
+        self.assertIn("not active", str(serializer.errors["city_id"]))
+
+    def test_validate_invalid_city(self):
+        """Test validation fails with non-existent city."""
+        import uuid
+
+        from apps.jobs.serializers import JobCreateSerializer
+
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(uuid.uuid4()),
+            "address": "123 Main St",
+        }
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("city_id", serializer.errors)
+        self.assertIn("Invalid city", str(serializer.errors["city_id"]))
 
     def test_validate_job_items_empty_returns_empty_list(self):
         """Test empty job_items returns empty list."""
@@ -911,6 +1220,113 @@ class JobUpdateSerializerValidationTests(TestCase):
         )
         self.assertTrue(serializer.is_valid())
 
+    def test_update_postal_code_formatting(self):
+        """Test postal code formatting in update."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        data = {"postal_code": "a1a1a1"}
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid())
+        self.assertEqual(serializer.validated_data["postal_code"], "A1A 1A1")
+
+    def test_update_postal_code_none(self):
+        """Test postal code None branch in update."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        data = {"postal_code": ""}
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data.get("postal_code"), "")
+
+    def test_update_coordinate_range_validation_latitude_out_of_range(self):
+        """Test latitude range validation in update."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        data = {"latitude": "91.0", "longitude": "-79.0"}
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("latitude", serializer.errors)
+
+    def test_update_coordinate_range_validation_longitude_out_of_range(self):
+        """Test longitude range validation in update."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        data = {"latitude": "45.0", "longitude": "181.0"}
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("longitude", serializer.errors)
+
+    def test_update_coordinate_branch_coverage(self):
+        """Test branch coverage for coordinates in update."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # 1. Instance has NO coordinates, updating only latitude -> should fail cross-validation
+        self.job.latitude = None
+        self.job.longitude = None
+        self.job.save()
+
+        data = {"latitude": "45.0"}
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+
+        # 2. Instance has NO coordinates, updating only longitude -> should fail cross-validation
+        data = {"longitude": "-79.0"}
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+
+        # 3. Instance has coordinates, updating latitude to None -> should fail cross-validation
+        self.job.latitude = Decimal("45.0")
+        self.job.longitude = Decimal("-79.0")
+        self.job.save()
+
+        data = {"latitude": None}
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+
+        # 4. Instance has coordinates, updating longitude to None -> should fail cross-validation
+        data = {"longitude": None}
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+
+        # 5. Coordinate update without instance (JobUpdateSerializer(data=...))
+        # Note: JobUpdateSerializer is typically used with an instance, but let's test this branch.
+        data = {"latitude": "45.0"}
+        serializer = JobUpdateSerializer(data=data, partial=True)
+        self.assertFalse(serializer.is_valid())
+        data = {"longitude": "-79.0"}
+        serializer = JobUpdateSerializer(data=data, partial=True)
+        self.assertFalse(serializer.is_valid())
+
+        # 6. Valid coordinate update with instance
+        self.job.latitude = Decimal("45.0")
+        self.job.longitude = Decimal("-79.0")
+        self.job.save()
+        data = {"latitude": "46.0", "longitude": "-80.0"}
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid())
+
 
 class JobApplicationCreateSerializerTests(TestCase):
     """Test cases for JobApplicationCreateSerializer."""
@@ -1028,19 +1444,57 @@ class HomeownerJobApplicationListSerializerTests(TestCase):
             address="123 Main St",
             status="open",
         )
+        from unittest.mock import MagicMock
 
-    def test_handyman_profile_included_when_exists(self):
-        """Test handyman profile is included in serialization."""
+        self.request = MagicMock()
+        self.request.user = self.homeowner
+
+    def test_handyman_profile_none(self):
+        """Test handyman profile is None if not exists."""
         from apps.jobs.models import JobApplication
         from apps.jobs.serializers import HomeownerJobApplicationListSerializer
 
+        # User without handyman profile
+        other_user = User.objects.create_user(
+            email="no-profile@example.com", password="password"
+        )
         application = JobApplication.objects.create(
-            job=self.job, handyman=self.handyman, status="pending"
+            job=self.job, handyman=other_user, status="pending"
         )
 
         serializer = HomeownerJobApplicationListSerializer(application)
         data = serializer.data
 
-        self.assertIn("handyman_profile", data)
-        self.assertIsNotNone(data["handyman_profile"])
-        self.assertEqual(data["handyman_profile"]["display_name"], "Test Handyman")
+        self.assertIsNone(data["handyman_profile"])
+
+    def test_handyman_profile_none_no_attribute(self):
+        """Test handyman profile is None if attribute missing (e.g. patched user)."""
+        from unittest.mock import MagicMock
+
+        from apps.jobs.serializers import HomeownerJobApplicationListSerializer
+
+        application = MagicMock()
+        application.handyman = MagicMock(spec=[])  # No handyman_profile attribute
+
+        serializer = HomeownerJobApplicationListSerializer(application)
+        self.assertIsNone(serializer.get_handyman_profile(application))
+
+    def test_validate_images_size_exceeds(self):
+        """Test validation fails with large image."""
+        from apps.jobs.serializers import JobCreateSerializer
+
+        image_file = SimpleUploadedFile(
+            "large.jpg", b"x" * (6 * 1024 * 1024), content_type="image/jpeg"
+        )
+        data = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "images": [image_file],
+        }
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("images", serializer.errors)

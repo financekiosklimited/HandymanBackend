@@ -1,5 +1,6 @@
 from decimal import Decimal
 from io import BytesIO
+from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
@@ -199,6 +200,23 @@ class MobileJobListCreateViewTests(APITestCase):
         self.assertEqual(response.data["message"], "Jobs retrieved successfully")
         self.assertEqual(len(response.data["data"]), 2)  # Only user's jobs
         self.assertIn("pagination", response.data["meta"])
+
+    def test_list_jobs_with_city_filter(self):
+        """Test listing homeowner's jobs with city filter."""
+        Job.objects.create(
+            homeowner=self.user,
+            title="Toronto job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.url, {"city": str(self.city.public_id)})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Toronto job")
 
     def test_list_jobs_with_category_filter(self):
         """Test listing jobs with category filter."""
@@ -1725,6 +1743,56 @@ class MobileGuestJobListViewTests(APITestCase):
         self.assertEqual(len(response.data["data"]), 1)
         self.assertIsNone(response.data["data"][0]["distance_km"])
 
+    def test_guest_job_list_invalid_coordinates(self):
+        """Test that invalid coordinate ranges are handled gracefully."""
+        Job.objects.create(
+            homeowner=self.user1,
+            title="Open job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category_plumbing,
+            city=self.city_toronto,
+            address="123 Main St",
+            status="open",
+        )
+        # Latitude out of range
+        response = self.client.get(
+            self.url,
+            {"latitude": "95.0", "longitude": "0.0"},
+            HTTP_X_PLATFORM="mobile",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["data"][0]["distance_km"])
+
+        # Longitude out of range
+        response = self.client.get(
+            self.url,
+            {"latitude": "0.0", "longitude": "185.0"},
+            HTTP_X_PLATFORM="mobile",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["data"][0]["distance_km"])
+
+    def test_guest_job_list_invalid_coordinate_types(self):
+        """Test that non-numeric coordinates are handled gracefully."""
+        Job.objects.create(
+            homeowner=self.user1,
+            title="Open job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category_plumbing,
+            city=self.city_toronto,
+            address="123 Main St",
+            status="open",
+        )
+        response = self.client.get(
+            self.url,
+            {"latitude": "abc", "longitude": "0.0"},
+            HTTP_X_PLATFORM="mobile",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["data"][0]["distance_km"])
+
     def test_guest_job_list_empty_results(self):
         """Test response when no jobs available."""
         response = self.client.get(self.url, HTTP_X_PLATFORM="mobile")
@@ -1950,6 +2018,21 @@ class HandymanForYouJobListViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 3)
 
+    def test_list_jobs_no_coordinates(self):
+        """Test that list view works without coordinates."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 3)
+
+    def test_list_jobs_invalid_coordinate_types(self):
+        """Test that non-numeric coordinates are handled gracefully."""
+        response = self.client.get(
+            self.url, {"latitude": "invalid", "longitude": "0.0"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should still return jobs ordered by recency
+        self.assertEqual(len(response.data["data"]), 3)
+
     def test_list_jobs_excludes_own_jobs(self):
         """Test that handyman's own jobs are excluded if they're also a homeowner."""
         # Create job owned by handyman
@@ -2124,6 +2207,25 @@ class HandymanJobApplicationListCreateViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
 
+    def test_create_application_invalid_data(self):
+        """Test creating application with invalid data."""
+        data = {"job_id": "invalid-uuid"}
+        response = self.client.post(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("job_id", response.data["errors"])
+
+    def test_create_application_service_failure(self):
+        """Test service failure during application creation."""
+
+        data = {"job_id": str(self.job.public_id)}
+        with patch(
+            "apps.jobs.serializers.JobApplicationCreateSerializer.save"
+        ) as mock_save:
+            mock_save.side_effect = Exception("Service error")
+            response = self.client.post(self.url, data)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertEqual(response.data["errors"]["detail"], "Service error")
+
     def test_create_application_success(self):
         """Test successfully creating a job application."""
         data = {"job_id": str(self.job.public_id)}
@@ -2188,9 +2290,20 @@ class HandymanJobApplicationWithdrawViewTests(APITestCase):
         self.url = f"/api/v1/mobile/handyman/applications/{self.application.public_id}/withdraw/"
         self.client.force_authenticate(user=self.handyman)
 
+    def test_withdraw_application_service_failure(self):
+        """Test service failure during withdrawal."""
+
+        with patch(
+            "apps.jobs.services.JobApplicationService.withdraw_application"
+        ) as mock_withdraw:
+            mock_withdraw.side_effect = Exception("Service error")
+
+            response = self.client.post(self.url)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertEqual(response.data["errors"]["detail"], "Service error")
+
     def test_withdraw_application_success(self):
         """Test successfully withdrawing application."""
-        from unittest.mock import patch
 
         with patch(
             "apps.jobs.services.JobApplicationService.withdraw_application"
@@ -2419,6 +2532,93 @@ class HomeownerApplicationListViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
+class HomeownerJobApplicationDetailViewTests(APITestCase):
+    """Test cases for homeowner JobApplicationDetailView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.other_homeowner = User.objects.create_user(
+            email="otherhomeowner@example.com", password="testpass123"
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "phone_verified": True,
+            "email_verified": True,
+        }
+
+        HomeownerProfile.objects.create(
+            user=self.homeowner, display_name="Test Homeowner"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        HandymanProfile.objects.create(user=self.handyman, display_name="Test Handyman")
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix faucet",
+            description="Leaking faucet",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+        self.other_job = Job.objects.create(
+            homeowner=self.other_homeowner,
+            title="Other Job",
+            description="Test",
+            estimated_budget=Decimal("70.00"),
+            category=self.category,
+            city=self.city,
+            address="789 Pine St",
+            status="open",
+        )
+
+        self.application = JobApplication.objects.create(
+            job=self.job, handyman=self.handyman, status="pending"
+        )
+        self.other_application = JobApplication.objects.create(
+            job=self.other_job, handyman=self.handyman, status="pending"
+        )
+
+        self.url = (
+            f"/api/v1/mobile/homeowner/applications/{self.application.public_id}/"
+        )
+        self.client.force_authenticate(user=self.homeowner)
+
+    def test_get_application_detail_success(self):
+        """Test successfully getting application detail."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["status"], "pending")
+        self.assertEqual(response.data["data"]["job"]["title"], "Fix faucet")
+
+    def test_get_application_detail_not_owner_returns_404(self):
+        """Test getting application for another homeowner's job returns 404."""
+        url = (
+            f"/api/v1/mobile/homeowner/applications/{self.other_application.public_id}/"
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
 class HomeownerApplicationRejectViewTests(APITestCase):
     """Test cases for homeowner ApplicationRejectView."""
 
@@ -2476,7 +2676,6 @@ class HomeownerApplicationRejectViewTests(APITestCase):
 
     def test_reject_application_success(self):
         """Test successfully rejecting application."""
-        from unittest.mock import patch
 
         with patch(
             "apps.jobs.services.JobApplicationService.reject_application"
@@ -2489,6 +2688,18 @@ class HomeownerApplicationRejectViewTests(APITestCase):
             self.assertEqual(
                 response.data["message"], "Application rejected successfully"
             )
+
+    def test_reject_application_service_failure(self):
+        """Test service failure during rejection."""
+
+        with patch(
+            "apps.jobs.services.JobApplicationService.reject_application"
+        ) as mock_reject:
+            mock_reject.side_effect = Exception("Service error")
+
+            response = self.client.post(self.url)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertEqual(response.data["errors"]["detail"], "Service error")
 
     def test_reject_application_not_owner_returns_404(self):
         """Test rejecting application that doesn't belong to homeowner's job returns 404."""
@@ -2573,9 +2784,20 @@ class HomeownerApplicationApproveViewTests(APITestCase):
         self.url = f"/api/v1/mobile/homeowner/applications/{self.application.public_id}/approve/"
         self.client.force_authenticate(user=self.homeowner)
 
+    def test_approve_application_service_failure(self):
+        """Test service failure during approval."""
+
+        with patch(
+            "apps.jobs.services.JobApplicationService.approve_application"
+        ) as mock_approve:
+            mock_approve.side_effect = Exception("Service error")
+
+            response = self.client.post(self.url)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertEqual(response.data["errors"]["detail"], "Service error")
+
     def test_approve_application_success(self):
         """Test successfully approving application."""
-        from unittest.mock import patch
 
         with patch(
             "apps.jobs.services.JobApplicationService.approve_application"
