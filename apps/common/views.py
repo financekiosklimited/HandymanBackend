@@ -17,6 +17,7 @@ from .serializers import (
 
 
 @extend_schema(
+    operation_id="common_health_check",
     summary="Health check",
     description="Health check endpoint for deployment monitoring.",
     tags=["Common"],
@@ -45,6 +46,7 @@ class CountryPhoneCodeListView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(
+        operation_id="common_country_phone_codes_list",
         responses={200: CountryPhoneCodeListResponseEnvelope},
         description="Get list of active country phone codes for phone number input.",
         summary="List country phone codes",

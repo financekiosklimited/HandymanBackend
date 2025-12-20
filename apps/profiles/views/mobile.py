@@ -15,6 +15,12 @@ from apps.authn.permissions import (
     PlatformGuardPermission,
     RoleGuardPermission,
 )
+from apps.common.openapi import (
+    NOT_FOUND_EXAMPLE,
+    UNAUTHORIZED_EXAMPLE,
+    VALIDATION_ERROR_EXAMPLE,
+    pagination_meta_example,
+)
 from apps.common.responses import (
     not_found_response,
     success_response,
@@ -49,7 +55,12 @@ class HomeownerProfileView(APIView):
     ]
 
     @extend_schema(
-        responses={200: HomeownerProfileResponseSerializer},
+        operation_id="mobile_homeowner_profile_retrieve",
+        responses={
+            200: HomeownerProfileResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
         description="Get homeowner profile information for mobile app. Requires authenticated user with homeowner role and verified email.",
         summary="Get homeowner profile",
         tags=["Mobile Homeowner Profile"],
@@ -71,6 +82,8 @@ class HomeownerProfileView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def get(self, request):
@@ -85,9 +98,15 @@ class HomeownerProfileView(APIView):
             return not_found_response("Profile not found")
 
     @extend_schema(
+        operation_id="mobile_homeowner_profile_update",
         request=HomeownerProfileUpdateSerializer,
-        responses={200: HomeownerProfileResponseSerializer},
-        description="Update homeowner profile information via mobile app. All fields are optional and will only update provided values.",
+        responses={
+            200: HomeownerProfileResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Update homeowner profile information via mobile app. All fields are optional and will only update provided values. Requires authenticated user with homeowner role and verified email.",
         summary="Update homeowner profile",
         tags=["Mobile Homeowner Profile"],
         examples=[
@@ -116,6 +135,9 @@ class HomeownerProfileView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def put(self, request):
@@ -145,7 +167,12 @@ class HandymanProfileView(APIView):
     ]
 
     @extend_schema(
-        responses={200: HandymanProfileResponseSerializer},
+        operation_id="mobile_handyman_profile_retrieve",
+        responses={
+            200: HandymanProfileResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
         description=(
             "Get handyman profile information for mobile app. "
             "Requires authenticated user with handyman role and verified email."
@@ -174,6 +201,8 @@ class HandymanProfileView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def get(self, request):
@@ -188,11 +217,18 @@ class HandymanProfileView(APIView):
             return not_found_response("Profile not found")
 
     @extend_schema(
+        operation_id="mobile_handyman_profile_update",
         request=HandymanProfileUpdateSerializer,
-        responses={200: HandymanProfileResponseSerializer},
+        responses={
+            200: HandymanProfileResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
         description=(
             "Update handyman profile information via mobile app. "
-            "All fields are optional and will only update provided values."
+            "All fields are optional and will only update provided values. "
+            "Requires authenticated user with handyman role and verified email."
         ),
         summary="Update handyman profile",
         tags=["Mobile Handyman Profile"],
@@ -227,6 +263,9 @@ class HandymanProfileView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def put(self, request):
@@ -257,7 +296,10 @@ class HomeownerNearbyHandymanListView(APIView):
 
     @extend_schema(
         operation_id="mobile_homeowner_handymen_nearby_list",
-        responses={200: HomeownerHandymanListResponseSerializer},
+        responses={
+            200: HomeownerHandymanListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+        },
         parameters=[
             OpenApiParameter(
                 name="latitude",
@@ -327,31 +369,13 @@ class HomeownerNearbyHandymanListView(APIView):
                         }
                     ],
                     "errors": None,
-                    "meta": {
-                        "pagination": {
-                            "page": 1,
-                            "page_size": 20,
-                            "total_pages": 1,
-                            "total_count": 1,
-                            "has_next": False,
-                            "has_previous": False,
-                        }
-                    },
+                    "meta": pagination_meta_example(total_count=1),
                 },
                 response_only=True,
                 status_codes=["200"],
             ),
-            OpenApiExample(
-                "Validation Error",
-                value={
-                    "message": "Validation failed",
-                    "data": None,
-                    "errors": {"coordinates": ["Latitude and longitude are required."]},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def get(self, request):
@@ -463,11 +487,13 @@ class HomeownerHandymanDetailView(APIView):
         operation_id="mobile_homeowner_handymen_detail",
         responses={
             200: HomeownerHandymanDetailResponseSerializer,
+            401: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
         description=(
             "Get a handyman public profile detail for homeowners. "
-            "Sensitive fields (phone/address/coordinates) are not returned."
+            "Sensitive fields (phone/address/coordinates) are not returned. "
+            "Requires authenticated homeowner with verified email."
         ),
         summary="Get handyman detail",
         tags=["Mobile Homeowner Handymen"],
@@ -488,17 +514,8 @@ class HomeownerHandymanDetailView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
-            OpenApiExample(
-                "Not Found",
-                value={
-                    "message": "Handyman not found",
-                    "data": None,
-                    "errors": {"detail": "The requested resource was not found"},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["404"],
-            ),
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def get(self, request, public_id):
@@ -605,20 +622,12 @@ class GuestHandymanListView(APIView):
                         }
                     ],
                     "errors": None,
-                    "meta": {
-                        "pagination": {
-                            "page": 1,
-                            "page_size": 20,
-                            "total_pages": 1,
-                            "total_count": 1,
-                            "has_next": False,
-                            "has_previous": False,
-                        }
-                    },
+                    "meta": pagination_meta_example(total_count=1),
                 },
                 response_only=True,
                 status_codes=["200"],
             ),
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def get(self, request):

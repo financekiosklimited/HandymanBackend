@@ -4,11 +4,17 @@ Mobile authentication views.
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
+from apps.common.openapi import (
+    SERVICE_UNAVAILABLE_EXAMPLE,
+    UNAUTHORIZED_EXAMPLE,
+    VALIDATION_ERROR_EXAMPLE,
+)
 from apps.common.responses import (
     accepted_response,
     created_response,
@@ -53,8 +59,12 @@ class RegisterView(APIView):
     throttle_scope = "mobile:register"
 
     @extend_schema(
+        operation_id="mobile_auth_register",
         request=RegisterSerializer,
-        responses={201: TokenResponseEnvelope},
+        responses={
+            201: TokenResponseEnvelope,
+            400: OpenApiTypes.OBJECT,
+        },
         description="Register a new user account. Creates user with optional initial role and sends email verification.",
         summary="Register new user",
         tags=["Mobile Authentication"],
@@ -86,17 +96,7 @@ class RegisterView(APIView):
                 response_only=True,
                 status_codes=["201"],
             ),
-            OpenApiExample(
-                "Validation Error",
-                value={
-                    "message": "Validation failed",
-                    "data": None,
-                    "errors": {"email": ["A user with this email already exists."]},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
+            VALIDATION_ERROR_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -141,8 +141,13 @@ class LoginView(APIView):
     throttle_scope = "mobile:login"
 
     @extend_schema(
+        operation_id="mobile_auth_login",
         request=LoginSerializer,
-        responses={200: TokenResponseEnvelope},
+        responses={
+            200: TokenResponseEnvelope,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+        },
         description="Login with email and password via mobile app. Returns JWT tokens for authenticated access.",
         summary="User login",
         tags=["Mobile Authentication"],
@@ -170,17 +175,8 @@ class LoginView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
-            OpenApiExample(
-                "Invalid Credentials",
-                value={
-                    "message": "Invalid credentials",
-                    "data": None,
-                    "errors": {"detail": "Invalid credentials"},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["401"],
-            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -231,9 +227,14 @@ class ActivateRoleView(APIView):
     throttle_scope = "mobile:activate_role"
 
     @extend_schema(
+        operation_id="mobile_auth_activate_role",
         request=ActivateRoleSerializer,
-        responses={200: AuthResponseEnvelope},
-        description="Activate a role for authenticated user. Issues new tokens with active role and determines next action.",
+        responses={
+            200: AuthResponseEnvelope,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+        },
+        description="Activate a role for authenticated user. Issues new tokens with active role and determines next action. Requires authentication.",
         summary="Activate user role",
         tags=["Mobile Authentication"],
         examples=[
@@ -260,6 +261,8 @@ class ActivateRoleView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -306,8 +309,12 @@ class EmailVerifyView(APIView):
     throttle_scope = "mobile:verify_email"
 
     @extend_schema(
+        operation_id="mobile_auth_email_verify",
         request=EmailVerificationSerializer,
-        responses={200: TokenResponseEnvelope},
+        responses={
+            200: TokenResponseEnvelope,
+            400: OpenApiTypes.OBJECT,
+        },
         description="Verify email address using 6-digit OTP code sent via email for mobile users.",
         summary="Verify email with OTP",
         tags=["Mobile Authentication"],
@@ -335,17 +342,7 @@ class EmailVerifyView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
-            OpenApiExample(
-                "Invalid OTP",
-                value={
-                    "message": "Email verification failed",
-                    "data": None,
-                    "errors": {"otp": "Invalid or expired OTP"},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
+            VALIDATION_ERROR_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -408,8 +405,12 @@ class EmailResendView(APIView):
     throttle_scope = "mobile:resend_email"
 
     @extend_schema(
+        operation_id="mobile_auth_email_resend",
         request=EmailResendSerializer,
-        responses={200: SuccessMessageResponseSerializer},
+        responses={
+            200: SuccessMessageResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+        },
         description="Resend email verification OTP via mobile app.",
         summary="Resend verification email",
         tags=["Mobile Authentication"],
@@ -430,6 +431,7 @@ class EmailResendView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -477,8 +479,13 @@ class RefreshTokenView(APIView):
     throttle_scope = "mobile:refresh"
 
     @extend_schema(
+        operation_id="mobile_auth_refresh",
         request=RefreshTokenSerializer,
-        responses={200: TokenResponseEnvelope},
+        responses={
+            200: TokenResponseEnvelope,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+        },
         description="Refresh access token using refresh token via mobile app.",
         summary="Refresh access token",
         tags=["Mobile Authentication"],
@@ -506,17 +513,8 @@ class RefreshTokenView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
-            OpenApiExample(
-                "Invalid Token",
-                value={
-                    "message": "Token is invalid or expired",
-                    "data": None,
-                    "errors": {"detail": "Token is invalid or expired"},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["401"],
-            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -547,9 +545,14 @@ class LogoutView(APIView):
     platform = "mobile"
 
     @extend_schema(
+        operation_id="mobile_auth_logout",
         request=LogoutSerializer,
-        responses={200: SuccessMessageResponseSerializer},
-        description="Logout user via mobile app.",
+        responses={
+            200: SuccessMessageResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+        },
+        description="Logout user via mobile app. Requires authentication.",
         summary="User logout",
         tags=["Mobile Authentication"],
         examples=[
@@ -569,6 +572,8 @@ class LogoutView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -594,8 +599,12 @@ class ForgotPasswordView(APIView):
     throttle_scope = "mobile:forgot_password"
 
     @extend_schema(
+        operation_id="mobile_auth_forgot_password",
         request=ForgotPasswordSerializer,
-        responses={200: SuccessMessageResponseSerializer},
+        responses={
+            200: SuccessMessageResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+        },
         description="Initiate password reset process via mobile app.",
         summary="Forgot password",
         tags=["Mobile Authentication"],
@@ -616,6 +625,7 @@ class ForgotPasswordView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -639,8 +649,12 @@ class VerifyPasswordResetView(APIView):
     throttle_scope = "mobile:verify_password_reset"
 
     @extend_schema(
+        operation_id="mobile_auth_verify_reset",
         request=VerifyPasswordResetSerializer,
-        responses={200: PasswordResetTokenResponseEnvelope},
+        responses={
+            200: PasswordResetTokenResponseEnvelope,
+            400: OpenApiTypes.OBJECT,
+        },
         description="Verify password reset code via mobile app.",
         summary="Verify reset code",
         tags=["Mobile Authentication"],
@@ -661,17 +675,7 @@ class VerifyPasswordResetView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
-            OpenApiExample(
-                "Invalid OTP",
-                value={
-                    "message": "Code verification failed",
-                    "data": None,
-                    "errors": {"otp": "Invalid or expired reset code"},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
+            VALIDATION_ERROR_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -706,8 +710,12 @@ class ResetPasswordView(APIView):
     throttle_scope = "mobile:reset_password"
 
     @extend_schema(
+        operation_id="mobile_auth_reset_password",
         request=ResetPasswordSerializer,
-        responses={200: SuccessMessageResponseSerializer},
+        responses={
+            200: SuccessMessageResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+        },
         description="Reset password with reset token via mobile app.",
         summary="Reset password",
         tags=["Mobile Authentication"],
@@ -731,17 +739,7 @@ class ResetPasswordView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
-            OpenApiExample(
-                "Invalid Token",
-                value={
-                    "message": "Password reset failed",
-                    "data": None,
-                    "errors": {"token": "Invalid or expired reset token"},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
+            VALIDATION_ERROR_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -774,9 +772,14 @@ class ChangePasswordView(APIView):
     throttle_scope = "mobile:change_password"
 
     @extend_schema(
+        operation_id="mobile_auth_change_password",
         request=ChangePasswordSerializer,
-        responses={200: SuccessMessageResponseSerializer},
-        description="Change password for authenticated user via mobile app.",
+        responses={
+            200: SuccessMessageResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+        },
+        description="Change password for authenticated user via mobile app. Requires authentication.",
         summary="Change password",
         tags=["Mobile Authentication"],
         examples=[
@@ -799,17 +802,8 @@ class ChangePasswordView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
-            OpenApiExample(
-                "Wrong Current Password",
-                value={
-                    "message": "Password change failed",
-                    "data": None,
-                    "errors": {"current_password": "Current password is incorrect"},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -845,9 +839,15 @@ class PhoneSendView(APIView):
     throttle_scope = "mobile:phone_send"
 
     @extend_schema(
+        operation_id="mobile_auth_phone_send",
         request=PhoneSendSerializer,
-        responses={200: PhoneSendResponseEnvelope},
-        description="Send OTP code to phone number for verification via SMS.",
+        responses={
+            200: PhoneSendResponseEnvelope,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            503: OpenApiTypes.OBJECT,
+        },
+        description="Send OTP code to phone number for verification via SMS. Requires authentication.",
         summary="Send phone verification OTP",
         tags=["Mobile Authentication"],
         examples=[
@@ -867,17 +867,9 @@ class PhoneSendView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
-            OpenApiExample(
-                "Service Error",
-                value={
-                    "message": "Failed to send verification code",
-                    "data": None,
-                    "errors": {"phone_number": "Failed to send verification"},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["503"],
-            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            SERVICE_UNAVAILABLE_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -920,9 +912,14 @@ class PhoneVerifyView(APIView):
     throttle_scope = "mobile:phone_verify"
 
     @extend_schema(
+        operation_id="mobile_auth_phone_verify",
         request=PhoneVerifySerializer,
-        responses={200: PhoneVerifyResponseEnvelope},
-        description="Verify phone number using the OTP code sent via SMS.",
+        responses={
+            200: PhoneVerifyResponseEnvelope,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+        },
+        description="Verify phone number using the OTP code sent via SMS. Requires authentication.",
         summary="Verify phone OTP",
         tags=["Mobile Authentication"],
         examples=[
@@ -942,17 +939,8 @@ class PhoneVerifyView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
-            OpenApiExample(
-                "Invalid OTP",
-                value={
-                    "message": "Phone verification failed",
-                    "data": None,
-                    "errors": {"otp": "Invalid or expired OTP"},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def post(self, request):

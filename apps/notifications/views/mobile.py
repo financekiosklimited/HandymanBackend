@@ -9,6 +9,12 @@ from apps.authn.permissions import (
     PlatformGuardPermission,
     RoleGuardPermission,
 )
+from apps.common.openapi import (
+    NOT_FOUND_EXAMPLE,
+    UNAUTHORIZED_EXAMPLE,
+    VALIDATION_ERROR_EXAMPLE,
+    pagination_meta_example,
+)
 from apps.common.responses import (
     created_response,
     success_response,
@@ -39,7 +45,10 @@ class NotificationListView(APIView):
 
     @extend_schema(
         operation_id="mobile_notifications_list",
-        responses={200: NotificationListResponseSerializer},
+        responses={
+            200: NotificationListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+        },
         parameters=[
             OpenApiParameter(
                 name="page",
@@ -63,7 +72,7 @@ class NotificationListView(APIView):
                 required=False,
             ),
         ],
-        description="List all notifications for the authenticated user with pagination and filtering.",
+        description="List all notifications for the authenticated user with pagination and filtering. Requires authentication with verified email.",
         summary="List notifications",
         tags=["Mobile Notifications"],
         examples=[
@@ -82,20 +91,12 @@ class NotificationListView(APIView):
                         }
                     ],
                     "errors": None,
-                    "meta": {
-                        "pagination": {
-                            "page": 1,
-                            "page_size": 20,
-                            "total_pages": 1,
-                            "total_count": 1,
-                            "has_next": False,
-                            "has_previous": False,
-                        }
-                    },
+                    "meta": pagination_meta_example(total_count=1),
                 },
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def get(self, request):
@@ -157,9 +158,10 @@ class NotificationMarkAsReadView(APIView):
         request=None,
         responses={
             200: NotificationDetailResponseSerializer,
+            401: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
-        description="Mark a specific notification as read.",
+        description="Mark a specific notification as read. Requires authentication with verified email.",
         summary="Mark as read",
         tags=["Mobile Notifications"],
         examples=[
@@ -178,6 +180,8 @@ class NotificationMarkAsReadView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def post(self, request, public_id):
@@ -209,8 +213,11 @@ class NotificationMarkAllAsReadView(APIView):
     @extend_schema(
         operation_id="mobile_notifications_mark_all_as_read",
         request=None,
-        responses={200: OpenApiTypes.OBJECT},
-        description="Mark all unread notifications as read for the authenticated user.",
+        responses={
+            200: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+        },
+        description="Mark all unread notifications as read for the authenticated user. Requires authentication with verified email.",
         summary="Mark all as read",
         tags=["Mobile Notifications"],
         examples=[
@@ -225,6 +232,7 @@ class NotificationMarkAllAsReadView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -252,8 +260,11 @@ class NotificationUnreadCountView(APIView):
 
     @extend_schema(
         operation_id="mobile_notifications_unread_count",
-        responses={200: UnreadCountResponseSerializer},
-        description="Get the count of unread notifications for the authenticated user.",
+        responses={
+            200: UnreadCountResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+        },
+        description="Get the count of unread notifications for the authenticated user. Requires authentication with verified email.",
         summary="Get unread count",
         tags=["Mobile Notifications"],
         examples=[
@@ -268,6 +279,7 @@ class NotificationUnreadCountView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def get(self, request):
@@ -299,8 +311,9 @@ class DeviceRegisterView(APIView):
         responses={
             201: UserDeviceResponseSerializer,
             400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
         },
-        description="Register a device for push notifications. If the device token already exists, it will be updated.",
+        description="Register a device for push notifications. If the device token already exists, it will be updated. Requires authentication with verified email.",
         summary="Register device",
         tags=["Mobile Devices"],
         examples=[
@@ -312,6 +325,23 @@ class DeviceRegisterView(APIView):
                 },
                 request_only=True,
             ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Device registered successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "device_type": "ios",
+                        "is_active": True,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["201"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -350,9 +380,10 @@ class DeviceUnregisterView(APIView):
         request=None,
         responses={
             200: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
-        description="Unregister a device from receiving push notifications.",
+        description="Unregister a device from receiving push notifications. Requires authentication with verified email.",
         summary="Unregister device",
         tags=["Mobile Devices"],
         examples=[
@@ -367,6 +398,8 @@ class DeviceUnregisterView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def delete(self, request, public_id):

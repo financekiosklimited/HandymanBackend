@@ -1,9 +1,13 @@
 """Web-facing API views for waitlist operations."""
 
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 
+from apps.common.openapi import (
+    VALIDATION_ERROR_EXAMPLE,
+)
 from apps.common.responses import (
     created_response,
     success_response,
@@ -19,10 +23,12 @@ class WaitlistSignupView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(
+        operation_id="web_waitlist_signup",
         request=WaitlistEntrySerializer,
         responses={
             201: WaitlistEntryResponseSerializer,
             200: WaitlistEntryResponseSerializer,
+            400: OpenApiTypes.OBJECT,
         },
         summary="Join waitlist",
         description="Create or update a waitlist entry for the provided email and user type.",
@@ -53,6 +59,7 @@ class WaitlistSignupView(APIView):
                 response_only=True,
                 status_codes=["201"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
         ],
     )
     def post(self, request):

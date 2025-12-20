@@ -1,6 +1,12 @@
 """Web authentication views reusing mobile implementations."""
 
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, extend_schema
+
+from apps.common.openapi import (
+    UNAUTHORIZED_EXAMPLE,
+    VALIDATION_ERROR_EXAMPLE,
+)
 
 from ..serializers import (
     ActivateRoleSerializer,
@@ -60,8 +66,12 @@ class RegisterView(MobileRegisterView):
     throttle_scope = "web:register"
 
     @extend_schema(
+        operation_id="web_auth_register",
         request=RegisterSerializer,
-        responses={201: TokenResponseEnvelope},
+        responses={
+            201: TokenResponseEnvelope,
+            400: OpenApiTypes.OBJECT,
+        },
         description="Register a new user account for the web app. Creates user with optional initial role and sends email verification.",
         summary="Register new user",
         tags=["Web Authentication"],
@@ -93,6 +103,7 @@ class RegisterView(MobileRegisterView):
                 response_only=True,
                 status_codes=["201"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -106,8 +117,13 @@ class LoginView(MobileLoginView):
     throttle_scope = "web:login"
 
     @extend_schema(
+        operation_id="web_auth_login",
         request=LoginSerializer,
-        responses={200: TokenResponseEnvelope},
+        responses={
+            200: TokenResponseEnvelope,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+        },
         description="Login with email and password via web app. Returns JWT tokens for authenticated access.",
         summary="User login",
         tags=["Web Authentication"],
@@ -135,6 +151,8 @@ class LoginView(MobileLoginView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -148,9 +166,14 @@ class ActivateRoleView(MobileActivateRoleView):
     throttle_scope = "web:activate_role"
 
     @extend_schema(
+        operation_id="web_auth_activate_role",
         request=ActivateRoleSerializer,
-        responses={200: TokenResponseEnvelope},
-        description="Activate a role for authenticated user via web app and receive updated tokens.",
+        responses={
+            200: TokenResponseEnvelope,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+        },
+        description="Activate a role for authenticated user via web app and receive updated tokens. Requires authentication.",
         summary="Activate user role",
         tags=["Web Authentication"],
         examples=[
@@ -177,6 +200,8 @@ class ActivateRoleView(MobileActivateRoleView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -190,8 +215,12 @@ class EmailVerifyView(MobileEmailVerifyView):
     throttle_scope = "web:verify_email"
 
     @extend_schema(
+        operation_id="web_auth_email_verify",
         request=EmailVerificationSerializer,
-        responses={200: TokenResponseEnvelope},
+        responses={
+            200: TokenResponseEnvelope,
+            400: OpenApiTypes.OBJECT,
+        },
         description="Verify email address using 6-digit OTP code sent via email for web users.",
         summary="Verify email with OTP",
         tags=["Web Authentication"],
@@ -219,6 +248,7 @@ class EmailVerifyView(MobileEmailVerifyView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -232,8 +262,12 @@ class EmailResendView(MobileEmailResendView):
     throttle_scope = "web:resend_email"
 
     @extend_schema(
+        operation_id="web_auth_email_resend",
         request=EmailResendSerializer,
-        responses={200: SuccessMessageResponseSerializer},
+        responses={
+            200: SuccessMessageResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+        },
         description="Resend email verification OTP via web app.",
         summary="Resend verification email",
         tags=["Web Authentication"],
@@ -254,6 +288,7 @@ class EmailResendView(MobileEmailResendView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -267,8 +302,13 @@ class RefreshTokenView(MobileRefreshTokenView):
     throttle_scope = "web:refresh"
 
     @extend_schema(
+        operation_id="web_auth_refresh",
         request=RefreshTokenSerializer,
-        responses={200: TokenResponseEnvelope},
+        responses={
+            200: TokenResponseEnvelope,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+        },
         description="Refresh access token using refresh token via web app.",
         summary="Refresh access token",
         tags=["Web Authentication"],
@@ -296,6 +336,8 @@ class RefreshTokenView(MobileRefreshTokenView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -308,9 +350,14 @@ class LogoutView(MobileLogoutView):
     platform = "web"
 
     @extend_schema(
+        operation_id="web_auth_logout",
         request=LogoutSerializer,
-        responses={200: SuccessMessageResponseSerializer},
-        description="Logout user via web app.",
+        responses={
+            200: SuccessMessageResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+        },
+        description="Logout user via web app. Requires authentication.",
         summary="User logout",
         tags=["Web Authentication"],
         examples=[
@@ -330,6 +377,8 @@ class LogoutView(MobileLogoutView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -343,8 +392,12 @@ class ForgotPasswordView(MobileForgotPasswordView):
     throttle_scope = "web:forgot_password"
 
     @extend_schema(
+        operation_id="web_auth_forgot_password",
         request=ForgotPasswordSerializer,
-        responses={200: SuccessMessageResponseSerializer},
+        responses={
+            200: SuccessMessageResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+        },
         description="Initiate password reset process via web app.",
         summary="Forgot password",
         tags=["Web Authentication"],
@@ -365,6 +418,7 @@ class ForgotPasswordView(MobileForgotPasswordView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -378,8 +432,12 @@ class VerifyPasswordResetView(MobileVerifyPasswordResetView):
     throttle_scope = "web:verify_password_reset"
 
     @extend_schema(
+        operation_id="web_auth_verify_reset",
         request=VerifyPasswordResetSerializer,
-        responses={200: PasswordResetTokenResponseEnvelope},
+        responses={
+            200: PasswordResetTokenResponseEnvelope,
+            400: OpenApiTypes.OBJECT,
+        },
         description="Verify password reset code via web app.",
         summary="Verify reset code",
         tags=["Web Authentication"],
@@ -400,6 +458,7 @@ class VerifyPasswordResetView(MobileVerifyPasswordResetView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -413,8 +472,12 @@ class ResetPasswordView(MobileResetPasswordView):
     throttle_scope = "web:reset_password"
 
     @extend_schema(
+        operation_id="web_auth_reset_password",
         request=ResetPasswordSerializer,
-        responses={200: SuccessMessageResponseSerializer},
+        responses={
+            200: SuccessMessageResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+        },
         description="Reset password with reset token via web app.",
         summary="Reset password",
         tags=["Web Authentication"],
@@ -438,6 +501,7 @@ class ResetPasswordView(MobileResetPasswordView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -451,9 +515,14 @@ class ChangePasswordView(MobileChangePasswordView):
     throttle_scope = "web:change_password"
 
     @extend_schema(
+        operation_id="web_auth_change_password",
         request=ChangePasswordSerializer,
-        responses={200: SuccessMessageResponseSerializer},
-        description="Change password for authenticated user via web app.",
+        responses={
+            200: SuccessMessageResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+        },
+        description="Change password for authenticated user via web app. Requires authentication.",
         summary="Change password",
         tags=["Web Authentication"],
         examples=[
@@ -476,6 +545,8 @@ class ChangePasswordView(MobileChangePasswordView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def post(self, request):

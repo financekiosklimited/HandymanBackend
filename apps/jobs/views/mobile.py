@@ -13,6 +13,13 @@ from apps.authn.permissions import (
     PlatformGuardPermission,
     RoleGuardPermission,
 )
+from apps.common.openapi import (
+    FORBIDDEN_EXAMPLE,
+    NOT_FOUND_EXAMPLE,
+    UNAUTHORIZED_EXAMPLE,
+    VALIDATION_ERROR_EXAMPLE,
+    pagination_meta_example,
+)
 from apps.common.responses import (
     created_response,
     forbidden_response,
@@ -68,6 +75,7 @@ class JobCategoryListView(APIView):
     ]
 
     @extend_schema(
+        operation_id="mobile_job_categories_list",
         responses={200: JobCategoryListResponseSerializer},
         description="List all active job categories for mobile app. No authentication required.",
         summary="List job categories",
@@ -115,6 +123,7 @@ class CityListView(APIView):
     ]
 
     @extend_schema(
+        operation_id="mobile_cities_list",
         responses={200: CityListResponseSerializer},
         parameters=[
             OpenApiParameter(
@@ -189,7 +198,11 @@ class JobListCreateView(APIView):
 
     @extend_schema(
         operation_id="mobile_homeowner_jobs_list",
-        responses={200: JobListResponseSerializer},
+        responses={
+            200: JobListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+        },
         parameters=[
             OpenApiParameter(
                 name="page",
@@ -227,7 +240,7 @@ class JobListCreateView(APIView):
                 required=False,
             ),
         ],
-        description="List all jobs for authenticated homeowner with pagination and filtering. Returns only jobs created by the homeowner.",
+        description="List all jobs for authenticated homeowner with pagination and filtering. Returns only jobs created by the homeowner. Requires homeowner role and verified email.",
         summary="List homeowner jobs",
         tags=["Mobile Homeowner Jobs"],
         examples=[
@@ -249,21 +262,14 @@ class JobListCreateView(APIView):
                             "created_at": "2024-01-15T10:30:00Z",
                         }
                     ],
+                    "meta": pagination_meta_example(total_count=1),
                     "errors": None,
-                    "meta": {
-                        "pagination": {
-                            "page": 1,
-                            "page_size": 20,
-                            "total_pages": 1,
-                            "total_count": 1,
-                            "has_next": False,
-                            "has_previous": False,
-                        }
-                    },
                 },
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
         ],
     )
     def get(self, request):
@@ -321,8 +327,14 @@ class JobListCreateView(APIView):
         )
 
     @extend_schema(
+        operation_id="mobile_homeowner_jobs_create",
         request=JobCreateSerializer,
-        responses={201: JobCreateResponseSerializer},
+        responses={
+            201: JobCreateResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+        },
         examples=[
             OpenApiExample(
                 "Create Job Example",
@@ -345,11 +357,36 @@ class JobListCreateView(APIView):
                 },
                 request_only=True,
             ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Job created successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "title": "Fix leaking kitchen faucet",
+                        "description": "Kitchen faucet has been leaking for a few days.",
+                        "estimated_budget": 50.0,
+                        "category": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                            "name": "Plumbing",
+                        },
+                        "status": "open",
+                        "created_at": "2024-01-15T10:30:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["201"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
         ],
         description="Create a new job listing for mobile app. "
         "Supports multiple image uploads (max 10 images, each max 5MB, JPEG/PNG only). "
         "Use multipart/form-data encoding for file uploads. "
-        "Requires homeowner role and verified email.",
+        "Requires homeowner role and verified email and phone number.",
         summary="Create job",
         tags=["Mobile Homeowner Jobs"],
     )
@@ -399,12 +436,14 @@ class JobDetailView(APIView):
         operation_id="mobile_homeowner_jobs_retrieve",
         responses={
             200: JobDetailResponseSerializer,
+            401: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
         description=(
             "Get job detail by public_id for mobile app. "
             "Only returns job if it belongs to the authenticated homeowner. "
-            "Returns 404 for deleted jobs or jobs not found."
+            "Returns 404 for deleted jobs or jobs not found. "
+            "Requires authenticated homeowner with verified email."
         ),
         summary="Get job detail",
         tags=["Mobile Homeowner Jobs"],
@@ -459,17 +498,8 @@ class JobDetailView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
-            OpenApiExample(
-                "Not Found Response",
-                value={
-                    "message": "Job not found",
-                    "data": None,
-                    "errors": {"detail": "The requested resource was not found"},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["404"],
-            ),
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def get(self, request, public_id):
@@ -494,6 +524,7 @@ class JobDetailView(APIView):
         responses={
             200: JobUpdateResponseSerializer,
             400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
             403: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
@@ -502,7 +533,7 @@ class JobDetailView(APIView):
             "Only the job owner can update. All fields are optional (partial update supported). "
             "Cannot update completed, cancelled, or deleted jobs. "
             "Status can only be changed to draft, open, or in_progress. "
-            "Requires phone verification."
+            "Requires verified email and phone verification."
         ),
         summary="Update job",
         tags=["Mobile Homeowner Jobs"],
@@ -598,42 +629,10 @@ class JobDetailView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
-            OpenApiExample(
-                "Validation Error Response",
-                value={
-                    "message": "Validation failed",
-                    "data": None,
-                    "errors": {
-                        "estimated_budget": ["Budget must be greater than 0."],
-                        "status": ['"deleted" is not a valid choice.'],
-                    },
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
-            OpenApiExample(
-                "Forbidden Response (Completed Job)",
-                value={
-                    "message": "Cannot update a completed job",
-                    "data": None,
-                    "errors": {"status": "Cannot update a completed job."},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["403"],
-            ),
-            OpenApiExample(
-                "Not Found Response",
-                value={
-                    "message": "Job not found",
-                    "data": None,
-                    "errors": {"detail": "The requested resource was not found"},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["404"],
-            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def put(self, request, public_id):
@@ -677,13 +676,14 @@ class JobDetailView(APIView):
         operation_id="mobile_homeowner_jobs_delete",
         responses={
             200: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
         description=(
             "Delete a job by public_id for mobile app (soft delete - sets status to 'deleted'). "
             "Only the job owner can delete. Returns 404 if job is already deleted or not found. "
             "The job data is preserved in the database but will no longer appear in listings. "
-            "Requires phone verification."
+            "Requires verified email and phone verification."
         ),
         summary="Delete job",
         tags=["Mobile Homeowner Jobs"],
@@ -699,17 +699,8 @@ class JobDetailView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
-            OpenApiExample(
-                "Not Found Response",
-                value={
-                    "message": "Job not found",
-                    "data": None,
-                    "errors": {"detail": "The requested resource was not found"},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["404"],
-            ),
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def delete(self, request, public_id):
@@ -746,7 +737,10 @@ class ForYouJobListView(APIView):
 
     @extend_schema(
         operation_id="mobile_homeowner_jobs_for_you",
-        responses={200: ForYouJobListResponseSerializer},
+        responses={
+            200: ForYouJobListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+        },
         parameters=[
             OpenApiParameter(
                 name="latitude",
@@ -816,7 +810,8 @@ class ForYouJobListView(APIView):
             "List open jobs from other homeowners for discovery/inspiration. "
             "Jobs are sorted by recency (newest first). "
             "If latitude and longitude are provided, jobs are also sorted by distance (closest first). "
-            "Jobs without coordinates will have distance_km as null and appear after jobs with coordinates."
+            "Jobs without coordinates will have distance_km as null and appear after jobs with coordinates. "
+            "Requires authenticated homeowner with verified email."
         ),
         summary="For You - Discover jobs",
         tags=["Mobile Homeowner Jobs"],
@@ -860,52 +855,16 @@ class ForYouJobListView(APIView):
                             "updated_at": "2024-01-15T10:30:00Z",
                             "distance_km": 2.5,
                         },
-                        {
-                            "public_id": "123e4567-e89b-12d3-a456-426614174003",
-                            "title": "Paint bedroom walls",
-                            "description": "Need to repaint the master bedroom.",
-                            "estimated_budget": 200.00,
-                            "category": {
-                                "public_id": "123e4567-e89b-12d3-a456-426614174004",
-                                "name": "Painting",
-                                "slug": "painting",
-                                "description": "Painting services",
-                                "icon": "painting",
-                            },
-                            "city": {
-                                "public_id": "123e4567-e89b-12d3-a456-426614174002",
-                                "name": "Toronto",
-                                "province": "Ontario",
-                                "province_code": "ON",
-                                "slug": "toronto-on",
-                            },
-                            "address": "456 Oak Ave",
-                            "postal_code": "M4B 1B3",
-                            "latitude": None,
-                            "longitude": None,
-                            "status": "open",
-                            "job_items": ["Paint walls", "Apply primer"],
-                            "images": [],
-                            "created_at": "2024-01-14T09:00:00Z",
-                            "updated_at": "2024-01-14T09:00:00Z",
-                            "distance_km": None,
-                        },
                     ],
                     "errors": None,
-                    "meta": {
-                        "pagination": {
-                            "page": 1,
-                            "page_size": 20,
-                            "total_pages": 3,
-                            "total_count": 45,
-                            "has_next": True,
-                            "has_previous": False,
-                        }
-                    },
+                    "meta": pagination_meta_example(
+                        total_count=45, total_pages=3, has_next=True
+                    ),
                 },
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def get(self, request):
@@ -1372,7 +1331,10 @@ class HandymanForYouJobListView(APIView):
 
     @extend_schema(
         operation_id="mobile_handyman_jobs_for_you",
-        responses={200: HandymanForYouJobListResponseSerializer},
+        responses={
+            200: HandymanForYouJobListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+        },
         parameters=[
             OpenApiParameter(
                 name="latitude",
@@ -1417,7 +1379,7 @@ class HandymanForYouJobListView(APIView):
                 required=False,
             ),
         ],
-        description="List open jobs for handymen to browse and apply to. Jobs are sorted by distance (if coordinates provided) and recency.",
+        description="List open jobs for handymen to browse and apply to. Jobs are sorted by distance (if coordinates provided) and recency. Requires authenticated handyman with verified email.",
         summary="Browse available jobs",
         tags=["Mobile Handyman Jobs"],
         examples=[
@@ -1428,28 +1390,32 @@ class HandymanForYouJobListView(APIView):
                     "data": [
                         {
                             "public_id": "123e4567-e89b-12d3-a456-426614174000",
-                            "title": "Fix Kitchen Sink",
-                            "description": "Leaky sink needs repair",
-                            "estimated_budget": 100.0,
-                            "distance_km": 5.2,
+                            "title": "Fix leaking kitchen faucet",
+                            "description": "Kitchen faucet has been leaking for a few days.",
+                            "estimated_budget": 50.00,
+                            "category": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                                "name": "Plumbing",
+                                "slug": "plumbing",
+                            },
+                            "city": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                                "name": "Toronto",
+                                "province": "Ontario",
+                                "province_code": "ON",
+                            },
+                            "status": "open",
                             "created_at": "2024-01-15T10:30:00Z",
+                            "distance_km": 5.2,
                         }
                     ],
                     "errors": None,
-                    "meta": {
-                        "pagination": {
-                            "page": 1,
-                            "page_size": 20,
-                            "total_pages": 1,
-                            "total_count": 1,
-                            "has_next": False,
-                            "has_previous": False,
-                        }
-                    },
+                    "meta": pagination_meta_example(total_count=1),
                 },
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def get(self, request):
@@ -1557,9 +1523,10 @@ class HandymanJobDetailView(APIView):
         operation_id="mobile_handyman_jobs_detail",
         responses={
             200: HandymanJobDetailResponseSerializer,
+            401: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
-        description="Get details of a specific job. Includes has_applied flag and application info if handyman has applied.",
+        description="Get details of a specific job. Includes has_applied flag and application info if handyman has applied. Requires authenticated handyman with verified email.",
         summary="Get job detail",
         tags=["Mobile Handyman Jobs"],
         examples=[
@@ -1569,11 +1536,25 @@ class HandymanJobDetailView(APIView):
                     "message": "Job retrieved successfully",
                     "data": {
                         "public_id": "123e4567-e89b-12d3-a456-426614174000",
-                        "title": "Fix Kitchen Sink",
+                        "title": "Fix leaking kitchen faucet",
+                        "description": "Kitchen faucet has been leaking for a few days.",
+                        "estimated_budget": 50.00,
+                        "category": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                            "name": "Plumbing",
+                        },
+                        "city": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                            "name": "Toronto",
+                        },
+                        "status": "open",
+                        "job_items": ["Inspect faucet", "Replace washers"],
                         "has_applied": True,
                         "my_application": {
                             "public_id": "423e4567-e89b-12d3-a456-426614174000",
                             "status": "pending",
+                            "created_at": "2024-01-15T10:30:00Z",
+                            "status_at": "2024-01-15T10:30:00Z",
                         },
                     },
                     "errors": None,
@@ -1582,6 +1563,8 @@ class HandymanJobDetailView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def get(self, request, public_id):
@@ -1617,7 +1600,10 @@ class HandymanJobApplicationListCreateView(APIView):
 
     @extend_schema(
         operation_id="mobile_handyman_applications_list",
-        responses={200: JobApplicationListResponseSerializer},
+        responses={
+            200: JobApplicationListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+        },
         parameters=[
             OpenApiParameter(
                 name="page",
@@ -1641,7 +1627,7 @@ class HandymanJobApplicationListCreateView(APIView):
                 required=False,
             ),
         ],
-        description="List all job applications for the authenticated handyman with pagination and filtering. Requires phone verification.",
+        description="List all job applications for the authenticated handyman with pagination and filtering. Requires authentication with verified email and phone number.",
         summary="List my applications",
         tags=["Mobile Handyman Applications"],
         examples=[
@@ -1677,20 +1663,12 @@ class HandymanJobApplicationListCreateView(APIView):
                         }
                     ],
                     "errors": None,
-                    "meta": {
-                        "pagination": {
-                            "page": 1,
-                            "page_size": 20,
-                            "total_pages": 1,
-                            "total_count": 1,
-                            "has_next": False,
-                            "has_previous": False,
-                        }
-                    },
+                    "meta": pagination_meta_example(total_count=1),
                 },
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def get(self, request):
@@ -1743,10 +1721,11 @@ class HandymanJobApplicationListCreateView(APIView):
         responses={
             201: JobApplicationDetailResponseSerializer,
             400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
             403: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
-        description="Apply to a job. The job must be in 'open' status. Requires phone verification.",
+        description="Apply to a job. The job must be in 'open' status. Requires authentication with verified email and phone number.",
         summary="Apply to a job",
         tags=["Mobile Handyman Applications"],
         examples=[
@@ -1775,17 +1754,10 @@ class HandymanJobApplicationListCreateView(APIView):
                 response_only=True,
                 status_codes=["201"],
             ),
-            OpenApiExample(
-                "Validation Error",
-                value={
-                    "message": "Validation failed",
-                    "data": None,
-                    "errors": {"job_id": ["This job is not accepting applications."]},
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def post(self, request):
@@ -1823,9 +1795,10 @@ class HandymanJobApplicationDetailView(APIView):
         operation_id="mobile_handyman_applications_retrieve",
         responses={
             200: JobApplicationDetailResponseSerializer,
+            401: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
-        description="Get details of a specific job application.",
+        description="Get details of a specific job application. Requires authenticated handyman with verified email.",
         summary="Get application detail",
         tags=["Mobile Handyman Applications"],
         examples=[
@@ -1844,6 +1817,8 @@ class HandymanJobApplicationDetailView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def get(self, request, public_id):
@@ -1880,9 +1855,10 @@ class HandymanJobApplicationWithdrawView(APIView):
         responses={
             200: JobApplicationDetailResponseSerializer,
             400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
-        description="Withdraw a pending job application. Only pending applications can be withdrawn.",
+        description="Withdraw a pending job application. Only pending applications can be withdrawn. Requires authenticated handyman with verified email.",
         summary="Withdraw application",
         tags=["Mobile Handyman Applications"],
         examples=[
@@ -1900,6 +1876,9 @@ class HandymanJobApplicationWithdrawView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def post(self, request, public_id):
@@ -1942,7 +1921,10 @@ class HomeownerApplicationListView(APIView):
 
     @extend_schema(
         operation_id="mobile_homeowner_applications_list",
-        responses={200: HomeownerJobApplicationListResponseSerializer},
+        responses={
+            200: HomeownerJobApplicationListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+        },
         parameters=[
             OpenApiParameter(
                 name="job_id",
@@ -1973,7 +1955,7 @@ class HomeownerApplicationListView(APIView):
                 required=False,
             ),
         ],
-        description="List ALL applications across all homeowner's jobs. Supports filtering by job and status.",
+        description="List ALL applications across all homeowner's jobs. Supports filtering by job and status. Requires authentication with verified email.",
         summary="List all applications",
         tags=["Mobile Homeowner Applications"],
         examples=[
@@ -1984,25 +1966,28 @@ class HomeownerApplicationListView(APIView):
                     "data": [
                         {
                             "public_id": "123e4567-e89b-12d3-a456-426614174000",
-                            "handyman_profile": {"display_name": "John Handyman"},
+                            "job": {
+                                "public_id": "223e4567-e89b-12d3-a456-426614174000",
+                                "title": "Fix Kitchen Sink",
+                            },
+                            "handyman_profile": {
+                                "public_id": "323e4567-e89b-12d3-a456-426614174000",
+                                "display_name": "John Handyman",
+                                "avatar_url": None,
+                                "rating": 4.5,
+                                "hourly_rate": 75.0,
+                            },
                             "status": "pending",
+                            "created_at": "2024-01-15T10:30:00Z",
                         }
                     ],
                     "errors": None,
-                    "meta": {
-                        "pagination": {
-                            "page": 1,
-                            "page_size": 20,
-                            "total_pages": 1,
-                            "total_count": 1,
-                            "has_next": False,
-                            "has_previous": False,
-                        }
-                    },
+                    "meta": pagination_meta_example(total_count=1),
                 },
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
         ],
     )
     def get(self, request):
@@ -2073,10 +2058,11 @@ class HomeownerApplicationDetailView(APIView):
         operation_id="mobile_homeowner_applications_retrieve",
         responses={
             200: HomeownerJobApplicationDetailResponseSerializer,
+            401: OpenApiTypes.OBJECT,
             403: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
-        description="Get details of a specific application. Validates that application belongs to homeowner's job.",
+        description="Get details of a specific application. Validates that application belongs to homeowner's job. Requires authentication with verified email.",
         summary="Get application detail",
         tags=["Mobile Homeowner Applications"],
         examples=[
@@ -2086,8 +2072,19 @@ class HomeownerApplicationDetailView(APIView):
                     "message": "Application retrieved successfully",
                     "data": {
                         "public_id": "123e4567-e89b-12d3-a456-426614174000",
-                        "handyman_profile": {"display_name": "John Handyman"},
+                        "job": {
+                            "public_id": "223e4567-e89b-12d3-a456-426614174000",
+                            "title": "Fix Kitchen Sink",
+                        },
+                        "handyman_profile": {
+                            "public_id": "323e4567-e89b-12d3-a456-426614174000",
+                            "display_name": "John Handyman",
+                            "avatar_url": None,
+                            "rating": 4.5,
+                            "hourly_rate": 75.0,
+                        },
                         "status": "pending",
+                        "created_at": "2024-01-15T10:30:00Z",
                     },
                     "errors": None,
                     "meta": None,
@@ -2095,6 +2092,9 @@ class HomeownerApplicationDetailView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def get(self, request, public_id):
@@ -2131,10 +2131,11 @@ class HomeownerApplicationApproveView(APIView):
         responses={
             200: HomeownerJobApplicationDetailResponseSerializer,
             400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
             403: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
-        description="Approve a pending application. The job status will change to 'in_progress' and all other pending applications will be automatically rejected. Only pending applications can be approved.",
+        description="Approve a pending application. The job status will change to 'in_progress' and all other pending applications will be automatically rejected. Only pending applications can be approved. Requires authentication with verified email.",
         summary="Approve application",
         tags=["Mobile Homeowner Applications"],
         examples=[
@@ -2145,6 +2146,10 @@ class HomeownerApplicationApproveView(APIView):
                     "data": {
                         "public_id": "123e4567-e89b-12d3-a456-426614174000",
                         "status": "approved",
+                        "job": {
+                            "public_id": "223e4567-e89b-12d3-a456-426614174000",
+                            "status": "in_progress",
+                        },
                     },
                     "errors": None,
                     "meta": None,
@@ -2152,6 +2157,10 @@ class HomeownerApplicationApproveView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def post(self, request, public_id):
@@ -2195,10 +2204,11 @@ class HomeownerApplicationRejectView(APIView):
         responses={
             200: HomeownerJobApplicationDetailResponseSerializer,
             400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
             403: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
-        description="Reject a pending application. Only pending applications can be rejected.",
+        description="Reject a pending application. Only pending applications can be rejected. Requires authentication with verified email.",
         summary="Reject application",
         tags=["Mobile Homeowner Applications"],
         examples=[
@@ -2209,6 +2219,10 @@ class HomeownerApplicationRejectView(APIView):
                     "data": {
                         "public_id": "123e4567-e89b-12d3-a456-426614174000",
                         "status": "rejected",
+                        "job": {
+                            "public_id": "223e4567-e89b-12d3-a456-426614174000",
+                            "status": "open",
+                        },
                     },
                     "errors": None,
                     "meta": None,
@@ -2216,6 +2230,10 @@ class HomeownerApplicationRejectView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def post(self, request, public_id):

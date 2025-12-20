@@ -2,6 +2,7 @@
 Web profile views.
 """
 
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -10,6 +11,11 @@ from apps.authn.permissions import (
     EmailVerifiedPermission,
     PlatformGuardPermission,
     RoleGuardPermission,
+)
+from apps.common.openapi import (
+    NOT_FOUND_EXAMPLE,
+    UNAUTHORIZED_EXAMPLE,
+    VALIDATION_ERROR_EXAMPLE,
 )
 from apps.common.responses import (
     not_found_response,
@@ -37,7 +43,12 @@ class HomeownerProfileView(APIView):
     ]
 
     @extend_schema(
-        responses={200: HomeownerProfileResponseSerializer},
+        operation_id="web_homeowner_profile_retrieve",
+        responses={
+            200: HomeownerProfileResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
         description="Get homeowner profile information for web app. Requires authenticated user with homeowner role and verified email.",
         summary="Get homeowner profile",
         tags=["Web Homeowner Profile"],
@@ -59,6 +70,8 @@ class HomeownerProfileView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def get(self, request):
@@ -73,9 +86,15 @@ class HomeownerProfileView(APIView):
             return not_found_response("Profile not found")
 
     @extend_schema(
+        operation_id="web_homeowner_profile_update",
         request=HomeownerProfileUpdateSerializer,
-        responses={200: HomeownerProfileResponseSerializer},
-        description="Update homeowner profile information via web app. All fields are optional and will only update provided values.",
+        responses={
+            200: HomeownerProfileResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Update homeowner profile information via web app. All fields are optional and will only update provided values. Requires authenticated user with homeowner role and verified email.",
         summary="Update homeowner profile",
         tags=["Web Homeowner Profile"],
         examples=[
@@ -104,6 +123,9 @@ class HomeownerProfileView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def put(self, request):
@@ -133,7 +155,12 @@ class HandymanProfileView(APIView):
     ]
 
     @extend_schema(
-        responses={200: HandymanProfileResponseSerializer},
+        operation_id="web_handyman_profile_retrieve",
+        responses={
+            200: HandymanProfileResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
         description="Get handyman profile information including rating for web app. Requires authenticated user with handyman role and verified email.",
         summary="Get handyman profile",
         tags=["Web Handyman Profile"],
@@ -159,6 +186,8 @@ class HandymanProfileView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def get(self, request):
@@ -173,9 +202,15 @@ class HandymanProfileView(APIView):
             return not_found_response("Profile not found")
 
     @extend_schema(
+        operation_id="web_handyman_profile_update",
         request=HandymanProfileUpdateSerializer,
-        responses={200: HandymanProfileResponseSerializer},
-        description="Update handyman profile information via web app including rating, contact details and address. All fields are optional.",
+        responses={
+            200: HandymanProfileResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Update handyman profile information via web app including rating, contact details and address. All fields are optional. Requires authenticated user with handyman role and verified email.",
         summary="Update handyman profile",
         tags=["Web Handyman Profile"],
         examples=[
@@ -209,6 +244,9 @@ class HandymanProfileView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
         ],
     )
     def put(self, request):
