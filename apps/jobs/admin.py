@@ -304,7 +304,6 @@ class JobApplicationAdmin(ModelAdmin):
     """
 
     list_display = (
-        "public_id",
         "job_link",
         "handyman_link",
         "status_display",

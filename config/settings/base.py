@@ -88,7 +88,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -327,6 +327,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Unfold Admin Configuration
 UNFOLD = {
+    "DASHBOARD_CALLBACK": "apps.common.dashboard.dashboard_callback",
     "SITE_TITLE": "SolutionBank Admin",
     "SITE_HEADER": "SolutionBank",
     "SITE_URL": "/",
@@ -364,44 +365,6 @@ UNFOLD = {
                 ],
             },
             {
-                "title": "User Management",
-                "separator": True,
-                "items": [
-                    {
-                        "title": "Users",
-                        "icon": "person",
-                        "link": lambda request: "/admin/accounts/user/",
-                    },
-                ],
-            },
-            {
-                "title": "Profiles",
-                "separator": True,
-                "items": [
-                    {
-                        "title": "Homeowner Profiles",
-                        "icon": "person_outline",
-                        "link": lambda request: "/admin/profiles/homeownerprofile/",
-                    },
-                    {
-                        "title": "Handyman Profiles",
-                        "icon": "build",
-                        "link": lambda request: "/admin/profiles/handymanprofile/",
-                    },
-                ],
-            },
-            {
-                "title": "Waitlist",
-                "separator": True,
-                "items": [
-                    {
-                        "title": "Entries",
-                        "icon": "hourglass_bottom",
-                        "link": lambda request: "/admin/waitlist/waitlistentry/",
-                    },
-                ],
-            },
-            {
                 "title": "Jobs",
                 "separator": True,
                 "items": [
@@ -415,11 +378,37 @@ UNFOLD = {
                         "icon": "assignment",
                         "link": lambda request: "/admin/jobs/jobapplication/",
                     },
+                    {
+                        "title": "Job Categories",
+                        "icon": "category",
+                        "link": lambda request: "/admin/jobs/jobcategory/",
+                    },
+                ],
+            },
+            {
+                "title": "Users & Profiles",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Users",
+                        "icon": "person",
+                        "link": lambda request: "/admin/accounts/user/",
+                    },
+                    {
+                        "title": "Homeowner Profiles",
+                        "icon": "person_outline",
+                        "link": lambda request: "/admin/profiles/homeownerprofile/",
+                    },
+                    {
+                        "title": "Handyman Profiles",
+                        "icon": "build",
+                        "link": lambda request: "/admin/profiles/handymanprofile/",
+                    },
                 ],
             },
             {
                 "title": "Notifications",
-                "separator": True,
+                "separator": False,
                 "items": [
                     {
                         "title": "All Notifications",
@@ -434,7 +423,7 @@ UNFOLD = {
                 ],
             },
             {
-                "title": "Master Data",
+                "title": "Reference Data",
                 "separator": True,
                 "items": [
                     {
@@ -447,42 +436,22 @@ UNFOLD = {
                         "icon": "phone",
                         "link": lambda request: "/admin/common/countryphonecode/",
                     },
-                    {
-                        "title": "Job Categories",
-                        "icon": "category",
-                        "link": lambda request: "/admin/jobs/jobcategory/",
-                    },
                 ],
             },
             {
-                "title": "Authentication & Security",
-                "separator": True,
+                "title": "Waitlist",
+                "separator": False,
                 "items": [
                     {
-                        "title": "Email Verification Tokens",
-                        "icon": "mark_email_read",
-                        "link": lambda request: "/admin/authn/emailverificationtoken/",
-                    },
-                    {
-                        "title": "Password Reset Codes",
-                        "icon": "lock_reset",
-                        "link": lambda request: "/admin/authn/passwordresetcode/",
-                    },
-                    {
-                        "title": "Password Reset Tokens",
-                        "icon": "key",
-                        "link": lambda request: "/admin/authn/passwordresettoken/",
-                    },
-                    {
-                        "title": "Active Sessions",
-                        "icon": "devices",
-                        "link": lambda request: "/admin/authn/refreshsession/",
+                        "title": "Entries",
+                        "icon": "hourglass_bottom",
+                        "link": lambda request: "/admin/waitlist/waitlistentry/",
                     },
                 ],
             },
             {
                 "title": "System",
-                "separator": True,
+                "separator": False,
                 "items": [
                     {
                         "title": "Groups",

@@ -1,0 +1,37 @@
+{% extends 'admin/base.html' %}
+{% load i18n unfold %}
+
+{% block title %}Dashboard | {{ site_title }}{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block content %}
+    {% component "unfold/components/container.html" %}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            {% for card in kpi_cards %}
+                {% component "unfold/components/card.html" %}
+                    {% component "unfold/components/text.html" with class="text-sm text-gray-500 dark:text-gray-400" %}
+                        {{ card.title }}
+                    {% endcomponent %}
+                    {% component "unfold/components/title.html" with class="text-3xl" %}
+                        {{ card.metric }}
+                    {% endcomponent %}
+                {% endcomponent %}
+            {% endfor %}
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {% component "unfold/components/card.html" with title="User Signups (Last 30 Days)" %}
+                {% component "unfold/components/chart/line.html" with data=user_signups_chart height=300 %}
+                {% endcomponent %}
+            {% endcomponent %}
+
+            {% component "unfold/components/card.html" with title="Jobs by Status" %}
+                {% component "unfold/components/chart/bar.html" with data=jobs_by_status_chart height=300 %}
+                {% endcomponent %}
+            {% endcomponent %}
+        </div>
+    {% endcomponent %}
+{% endblock %}
