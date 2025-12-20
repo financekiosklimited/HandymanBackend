@@ -239,8 +239,15 @@ class JobListCreateView(APIView):
                 description="Filter by job status (draft, open, in_progress, completed, cancelled)",
                 required=False,
             ),
+            OpenApiParameter(
+                name="search",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Search by title or description",
+                required=False,
+            ),
         ],
-        description="List all jobs for authenticated homeowner with pagination and filtering. Returns only jobs created by the homeowner. Requires homeowner role and verified email.",
+        description="List all jobs for authenticated homeowner with pagination and filtering. Returns only jobs created by the homeowner. Optional text search available. Requires homeowner role and verified email.",
         summary="List homeowner jobs",
         tags=["Mobile Homeowner Jobs"],
         examples=[
@@ -286,8 +293,16 @@ class JobListCreateView(APIView):
             jobs = jobs.filter(category__public_id=category_id)
         if city_id:
             jobs = jobs.filter(city__public_id=city_id)
-        if status:
             jobs = jobs.filter(status=status)
+
+        # Search filter
+        search_query = request.query_params.get("search")
+        if search_query:
+            from django.db.models import Q
+            jobs = jobs.filter(
+                Q(title__icontains=search_query) | 
+                Q(description__icontains=search_query)
+            )
 
         # Pagination
         page = int(request.query_params.get("page", 1))
@@ -805,12 +820,20 @@ class ForYouJobListView(APIView):
                 description="Filter by city public_id",
                 required=False,
             ),
+            OpenApiParameter(
+                name="search",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Search by title or description",
+                required=False,
+            ),
         ],
         description=(
             "List open jobs from other homeowners for discovery/inspiration. "
             "Jobs are sorted by recency (newest first). "
             "If latitude and longitude are provided, jobs are also sorted by distance (closest first). "
             "Jobs without coordinates will have distance_km as null and appear after jobs with coordinates. "
+            "Optional text search available via 'search' parameter. "
             "Requires authenticated homeowner with verified email."
         ),
         summary="For You - Discover jobs",
@@ -884,6 +907,15 @@ class ForYouJobListView(APIView):
             jobs = jobs.filter(category__public_id=category_id)
         if city_id:
             jobs = jobs.filter(city__public_id=city_id)
+
+        # Search filter
+        search_query = request.query_params.get("search")
+        if search_query:
+            from django.db.models import Q
+            jobs = jobs.filter(
+                Q(title__icontains=search_query) | 
+                Q(description__icontains=search_query)
+            )
 
         # Calculate distance if coordinates provided
         has_coordinates = latitude is not None and longitude is not None
@@ -1051,12 +1083,20 @@ class GuestJobListView(APIView):
                 description="Filter by city public_id",
                 required=False,
             ),
+            OpenApiParameter(
+                name="search",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Search by title or description",
+                required=False,
+            ),
         ],
         description=(
             "List open jobs for guest users (no authentication required). "
             "Jobs are sorted by recency (newest first). "
             "If latitude and longitude are provided, jobs include distance_km field. "
-            "Jobs without coordinates will have distance_km as null."
+            "Jobs without coordinates will have distance_km as null. "
+            "Optional text search available via 'search' parameter."
         ),
         summary="Guest - List jobs",
         tags=["Mobile Guest Jobs"],
@@ -1134,6 +1174,15 @@ class GuestJobListView(APIView):
             jobs = jobs.filter(category__public_id=category_id)
         if city_id:
             jobs = jobs.filter(city__public_id=city_id)
+
+        # Search filter
+        search_query = request.query_params.get("search")
+        if search_query:
+            from django.db.models import Q
+            jobs = jobs.filter(
+                Q(title__icontains=search_query) | 
+                Q(description__icontains=search_query)
+            )
 
         # Calculate distance if coordinates provided
         has_coordinates = latitude is not None and longitude is not None
@@ -1378,8 +1427,15 @@ class HandymanForYouJobListView(APIView):
                 description="Filter by city public_id",
                 required=False,
             ),
+            OpenApiParameter(
+                name="search",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Search by title or description",
+                required=False,
+            ),
         ],
-        description="List open jobs for handymen to browse and apply to. Jobs are sorted by distance (if coordinates provided) and recency. Requires authenticated handyman with verified email.",
+        description="List open jobs for handymen to browse and apply to. Jobs are sorted by distance (if coordinates provided) and recency. Optional text search available. Requires authenticated handyman with verified email.",
         summary="Browse available jobs",
         tags=["Mobile Handyman Jobs"],
         examples=[
@@ -1439,6 +1495,15 @@ class HandymanForYouJobListView(APIView):
         city_id = request.query_params.get("city")
         if city_id:
             jobs = jobs.filter(city__public_id=city_id)
+
+        # Search filter
+        search_query = request.query_params.get("search")
+        if search_query:
+            from django.db.models import Q
+            jobs = jobs.filter(
+                Q(title__icontains=search_query) | 
+                Q(description__icontains=search_query)
+            )
 
         # Get user's location for distance calculation
         user_lat = request.query_params.get("latitude")
