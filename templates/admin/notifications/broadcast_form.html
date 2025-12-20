@@ -39,7 +39,7 @@
 
                     <div class="grid grid-cols-1 gap-6">
                         {% for field in form %}
-                            <div class="space-y-2">
+                            <div class="space-y-2" data-field-name="{{ field.name }}">
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="flex items-center gap-2">
                                         <label for="{{ field.id_for_label }}" class="text-sm font-semibold text-gray-800 dark:text-gray-100">
@@ -158,10 +158,27 @@
         const previewDiv = document.getElementById('recipient-preview');
         const countSpan = document.getElementById('recipient-count');
         const counts = {{ recipient_counts|safe }};
+        const targetUsersField = document.querySelector('[data-field-name="target_users"]');
+        const targetUsersSelect = targetUsersField ? targetUsersField.querySelector('select') : null;
+
+        function toggleTargetUsersField() {
+            if (!targetUsersField) return;
+            if (targetSelect && targetSelect.value === 'specific') {
+                targetUsersField.classList.remove('hidden');
+            } else {
+                targetUsersField.classList.add('hidden');
+            }
+        }
 
         function updatePreview() {
             if (!targetSelect || !previewDiv || !countSpan) return;
             const val = targetSelect.value;
+            if (val === 'specific') {
+                const selectedOptions = targetUsersSelect ? targetUsersSelect.selectedOptions.length : 0;
+                countSpan.textContent = selectedOptions.toLocaleString();
+                previewDiv.classList.remove('hidden');
+                return;
+            }
             if (val && counts[val] !== undefined) {
                 countSpan.textContent = counts[val].toLocaleString();
                 previewDiv.classList.remove('hidden');
@@ -171,8 +188,16 @@
         }
 
         if (targetSelect) {
-            targetSelect.addEventListener('change', updatePreview);
+            targetSelect.addEventListener('change', function() {
+                toggleTargetUsersField();
+                updatePreview();
+            });
+            toggleTargetUsersField();
             updatePreview();
+        }
+
+        if (targetUsersSelect) {
+            targetUsersSelect.addEventListener('change', updatePreview);
         }
     });
 </script>

@@ -18,7 +18,9 @@ class NotificationService:
     Service for creating and sending notifications.
     """
 
-    def get_target_users(self, target_audience: str):
+    def get_target_users(
+        self, target_audience: str, broadcast: BroadcastNotification | None = None
+    ):
         """
         Get target users based on target audience.
         """
@@ -26,16 +28,20 @@ class NotificationService:
 
         if target_audience == "handyman":
             return User.objects.filter(roles__role="handyman")
-        elif target_audience == "homeowner":
+        if target_audience == "homeowner":
             return User.objects.filter(roles__role="homeowner")
-        else:  # all
-            return User.objects.all()
+        if target_audience == "specific" and broadcast is not None:
+            return broadcast.target_users.all()
+        return User.objects.all()
 
     def send_broadcast(self, broadcast: BroadcastNotification) -> BroadcastNotification:
         """
         Send broadcast notification to target audience.
         """
-        users = self.get_target_users(broadcast.target_audience).distinct()
+        users = self.get_target_users(broadcast.target_audience, broadcast).distinct()
+        if broadcast.target_audience == "specific" and users.count() == 0:
+            raise ValueError("No target users selected for specific broadcast.")
+
         broadcast.status = "processing"
         broadcast.sent_at = timezone.now()
         broadcast.total_recipients = users.count()

@@ -95,6 +95,7 @@ class BroadcastNotification(BaseModel):
         ("all", "All Users"),
         ("handyman", "All Handymen"),
         ("homeowner", "All Homeowners"),
+        ("specific", "Specific Users"),
     ]
 
     STATUS_CHOICES = [
@@ -108,6 +109,11 @@ class BroadcastNotification(BaseModel):
     body = models.TextField()
     data = models.JSONField(null=True, blank=True)
     target_audience = models.CharField(max_length=20, choices=TARGET_CHOICES)
+    target_users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name="targeted_broadcasts",
+        blank=True,
+    )
 
     # Push notification option
     send_push = models.BooleanField(default=True)

@@ -57,6 +57,21 @@ class BroadcastNotificationTests(TestCase):
         self.assertTrue(users.filter(email=self.homeowner.email).exists())
         self.assertTrue(users.filter(email=self.both.email).exists())
 
+    def test_get_target_users_specific(self):
+        """Test getting specific users only."""
+        broadcast = BroadcastNotification.objects.create(
+            title="Specific",
+            body="Body",
+            target_audience="specific",
+            sent_by=self.admin,
+        )
+        broadcast.target_users.add(self.handyman, self.homeowner)
+
+        users = self.service.get_target_users("specific", broadcast)
+        self.assertEqual(users.count(), 2)
+        self.assertTrue(users.filter(email=self.handyman.email).exists())
+        self.assertTrue(users.filter(email=self.homeowner.email).exists())
+
     @patch("apps.notifications.services.firebase_service")
     def test_send_broadcast_all(self, mock_firebase):
         """Test sending broadcast to all users."""
@@ -96,6 +111,52 @@ class BroadcastNotificationTests(TestCase):
 
         # Verify Firebase called
         self.assertTrue(mock_firebase.send_multicast_notification.called)
+
+    @patch("apps.notifications.services.firebase_service")
+    def test_send_broadcast_specific(self, mock_firebase):
+        """Test sending broadcast to specific users only."""
+        broadcast = BroadcastNotification.objects.create(
+            title="Specific Title",
+            body="Specific Body",
+            target_audience="specific",
+            sent_by=self.admin,
+            send_push=True,
+        )
+        broadcast.target_users.add(self.handyman, self.homeowner)
+
+        UserDevice.objects.create(
+            user=self.handyman, device_token="h_token", device_type="android"
+        )
+        UserDevice.objects.create(
+            user=self.homeowner, device_token="o_token", device_type="ios"
+        )
+
+        mock_firebase.send_multicast_notification.return_value = {
+            "success_count": 2,
+            "failure_count": 0,
+        }
+
+        self.service.send_broadcast(broadcast)
+
+        broadcast.refresh_from_db()
+        self.assertEqual(broadcast.status, "completed")
+        self.assertEqual(broadcast.total_recipients, 2)
+        self.assertEqual(broadcast.push_success_count, 2)
+        self.assertEqual(Notification.objects.filter(title="Specific Title").count(), 2)
+        self.assertTrue(mock_firebase.send_multicast_notification.called)
+
+    def test_send_broadcast_specific_without_users_raises(self):
+        """Specific target requires at least one user."""
+        broadcast = BroadcastNotification.objects.create(
+            title="No Users",
+            body="Body",
+            target_audience="specific",
+            sent_by=self.admin,
+            send_push=False,
+        )
+
+        with self.assertRaises(ValueError):
+            self.service.send_broadcast(broadcast)
 
     @patch("apps.notifications.services.firebase_service")
     def test_send_broadcast_no_push(self, mock_firebase):

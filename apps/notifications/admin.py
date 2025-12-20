@@ -9,6 +9,7 @@ from django_jsonform.widgets import JSONFormWidget
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
+from apps.accounts.models import User
 from apps.notifications.models import BroadcastNotification, Notification, UserDevice
 
 
@@ -17,7 +18,14 @@ class BroadcastForm(forms.ModelForm):
 
     class Meta:
         model = BroadcastNotification
-        fields = ["target_audience", "title", "body", "data", "send_push"]
+        fields = [
+            "target_audience",
+            "target_users",
+            "title",
+            "body",
+            "data",
+            "send_push",
+        ]
         widgets = {
             "data": JSONFormWidget(schema={"type": "object"}),
             "body": forms.Textarea(
@@ -29,9 +37,31 @@ class BroadcastForm(forms.ModelForm):
         }
         help_texts = {
             "target_audience": "Select who will receive this notification.",
+            "target_users": "Autocomplete: select specific users (homeowner/handyman only).",
             "data": "Optional: Add JSON data for deep linking (e.g., {'job_id': '123'}).",
             "send_push": "If checked, a push notification will be sent via Firebase to all active devices.",
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Limit target_users queryset to homeowner/handyman
+        self.fields["target_users"].queryset = User.objects.filter(
+            roles__role__in=["handyman", "homeowner"]
+        ).distinct()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        target_audience = cleaned_data.get("target_audience")
+        target_users = cleaned_data.get("target_users")
+
+        if target_audience == "specific" and (
+            not target_users or target_users.count() == 0
+        ):
+            self.add_error(
+                "target_users", "Please select at least one user for specific audience."
+            )
+
+        return cleaned_data
 
 
 @admin.register(BroadcastNotification)
@@ -49,6 +79,7 @@ class BroadcastNotificationAdmin(ModelAdmin):
         "sent_by",
         "sent_at",
     )
+    autocomplete_fields = ("target_users",)
     list_filter = ("target_audience", "status", "send_push", "sent_at")
     search_fields = ("title", "body")
     readonly_fields = (
@@ -113,6 +144,7 @@ class BroadcastNotificationAdmin(ModelAdmin):
                 broadcast = form.save(commit=False)
                 broadcast.sent_by = request.user
                 broadcast.save()
+                form.save_m2m()
 
                 try:
                     notification_service.send_broadcast(broadcast)
