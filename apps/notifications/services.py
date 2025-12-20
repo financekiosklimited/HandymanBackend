@@ -8,7 +8,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.notifications.firebase_service import firebase_service
-from apps.notifications.models import Notification, UserDevice
+from apps.notifications.models import BroadcastNotification, Notification, UserDevice
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,94 @@ class NotificationService:
     """
     Service for creating and sending notifications.
     """
+
+    def get_target_users(self, target_audience: str):
+        """
+        Get target users based on target audience.
+        """
+        from apps.accounts.models import User
+
+        if target_audience == "handyman":
+            return User.objects.filter(roles__role="handyman")
+        elif target_audience == "homeowner":
+            return User.objects.filter(roles__role="homeowner")
+        else:  # all
+            return User.objects.all()
+
+    def send_broadcast(self, broadcast: BroadcastNotification) -> BroadcastNotification:
+        """
+        Send broadcast notification to target audience.
+        """
+        users = self.get_target_users(broadcast.target_audience).distinct()
+        broadcast.status = "processing"
+        broadcast.sent_at = timezone.now()
+        broadcast.total_recipients = users.count()
+        broadcast.save(update_fields=["status", "sent_at", "total_recipients"])
+
+        # 1. Bulk create in-app notifications
+        notifications = [
+            Notification(
+                user=user,
+                notification_type="admin_broadcast",
+                title=broadcast.title,
+                body=broadcast.body,
+                data=broadcast.data,
+            )
+            for user in users
+        ]
+
+        # Use bulk_create in batches of 1000
+        batch_size = 1000
+        for i in range(0, len(notifications), batch_size):
+            Notification.objects.bulk_create(notifications[i : i + batch_size])
+
+        # 2. Send push notifications if enabled
+        if broadcast.send_push:
+            # Get all active device tokens for these users
+            devices = UserDevice.objects.filter(user__in=users, is_active=True)
+            device_tokens = list(devices.values_list("device_token", flat=True))
+
+            if device_tokens:
+                # Multicast send (Firebase has 500 limit per request)
+                # But our firebase_service.send_multicast_notification already handles it?
+                # Let's check firebase_service again.
+                # Actually, I'll batch it here just to be safe if it doesn't.
+                # Looking at firebase_service.py, it uses send_each_for_multicast
+                # which has a limit of 500 tokens.
+
+                success_count = 0
+                failure_count = 0
+                batch_size_fcm = 500
+
+                for i in range(0, len(device_tokens), batch_size_fcm):
+                    batch_tokens = device_tokens[i : i + batch_size_fcm]
+                    result = firebase_service.send_multicast_notification(
+                        device_tokens=batch_tokens,
+                        title=broadcast.title,
+                        body=broadcast.body,
+                        data=broadcast.data,
+                    )
+                    success_count += result["success_count"]
+                    failure_count += result["failure_count"]
+
+                broadcast.push_success_count = success_count
+                broadcast.push_failure_count = failure_count
+
+                # Update last_used_at for all active devices of these users
+                # This is a bit broad but consistent with send_push_notification
+                devices.update(last_used_at=timezone.now())
+
+        broadcast.status = "completed"
+        broadcast.save(
+            update_fields=[
+                "status",
+                "push_success_count",
+                "push_failure_count",
+                "updated_at",
+            ]
+        )
+
+        return broadcast
 
     def create_notification(
         self,

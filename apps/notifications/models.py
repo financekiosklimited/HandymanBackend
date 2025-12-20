@@ -47,6 +47,7 @@ class Notification(BaseModel):
         ("application_approved", "Application Approved"),
         ("application_rejected", "Application Rejected"),
         ("application_withdrawn", "Application Withdrawn"),
+        ("admin_broadcast", "Admin Broadcast"),
     ]
 
     user = models.ForeignKey(
@@ -83,3 +84,49 @@ class Notification(BaseModel):
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+class BroadcastNotification(BaseModel):
+    """
+    Stores broadcast notifications sent by admin.
+    """
+
+    TARGET_CHOICES = [
+        ("all", "All Users"),
+        ("handyman", "All Handymen"),
+        ("homeowner", "All Homeowners"),
+    ]
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("processing", "Processing"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+    ]
+
+    title = models.CharField(max_length=200)
+    body = models.TextField()
+    data = models.JSONField(null=True, blank=True)
+    target_audience = models.CharField(max_length=20, choices=TARGET_CHOICES)
+
+    # Push notification option
+    send_push = models.BooleanField(default=True)
+
+    # Tracking
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    sent_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
+    )
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    # Stats
+    total_recipients = models.PositiveIntegerField(default=0)
+    push_success_count = models.PositiveIntegerField(default=0)
+    push_failure_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = "broadcast_notifications"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.title} ({self.get_target_audience_display()})"

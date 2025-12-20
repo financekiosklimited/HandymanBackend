@@ -1,12 +1,160 @@
-from django.contrib import admin
+from django import forms
+from django.contrib import admin, messages
 from django.db import models
+from django.shortcuts import redirect, render
+from django.urls import path
 from django.utils import timezone
 from django.utils.html import format_html
 from django_jsonform.widgets import JSONFormWidget
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
-from apps.notifications.models import Notification, UserDevice
+from apps.notifications.models import BroadcastNotification, Notification, UserDevice
+
+
+class BroadcastForm(forms.ModelForm):
+    """Form for sending broadcast notifications."""
+
+    class Meta:
+        model = BroadcastNotification
+        fields = ["target_audience", "title", "body", "data", "send_push"]
+        widgets = {
+            "data": JSONFormWidget(schema={"type": "object"}),
+            "body": forms.Textarea(
+                attrs={"rows": 4, "placeholder": "Enter the message body..."}
+            ),
+            "title": forms.TextInput(
+                attrs={"placeholder": "Enter the notification title..."}
+            ),
+        }
+        help_texts = {
+            "target_audience": "Select who will receive this notification.",
+            "data": "Optional: Add JSON data for deep linking (e.g., {'job_id': '123'}).",
+            "send_push": "If checked, a push notification will be sent via Firebase to all active devices.",
+        }
+
+
+@admin.register(BroadcastNotification)
+class BroadcastNotificationAdmin(ModelAdmin):
+    """
+    Admin interface for BroadcastNotification model.
+    """
+
+    list_display = (
+        "title",
+        "target_audience",
+        "status_display",
+        "total_recipients",
+        "push_stats",
+        "sent_by",
+        "sent_at",
+    )
+    list_filter = ("target_audience", "status", "send_push", "sent_at")
+    search_fields = ("title", "body")
+    readonly_fields = (
+        "public_id",
+        "status",
+        "sent_by",
+        "sent_at",
+        "total_recipients",
+        "push_success_count",
+        "push_failure_count",
+        "created_at",
+        "updated_at",
+    )
+    ordering = ("-sent_at", "-created_at")
+
+    @display(description="Status")
+    def status_display(self, obj):
+        """Display status with color coding."""
+        colors = {
+            "pending": "gray",
+            "processing": "blue",
+            "completed": "green",
+            "failed": "red",
+        }
+        color = colors.get(obj.status, "gray")
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{}</span>',
+            color,
+            obj.get_status_display(),
+        )
+
+    @display(description="Push Stats")
+    def push_stats(self, obj):
+        """Display push notification success/failure."""
+        if not obj.send_push:
+            return "N/A"
+        return format_html(
+            '<span style="color: green;">✓ {}</span> / <span style="color: red;">✗ {}</span>',
+            obj.push_success_count,
+            obj.push_failure_count,
+        )
+
+    def get_urls(self):
+        """Add custom URLs for broadcasting."""
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "send/",
+                self.admin_site.admin_view(self.send_broadcast_view),
+                name="notifications_broadcastnotification_send",
+            ),
+        ]
+        return custom_urls + urls
+
+    def send_broadcast_view(self, request):
+        """View for sending broadcast notifications."""
+        from apps.notifications.services import notification_service
+
+        if request.method == "POST":
+            form = BroadcastForm(request.POST)
+            if form.is_valid():
+                broadcast = form.save(commit=False)
+                broadcast.sent_by = request.user
+                broadcast.save()
+
+                try:
+                    notification_service.send_broadcast(broadcast)
+                    self.message_user(
+                        request,
+                        f"Broadcast '{broadcast.title}' sent successfully to {broadcast.total_recipients} users.",
+                        messages.SUCCESS,
+                    )
+                except Exception as e:
+                    broadcast.status = "failed"
+                    broadcast.save(update_fields=["status"])
+                    self.message_user(
+                        request, f"Failed to send broadcast: {str(e)}", messages.ERROR
+                    )
+
+                return redirect("admin:notifications_broadcastnotification_changelist")
+        else:
+            form = BroadcastForm()
+
+        # Get counts for preview
+        recipient_counts = {
+            "all": notification_service.get_target_users("all").count(),
+            "handyman": notification_service.get_target_users("handyman").count(),
+            "homeowner": notification_service.get_target_users("homeowner").count(),
+        }
+
+        # Provide breadcrumbs and branding context for Unfold
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Send Broadcast Notification",
+            "form": form,
+            "opts": self.model._meta,
+            "recipient_counts": recipient_counts,
+            "breadcrumbs": (
+                ("Notifications", None),
+                ("Broadcast", None),
+                ("Send", None),
+            ),
+        }
+
+        # We'll use a standard admin form template provided by Unfold
+        return render(request, "admin/notifications/broadcast_form.html", context)
 
 
 @admin.register(UserDevice)

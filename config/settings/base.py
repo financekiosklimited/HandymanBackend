@@ -411,6 +411,16 @@ UNFOLD = {
                 "separator": False,
                 "items": [
                     {
+                        "title": "Send Broadcast",
+                        "icon": "campaign",
+                        "link": lambda request: "/admin/notifications/broadcastnotification/send/",
+                    },
+                    {
+                        "title": "Broadcast History",
+                        "icon": "history",
+                        "link": lambda request: "/admin/notifications/broadcastnotification/",
+                    },
+                    {
                         "title": "All Notifications",
                         "icon": "notifications",
                         "link": lambda request: "/admin/notifications/notification/",
