@@ -31,6 +31,18 @@ from apps.notifications.serializers import (
 )
 
 
+def get_role_from_path(request):
+    """
+    Extract role from URL path (e.g., /handyman/notifications/ -> handyman).
+    """
+    path = request.path
+    if "/handyman/" in path:
+        return "handyman"
+    elif "/homeowner/" in path:
+        return "homeowner"
+    return None
+
+
 class NotificationListView(APIView):
     """
     View for listing user notifications.
@@ -86,6 +98,7 @@ class NotificationListView(APIView):
                             "notification_type": "job_application_received",
                             "title": "New Application",
                             "body": "You have received a new application for your job.",
+                            "target_role": "homeowner",
                             "is_read": False,
                             "created_at": "2024-01-15T10:30:00Z",
                         }
@@ -101,7 +114,12 @@ class NotificationListView(APIView):
     )
     def get(self, request):
         """List all notifications for the user."""
+        role = get_role_from_path(request)
         notifications = Notification.objects.filter(user=request.user)
+
+        # Filter by role if detected from path
+        if role:
+            notifications = notifications.filter(target_role=role)
 
         # Filter by read status if provided
         is_read = request.query_params.get("is_read")
@@ -239,7 +257,8 @@ class NotificationMarkAllAsReadView(APIView):
         """Mark all notifications as read."""
         from apps.notifications.services import notification_service
 
-        count = notification_service.mark_all_as_read(request.user)
+        role = get_role_from_path(request)
+        count = notification_service.mark_all_as_read(request.user, target_role=role)
 
         return success_response(
             {"count": count}, message=f"{count} notifications marked as read"
@@ -286,7 +305,8 @@ class NotificationUnreadCountView(APIView):
         """Get unread notification count."""
         from apps.notifications.services import notification_service
 
-        count = notification_service.get_unread_count(request.user)
+        role = get_role_from_path(request)
+        count = notification_service.get_unread_count(request.user, target_role=role)
 
         return success_response(
             {"unread_count": count}, message="Unread count retrieved successfully"

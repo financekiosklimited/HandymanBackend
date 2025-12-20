@@ -44,20 +44,50 @@ class NotificationService:
 
         broadcast.status = "processing"
         broadcast.sent_at = timezone.now()
-        broadcast.total_recipients = users.count()
-        broadcast.save(update_fields=["status", "sent_at", "total_recipients"])
+        broadcast.save(update_fields=["status", "sent_at"])
 
-        # 1. Bulk create in-app notifications
-        notifications = [
-            Notification(
-                user=user,
-                notification_type="admin_broadcast",
-                title=broadcast.title,
-                body=broadcast.body,
-                data=broadcast.data,
-            )
-            for user in users
-        ]
+        # Build notifications based on target_audience
+        notifications = []
+
+        if broadcast.target_audience in ("handyman", "homeowner"):
+            # Single role broadcast
+            target_role = broadcast.target_audience
+            for user in users:
+                notifications.append(
+                    Notification(
+                        user=user,
+                        notification_type="admin_broadcast",
+                        title=broadcast.title,
+                        body=broadcast.body,
+                        data=broadcast.data,
+                        target_role=target_role,
+                    )
+                )
+        else:
+            # "all" or "specific" - create per user's roles
+            from apps.accounts.models import UserRole
+
+            for user in users:
+                user_roles = list(
+                    UserRole.objects.filter(
+                        user=user, role__in=["handyman", "homeowner"]
+                    ).values_list("role", flat=True)
+                )
+                for role in user_roles:
+                    notifications.append(
+                        Notification(
+                            user=user,
+                            notification_type="admin_broadcast",
+                            title=broadcast.title,
+                            body=broadcast.body,
+                            data=broadcast.data,
+                            target_role=role,
+                        )
+                    )
+
+        # Update total_recipients to count notifications
+        broadcast.total_recipients = len(notifications)
+        broadcast.save(update_fields=["total_recipients"])
 
         # Use bulk_create in batches of 1000
         batch_size = 1000
@@ -118,6 +148,7 @@ class NotificationService:
         notification_type: str,
         title: str,
         body: str,
+        target_role: str,
         data: dict | None = None,
     ) -> Notification:
         """
@@ -128,6 +159,7 @@ class NotificationService:
             notification_type: Type of notification
             title: Notification title
             body: Notification body
+            target_role: Target role for the notification (handyman or homeowner)
             data: Optional data payload
 
         Returns:
@@ -138,6 +170,7 @@ class NotificationService:
             notification_type=notification_type,
             title=title,
             body=body,
+            target_role=target_role,
             data=data,
         )
         logger.info(
@@ -194,6 +227,7 @@ class NotificationService:
         notification_type: str,
         title: str,
         body: str,
+        target_role: str,
         data: dict | None = None,
     ) -> Notification:
         """
@@ -204,6 +238,7 @@ class NotificationService:
             notification_type: Type of notification
             title: Notification title
             body: Notification body
+            target_role: Target role for the notification (handyman or homeowner)
             data: Optional data payload
 
         Returns:
@@ -215,6 +250,7 @@ class NotificationService:
             notification_type=notification_type,
             title=title,
             body=body,
+            target_role=target_role,
             data=data,
         )
 
@@ -246,34 +282,41 @@ class NotificationService:
 
         return notification
 
-    def mark_all_as_read(self, user) -> int:
+    def mark_all_as_read(self, user, target_role: str | None = None) -> int:
         """
         Mark all unread notifications as read for a user.
 
         Args:
             user: User whose notifications to mark as read
+            target_role: Optional role filter (handyman or homeowner)
 
         Returns:
             int: Number of notifications marked as read
         """
         unread_notifications = Notification.objects.filter(user=user, is_read=False)
+        if target_role:
+            unread_notifications = unread_notifications.filter(target_role=target_role)
         count = unread_notifications.update(
             is_read=True, read_at=timezone.now(), updated_at=timezone.now()
         )
         logger.info(f"Marked {count} notifications as read for user {user.email}")
         return count
 
-    def get_unread_count(self, user) -> int:
+    def get_unread_count(self, user, target_role: str | None = None) -> int:
         """
         Get count of unread notifications for a user.
 
         Args:
             user: User to count notifications for
+            target_role: Optional role filter (handyman or homeowner)
 
         Returns:
             int: Number of unread notifications
         """
-        return Notification.objects.filter(user=user, is_read=False).count()
+        queryset = Notification.objects.filter(user=user, is_read=False)
+        if target_role:
+            queryset = queryset.filter(target_role=target_role)
+        return queryset.count()
 
     def register_device(self, user, device_token: str, device_type: str) -> UserDevice:
         """

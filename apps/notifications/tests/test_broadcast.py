@@ -101,13 +101,20 @@ class BroadcastNotificationTests(TestCase):
         # Verify status and stats
         broadcast.refresh_from_db()
         self.assertEqual(broadcast.status, "completed")
+        # Should be 5 notifications: admin(0), handyman(1), homeowner(1), both(2) = 4 users but user 'both' gets 2
+        # Actually: admin has no roles, so 0. handyman=1, homeowner=1, both=2. Total = 4
         self.assertEqual(broadcast.total_recipients, 4)
         self.assertEqual(broadcast.push_success_count, 2)
 
-        # Verify in-app notifications created
-        self.assertEqual(
-            Notification.objects.filter(title="Broadcast Title").count(), 4
-        )
+        # Verify in-app notifications created with target_role
+        notifications = Notification.objects.filter(title="Broadcast Title")
+        self.assertEqual(notifications.count(), 4)
+
+        # Verify roles are set correctly
+        handyman_notifs = notifications.filter(target_role="handyman")
+        homeowner_notifs = notifications.filter(target_role="homeowner")
+        self.assertEqual(handyman_notifs.count(), 2)  # handyman + both
+        self.assertEqual(homeowner_notifs.count(), 2)  # homeowner + both
 
         # Verify Firebase called
         self.assertTrue(mock_firebase.send_multicast_notification.called)
@@ -140,9 +147,12 @@ class BroadcastNotificationTests(TestCase):
 
         broadcast.refresh_from_db()
         self.assertEqual(broadcast.status, "completed")
+        # handyman has 1 role, homeowner has 1 role = 2 notifications
         self.assertEqual(broadcast.total_recipients, 2)
         self.assertEqual(broadcast.push_success_count, 2)
-        self.assertEqual(Notification.objects.filter(title="Specific Title").count(), 2)
+
+        notifications = Notification.objects.filter(title="Specific Title")
+        self.assertEqual(notifications.count(), 2)
         self.assertTrue(mock_firebase.send_multicast_notification.called)
 
     def test_send_broadcast_specific_without_users_raises(self):
@@ -172,11 +182,15 @@ class BroadcastNotificationTests(TestCase):
         self.service.send_broadcast(broadcast)
 
         broadcast.refresh_from_db()
+        # handyman + both = 2 notifications (both users have handyman role)
         self.assertEqual(broadcast.total_recipients, 2)
         self.assertEqual(broadcast.push_success_count, 0)
 
-        # Verify in-app notifications created
-        self.assertEqual(Notification.objects.filter(title="No Push").count(), 2)
+        # Verify in-app notifications created with correct target_role
+        notifications = Notification.objects.filter(title="No Push")
+        self.assertEqual(notifications.count(), 2)
+        for notif in notifications:
+            self.assertEqual(notif.target_role, "handyman")
 
         # Verify Firebase NOT called
         mock_firebase.send_multicast_notification.assert_not_called()

@@ -28,6 +28,7 @@ class NotificationServiceTests(TestCase):
             notification_type="job_application_received",
             title="New Application",
             body="You have a new job application.",
+            target_role="homeowner",
             data={"job_id": "123"},
         )
 
@@ -35,6 +36,7 @@ class NotificationServiceTests(TestCase):
         self.assertEqual(notification.notification_type, "job_application_received")
         self.assertEqual(notification.title, "New Application")
         self.assertEqual(notification.body, "You have a new job application.")
+        self.assertEqual(notification.target_role, "homeowner")
         self.assertEqual(notification.data, {"job_id": "123"})
         self.assertFalse(notification.is_read)
 
@@ -117,6 +119,7 @@ class NotificationServiceTests(TestCase):
                     notification_type="job_application_received",
                     title="Title",
                     body="Body",
+                    target_role="homeowner",
                     data={"d": "v"},
                 )
 
@@ -125,6 +128,7 @@ class NotificationServiceTests(TestCase):
                     notification_type="job_application_received",
                     title="Title",
                     body="Body",
+                    target_role="homeowner",
                     data={"d": "v"},
                 )
                 mock_send.assert_called_once_with(
@@ -141,6 +145,7 @@ class NotificationServiceTests(TestCase):
             notification_type="job_application_received",
             title="Title",
             body="Body",
+            target_role="homeowner",
             is_read=False,
         )
 
@@ -161,6 +166,7 @@ class NotificationServiceTests(TestCase):
             notification_type="job_application_received",
             title="T1",
             body="B1",
+            target_role="homeowner",
             is_read=False,
         )
         Notification.objects.create(
@@ -168,6 +174,7 @@ class NotificationServiceTests(TestCase):
             notification_type="job_application_received",
             title="T2",
             body="B2",
+            target_role="handyman",
             is_read=False,
         )
 
@@ -180,6 +187,7 @@ class NotificationServiceTests(TestCase):
             notification_type="job_application_received",
             title="T3",
             body="B3",
+            target_role="homeowner",
             is_read=False,
         )
 
@@ -199,6 +207,7 @@ class NotificationServiceTests(TestCase):
             notification_type="job_application_received",
             title="T1",
             body="B1",
+            target_role="homeowner",
             is_read=False,
         )
         Notification.objects.create(
@@ -206,6 +215,7 @@ class NotificationServiceTests(TestCase):
             notification_type="job_application_received",
             title="T2",
             body="B2",
+            target_role="homeowner",
             is_read=True,
         )
 

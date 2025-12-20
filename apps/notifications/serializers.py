@@ -20,6 +20,7 @@ class NotificationSerializer(serializers.ModelSerializer):
             "title",
             "body",
             "data",
+            "target_role",
             "is_read",
             "read_at",
             "created_at",

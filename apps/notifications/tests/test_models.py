@@ -84,6 +84,7 @@ class NotificationModelTest(TestCase):
             notification_type="job_application_received",
             title="New Application",
             body="You have a new job application",
+            target_role="homeowner",
             data={"job_id": "123"},
         )
 
@@ -92,6 +93,7 @@ class NotificationModelTest(TestCase):
         self.assertEqual(notification.notification_type, "job_application_received")
         self.assertEqual(notification.title, "New Application")
         self.assertEqual(notification.body, "You have a new job application")
+        self.assertEqual(notification.target_role, "homeowner")
         self.assertEqual(notification.data, {"job_id": "123"})
         self.assertFalse(notification.is_read)
         self.assertIsNone(notification.read_at)
@@ -111,6 +113,7 @@ class NotificationModelTest(TestCase):
                 notification_type=notif_type,
                 title="Test",
                 body="Test body",
+                target_role="homeowner",
             )
             self.assertEqual(notification.notification_type, notif_type)
             # Clean up
@@ -123,8 +126,25 @@ class NotificationModelTest(TestCase):
             notification_type="job_application_received",
             title="Test",
             body="Test body",
+            target_role="homeowner",
             data="invalid_string",  # Should be a dict
         )
 
         with self.assertRaises(ValidationError):
             notification.save()
+
+    def test_target_role_choices(self):
+        """Test target role choices."""
+        valid_roles = ["handyman", "homeowner"]
+
+        for role in valid_roles:
+            notification = Notification.objects.create(
+                user=self.user,
+                notification_type="job_application_received",
+                title="Test",
+                body="Test body",
+                target_role=role,
+            )
+            self.assertEqual(notification.target_role, role)
+            # Clean up
+            notification.delete()

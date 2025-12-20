@@ -4,6 +4,11 @@ from django.db import models
 
 from apps.common.models import BaseModel
 
+TARGET_ROLE_CHOICES = [
+    ("handyman", "Handyman"),
+    ("homeowner", "Homeowner"),
+]
+
 
 class UserDevice(BaseModel):
     """
@@ -61,6 +66,12 @@ class Notification(BaseModel):
     title = models.CharField(max_length=200)
     body = models.TextField()
     data = models.JSONField(null=True, blank=True)
+    target_role = models.CharField(
+        max_length=20,
+        choices=TARGET_ROLE_CHOICES,
+        db_index=True,
+        help_text="Target role for this notification",
+    )
     is_read = models.BooleanField(default=False)
     read_at = models.DateTimeField(null=True, blank=True)
 
@@ -69,8 +80,9 @@ class Notification(BaseModel):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["user", "is_read"]),
-            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["user", "target_role", "-created_at"]),
             models.Index(fields=["notification_type"]),
+            models.Index(fields=["target_role"]),
         ]
 
     def __str__(self):

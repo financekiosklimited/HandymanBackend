@@ -354,10 +354,11 @@ class NotificationAdmin(ModelAdmin):
         "title",
         "user_link",
         "type_display",
+        "target_role_display",
         "read_status_display",
         "created_at",
     )
-    list_filter = ("notification_type", "is_read", "created_at")
+    list_filter = ("notification_type", "target_role", "is_read", "created_at")
     search_fields = (
         "user__email",
         "user__first_name",
@@ -380,6 +381,7 @@ class NotificationAdmin(ModelAdmin):
                     "public_id",
                     "user",
                     "notification_type",
+                    "target_role",
                     "title",
                     "body",
                 )
@@ -434,6 +436,16 @@ class NotificationAdmin(ModelAdmin):
         }
         icon = icons.get(obj.notification_type, "🔔")
         return f"{icon} {obj.get_notification_type_display()}"
+
+    @display(description="Target Role")
+    def target_role_display(self, obj):
+        """Display target role with icon."""
+        icons = {
+            "handyman": "🔧",
+            "homeowner": "🏠",
+        }
+        icon = icons.get(obj.target_role, "👤")
+        return f"{icon} {obj.get_target_role_display()}"
 
     @display(description="Read Status")
     def read_status_display(self, obj):

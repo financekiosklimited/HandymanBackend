@@ -67,6 +67,7 @@ class JobApplicationService:
             notification_type="job_application_received",
             title=f"New application for {job.title}",
             body=f"{handyman_profile.display_name} has applied to your job.",
+            target_role="homeowner",
             data={
                 "job_id": str(job.public_id),
                 "application_id": str(application.public_id),
@@ -131,6 +132,7 @@ class JobApplicationService:
                 notification_type="application_rejected",
                 title="Application not selected",
                 body=f"Your application for {job.title} was not selected. The position has been filled.",
+                target_role="handyman",
                 data={
                     "job_id": str(job.public_id),
                     "application_id": str(other_app.public_id),
@@ -143,6 +145,7 @@ class JobApplicationService:
             notification_type="application_approved",
             title="Application approved!",
             body=f"Congratulations! Your application for {job.title} was approved.",
+            target_role="handyman",
             data={
                 "job_id": str(job.public_id),
                 "application_id": str(application.public_id),
@@ -192,6 +195,7 @@ class JobApplicationService:
             notification_type="application_rejected",
             title="Application not selected",
             body=f"Your application for {job.title} was not selected.",
+            target_role="handyman",
             data={
                 "job_id": str(job.public_id),
                 "application_id": str(application.public_id),
@@ -240,6 +244,7 @@ class JobApplicationService:
             notification_type="application_withdrawn",
             title="Application withdrawn",
             body=f"{handyman_profile.display_name} has withdrawn their application for {job.title}.",
+            target_role="homeowner",
             data={
                 "job_id": str(job.public_id),
                 "application_id": str(application.public_id),

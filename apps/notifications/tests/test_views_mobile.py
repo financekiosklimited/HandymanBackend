@@ -31,6 +31,7 @@ class NotificationListViewTests(APITestCase):
             notification_type="job_application_received",
             title="New Application",
             body="You have a new application",
+            target_role="handyman",
             is_read=False,
         )
         Notification.objects.create(
@@ -38,6 +39,7 @@ class NotificationListViewTests(APITestCase):
             notification_type="application_approved",
             title="Application Approved",
             body="Your application was approved",
+            target_role="handyman",
             is_read=True,
         )
 
@@ -70,6 +72,7 @@ class NotificationListViewTests(APITestCase):
                 notification_type="job_application_received",
                 title=f"Notification {i}",
                 body="Test",
+                target_role="handyman",
             )
 
         response = self.client.get(self.url, {"page_size": "10"})
@@ -106,6 +109,7 @@ class NotificationMarkAsReadViewTests(APITestCase):
             notification_type="job_application_received",
             title="Test",
             body="Test body",
+            target_role="handyman",
             is_read=False,
         )
         self.url = (
@@ -155,6 +159,7 @@ class NotificationMarkAllAsReadViewTests(APITestCase):
                 notification_type="job_application_received",
                 title=f"Test {i}",
                 body="Test body",
+                target_role="handyman",
                 is_read=False,
             )
 
@@ -194,6 +199,7 @@ class NotificationUnreadCountViewTests(APITestCase):
                 notification_type="job_application_received",
                 title=f"Test {i}",
                 body="Test body",
+                target_role="handyman",
                 is_read=False,
             )
         Notification.objects.create(
@@ -201,6 +207,7 @@ class NotificationUnreadCountViewTests(APITestCase):
             notification_type="application_approved",
             title="Read",
             body="Test body",
+            target_role="handyman",
             is_read=True,
         )
 
