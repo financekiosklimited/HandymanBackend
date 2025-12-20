@@ -31,7 +31,7 @@ from apps.profiles.models import HandymanProfile, HomeownerProfile
 NUM_HOMEOWNERS = 100
 NUM_HANDYMEN = 100
 NUM_JOBS = 500
-DUMMY_PASSWORD = "123456"
+DUMMY_PASSWORD = "SolutionBank123#"
 
 # Canadian first names
 FIRST_NAMES = [
