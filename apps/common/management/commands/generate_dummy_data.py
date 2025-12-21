@@ -250,7 +250,7 @@ class Command(BaseCommand):
         category_count = JobCategory.objects.filter(is_active=True).count()
         if category_count == 0:
             self.stdout.write("  Seeding job categories...")
-            call_command("seed_categories")
+            call_command("seed_categories", verbosity=0)
             category_count = JobCategory.objects.filter(is_active=True).count()
         self.stdout.write(
             self.style.SUCCESS(f"  JobCategory: {category_count} categories found")
@@ -260,7 +260,7 @@ class Command(BaseCommand):
         city_count = City.objects.filter(is_active=True).count()
         if city_count == 0:
             self.stdout.write("  Seeding cities...")
-            call_command("seed_cities")
+            call_command("seed_cities", verbosity=0)
             city_count = City.objects.filter(is_active=True).count()
         self.stdout.write(self.style.SUCCESS(f"  City: {city_count} cities found"))
 
