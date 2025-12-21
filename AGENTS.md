@@ -55,12 +55,21 @@ All new API endpoints MUST include comprehensive `@extend_schema` decorators wit
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema
 
+from apps.common.openapi import (
+    FORBIDDEN_EXAMPLE,
+    NOT_FOUND_EXAMPLE,
+    UNAUTHORIZED_EXAMPLE,
+    VALIDATION_ERROR_EXAMPLE,
+    pagination_meta_example,
+)
+
 @extend_schema(
     operation_id="mobile_resource_action",
     request=RequestSerializer,  # For POST/PUT/PATCH
     responses={
         200: ResponseSerializer,
         400: OpenApiTypes.OBJECT,
+        401: OpenApiTypes.OBJECT,
         403: OpenApiTypes.OBJECT,
         404: OpenApiTypes.OBJECT,
     },
@@ -101,7 +110,6 @@ from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schem
                 "data": {
                     "public_id": "123e4567-e89b-12d3-a456-426614174000",
                     "field1": "value1",
-                    # ... full response structure
                 },
                 "errors": None,
                 "meta": None,
@@ -109,31 +117,11 @@ from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schem
             response_only=True,
             status_codes=["200"],
         ),
-        # Error response examples
-        OpenApiExample(
-            "Validation Error Response",
-            value={
-                "message": "Validation failed",
-                "data": None,
-                "errors": {
-                    "field1": ["Error message for field1."],
-                },
-                "meta": None,
-            },
-            response_only=True,
-            status_codes=["400"],
-        ),
-        OpenApiExample(
-            "Not Found Response",
-            value={
-                "message": "Resource not found",
-                "data": None,
-                "errors": {"detail": "The requested resource was not found"},
-                "meta": None,
-            },
-            response_only=True,
-            status_codes=["404"],
-        ),
+        # Use reusable error examples from apps.common.openapi
+        VALIDATION_ERROR_EXAMPLE,
+        UNAUTHORIZED_EXAMPLE,
+        FORBIDDEN_EXAMPLE,
+        NOT_FOUND_EXAMPLE,
     ],
 )
 def method(self, request):
@@ -141,19 +129,30 @@ def method(self, request):
 ```
 
 ### For List Endpoints with Pagination
-Include `meta` with pagination info in success response example:
+Use `pagination_meta_example()` helper for consistent pagination meta:
 ```python
-"meta": {
-    "pagination": {
-        "page": 1,
-        "page_size": 20,
-        "total_pages": 3,
-        "total_count": 45,
-        "has_next": True,
-        "has_previous": False,
-    }
-}
+from apps.common.openapi import pagination_meta_example
+
+OpenApiExample(
+    "Success Response",
+    value={
+        "message": "Items retrieved successfully",
+        "data": [...],
+        "errors": None,
+        "meta": pagination_meta_example(total_count=45, total_pages=3, has_next=True),
+    },
+    response_only=True,
+    status_codes=["200"],
+)
 ```
 
+### Reusable OpenAPI Constants (from `apps/common/openapi.py`)
+- `VALIDATION_ERROR_EXAMPLE` - 400 validation error response
+- `UNAUTHORIZED_EXAMPLE` - 401 authentication required response
+- `FORBIDDEN_EXAMPLE` - 403 permission denied response
+- `NOT_FOUND_EXAMPLE` - 404 resource not found response
+- `SERVICE_UNAVAILABLE_EXAMPLE` - 503 service unavailable response
+- `pagination_meta_example(page, page_size, total_count, total_pages, has_next, has_previous)` - Helper function for pagination meta
+
 ### Reference
-See `apps/jobs/views/mobile.py` `ForYouJobListView` and `JobDetailView` for comprehensive examples.
+See `apps/jobs/views/mobile.py` for comprehensive examples (`ForYouJobListView`, `JobDetailView`, `JobListCreateView`).
