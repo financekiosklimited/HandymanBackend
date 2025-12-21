@@ -28,6 +28,7 @@ All APIs return: `{"message": "...", "data": {...}, "errors": null, "meta": null
 - **New APIs/Changes**:
     - Add detailed OpenAPI spec using `drf-spectacular` decorators (`@extend_schema`) - see below.
     - **MUST** write/update unit tests for any new API or code changes.
+    - **MUST** maintain 100% test coverage for any changes.
     - **MUST** run `make format`, `make lint` and `make test` and ensure they pass. If tests fail, adjust the code or tests until they pass.
 
 ## OpenAPI Documentation Guidelines
