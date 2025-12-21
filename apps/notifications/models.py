@@ -80,9 +80,12 @@ class Notification(BaseModel):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["user", "is_read"]),
-            models.Index(fields=["user", "target_role", "-created_at"]),
+            models.Index(
+                fields=["user", "target_role", "-created_at"],
+                name="notificatio_user_id_target_idx",
+            ),
             models.Index(fields=["notification_type"]),
-            models.Index(fields=["target_role"]),
+            models.Index(fields=["target_role"], name="notificatio_target_idx"),
         ]
 
     def __str__(self):

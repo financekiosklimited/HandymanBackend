@@ -63,6 +63,35 @@ class NotificationListViewTests(APITestCase):
         self.assertEqual(len(response.data["data"]), 1)
         self.assertTrue(response.data["data"][0]["is_read"])
 
+    def test_list_notifications_homeowner_path(self):
+        """Test listing notifications via homeowner path."""
+        url = "/api/v1/mobile/homeowner/notifications/"
+        self.user.token_payload["active_role"] = "homeowner"
+        self.user.token_payload["roles"] = ["homeowner"]
+        self.client.force_authenticate(user=self.user)
+
+        # Create homeowner notification
+        Notification.objects.create(
+            user=self.user,
+            notification_type="job_application_received",
+            title="Homeowner Notif",
+            body="Test",
+            target_role="homeowner",
+        )
+        # Create handyman notification (should be filtered out)
+        Notification.objects.create(
+            user=self.user,
+            notification_type="application_approved",
+            title="Handyman Notif",
+            body="Test",
+            target_role="handyman",
+        )
+
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Homeowner Notif")
+
     def test_list_notifications_pagination(self):
         """Test pagination works correctly."""
         # Create more notifications
@@ -79,6 +108,36 @@ class NotificationListViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 10)
         self.assertIn("pagination", response.data["meta"])
+
+    def test_get_role_from_path_none(self):
+        """Test get_role_from_path returns None for unknown path."""
+        from unittest.mock import MagicMock
+
+        from apps.notifications.views.mobile import get_role_from_path
+
+        request = MagicMock()
+        request.path = "/api/v1/mobile/unknown/notifications/"
+        self.assertIsNone(get_role_from_path(request))
+
+    def test_list_notifications_no_role_in_path(self):
+        """Test listing notifications when no role is in the path."""
+        from rest_framework.test import APIRequestFactory, force_authenticate
+
+        from apps.notifications.views.mobile import NotificationListView
+
+        factory = APIRequestFactory()
+        url = "/api/v1/mobile/notifications/"  # Neither handyman nor homeowner
+        request = factory.get(url)
+        request.user = self.user
+
+        force_authenticate(request, user=self.user)
+
+        view = NotificationListView.as_view()
+        response = view(request)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return all notifications for user regardless of target_role (2 from setUp)
+        self.assertEqual(len(response.data["data"]), 2)
 
     def test_list_notifications_unauthenticated(self):
         """Test unauthenticated user cannot list notifications."""
@@ -170,6 +229,32 @@ class NotificationMarkAllAsReadViewTests(APITestCase):
 
         unread_count = Notification.objects.filter(
             user=self.user, is_read=False
+        ).count()
+        self.assertEqual(unread_count, 0)
+
+    def test_mark_all_as_read_homeowner_success(self):
+        """Test successfully marking all notifications as read via homeowner path."""
+        url = "/api/v1/mobile/homeowner/notifications/read-all/"
+        # Re-authenticate for homeowner
+        self.user.token_payload["active_role"] = "homeowner"
+        self.user.token_payload["roles"] = ["homeowner"]
+        self.client.force_authenticate(user=self.user)
+
+        # Create homeowner notification
+        Notification.objects.create(
+            user=self.user,
+            notification_type="job_application_received",
+            title="Test",
+            body="Test",
+            target_role="homeowner",
+            is_read=False,
+        )
+
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        unread_count = Notification.objects.filter(
+            user=self.user, is_read=False, target_role="homeowner"
         ).count()
         self.assertEqual(unread_count, 0)
 

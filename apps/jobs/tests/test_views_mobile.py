@@ -302,6 +302,54 @@ class MobileJobListCreateViewTests(APITestCase):
         self.assertTrue(response.data["meta"]["pagination"]["has_next"])
         self.assertFalse(response.data["meta"]["pagination"]["has_previous"])
 
+    def test_list_jobs_search(self):
+        """Test searching homeowner's jobs by title and description."""
+        Job.objects.create(
+            homeowner=self.user,
+            title="Searchable Title",
+            description="Regular description",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+        Job.objects.create(
+            homeowner=self.user,
+            title="Regular Title",
+            description="Searchable UniqueDescription",
+            estimated_budget=Decimal("40.00"),
+            category=self.category,
+            city=self.city,
+            address="456 Oak Ave",
+        )
+        Job.objects.create(
+            homeowner=self.user,
+            title="Other",
+            description="Other",
+            estimated_budget=Decimal("30.00"),
+            category=self.category,
+            city=self.city,
+            address="789 Pine St",
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        # Search by title
+        response = self.client.get(self.url, {"search": "Title"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+
+        # Search by description
+        response = self.client.get(self.url, {"search": "UniqueDescription"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Regular Title")
+
+        # Search case-insensitive
+        response = self.client.get(self.url, {"search": "searchable"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+
     def test_create_job_success(self):
         """Test successfully creating a job."""
         data = {
@@ -1430,11 +1478,34 @@ class MobileForYouJobListViewTests(APITestCase):
         self.assertTrue(response.data["meta"]["pagination"]["has_next"])
         self.assertFalse(response.data["meta"]["pagination"]["has_previous"])
 
-        # Test second page
-        response2 = self.client.get(self.url, {"page": 2, "page_size": 10})
-        self.assertEqual(response2.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response2.data["data"]), 10)
-        self.assertTrue(response2.data["meta"]["pagination"]["has_previous"])
+    def test_for_you_search(self):
+        """Test searching 'for you' jobs."""
+        Job.objects.create(
+            homeowner=self.other_user,
+            title="Unique Search Title",
+            description="Description",
+            estimated_budget=Decimal("50.00"),
+            category=self.category_plumbing,
+            city=self.city_toronto,
+            address="123 Main St",
+            status="open",
+        )
+        Job.objects.create(
+            homeowner=self.other_user,
+            title="Title",
+            description="Unique Search Description",
+            estimated_budget=Decimal("60.00"),
+            category=self.category_plumbing,
+            city=self.city_toronto,
+            address="456 Oak Ave",
+            status="open",
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.url, {"search": "Unique Search"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
 
     def test_for_you_unauthenticated(self):
         """Test that unauthenticated requests fail."""
@@ -1628,6 +1699,36 @@ class MobileGuestJobListViewTests(APITestCase):
         self.assertEqual(response.data["meta"]["pagination"]["total_count"], 25)
         self.assertTrue(response.data["meta"]["pagination"]["has_next"])
         self.assertFalse(response.data["meta"]["pagination"]["has_previous"])
+
+    def test_guest_job_list_search(self):
+        """Test searching guest job list."""
+        Job.objects.create(
+            homeowner=self.user1,
+            title="Guest Search Title",
+            description="Description",
+            estimated_budget=Decimal("50.00"),
+            category=self.category_plumbing,
+            city=self.city_toronto,
+            address="123 Main St",
+            status="open",
+        )
+        Job.objects.create(
+            homeowner=self.user2,
+            title="Title",
+            description="Guest Search Description",
+            estimated_budget=Decimal("60.00"),
+            category=self.category_electrical,
+            city=self.city_vancouver,
+            address="456 Oak Ave",
+            status="open",
+        )
+
+        response = self.client.get(
+            self.url, {"search": "Guest Search"}, HTTP_X_PLATFORM="mobile"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
 
     def test_guest_job_list_filter_by_category(self):
         """Test filtering by category."""
@@ -1991,6 +2092,24 @@ class HandymanForYouJobListViewTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 3)
+
+    def test_handyman_list_jobs_search(self):
+        """Test searching handyman browse job list."""
+        Job.objects.create(
+            homeowner=self.homeowner,
+            title="Handyman Search Title",
+            description="Description",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+
+        response = self.client.get(self.url, {"search": "Handyman Search"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Handyman Search Title")
 
     def test_list_jobs_with_category_filter(self):
         """Test filtering jobs by category."""

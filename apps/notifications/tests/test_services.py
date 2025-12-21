@@ -5,7 +5,7 @@ from unittest.mock import patch
 from django.test import TestCase
 
 from apps.accounts.models import User
-from apps.notifications.models import Notification, UserDevice
+from apps.notifications.models import BroadcastNotification, Notification, UserDevice
 from apps.notifications.services import NotificationService
 
 
@@ -20,6 +20,92 @@ class NotificationServiceTests(TestCase):
             first_name="Test",
             last_name="User",
         )
+
+    def test_get_target_users_handyman(self):
+        """Test get_target_users for handyman audience."""
+        from apps.accounts.models import UserRole
+
+        UserRole.objects.create(user=self.user, role="handyman")
+        users = self.service.get_target_users("handyman")
+        self.assertEqual(users.count(), 1)
+        self.assertEqual(users.first(), self.user)
+
+    def test_get_target_users_homeowner(self):
+        """Test get_target_users for homeowner audience."""
+        from apps.accounts.models import UserRole
+
+        UserRole.objects.create(user=self.user, role="homeowner")
+        users = self.service.get_target_users("homeowner")
+        self.assertEqual(users.count(), 1)
+        self.assertEqual(users.first(), self.user)
+
+    def test_get_target_users_specific(self):
+        """Test get_target_users for specific audience."""
+        broadcast = BroadcastNotification.objects.create(
+            title="T", body="B", target_audience="specific"
+        )
+        broadcast.target_users.add(self.user)
+        users = self.service.get_target_users("specific", broadcast)
+        self.assertEqual(users.count(), 1)
+        self.assertEqual(users.first(), self.user)
+
+    def test_get_target_users_default(self):
+        """Test get_target_users for default audience."""
+        users = self.service.get_target_users("all")
+        self.assertEqual(users.count(), 1)
+
+    def test_send_broadcast_specific_no_users(self):
+        """Test send_broadcast with specific audience but no users raises ValueError."""
+        broadcast = BroadcastNotification.objects.create(
+            title="T", body="B", target_audience="specific"
+        )
+        with self.assertRaises(ValueError):
+            self.service.send_broadcast(broadcast)
+
+    @patch("apps.notifications.services.firebase_service")
+    def test_send_broadcast_all_audience(self, mock_firebase):
+        """Test send_broadcast with 'all' audience."""
+        from apps.accounts.models import UserRole
+
+        UserRole.objects.create(user=self.user, role="handyman")
+        UserRole.objects.create(user=self.user, role="homeowner")
+
+        broadcast = BroadcastNotification.objects.create(
+            title="T", body="B", target_audience="all", send_push=True
+        )
+
+        # Add device for user
+        UserDevice.objects.create(user=self.user, device_token="t", device_type="ios")
+
+        mock_firebase.send_multicast_notification.return_value = {
+            "success_count": 1,
+            "failure_count": 0,
+        }
+
+        self.service.send_broadcast(broadcast)
+
+        broadcast.refresh_from_db()
+        self.assertEqual(broadcast.status, "completed")
+        self.assertEqual(
+            broadcast.total_recipients, 2
+        )  # 1 for handyman, 1 for homeowner
+        self.assertEqual(Notification.objects.count(), 2)
+
+    def test_send_broadcast_no_devices_branch(self):
+        """Test send_broadcast skip push if no devices (covers branch 103->133)."""
+        broadcast = BroadcastNotification.objects.create(
+            title="T", body="B", target_audience="handyman", send_push=True
+        )
+        from apps.accounts.models import UserRole
+
+        UserRole.objects.create(user=self.user, role="handyman")
+
+        # User has no devices
+        self.service.send_broadcast(broadcast)
+
+        broadcast.refresh_from_db()
+        self.assertEqual(broadcast.status, "completed")
+        self.assertEqual(broadcast.push_success_count, 0)
 
     def test_create_notification(self):
         """Test creating an in-app notification."""

@@ -293,15 +293,17 @@ class JobListCreateView(APIView):
             jobs = jobs.filter(category__public_id=category_id)
         if city_id:
             jobs = jobs.filter(city__public_id=city_id)
+        if status:
             jobs = jobs.filter(status=status)
 
         # Search filter
         search_query = request.query_params.get("search")
         if search_query:
             from django.db.models import Q
+
             jobs = jobs.filter(
-                Q(title__icontains=search_query) | 
-                Q(description__icontains=search_query)
+                Q(title__icontains=search_query)
+                | Q(description__icontains=search_query)
             )
 
         # Pagination
@@ -912,9 +914,10 @@ class ForYouJobListView(APIView):
         search_query = request.query_params.get("search")
         if search_query:
             from django.db.models import Q
+
             jobs = jobs.filter(
-                Q(title__icontains=search_query) | 
-                Q(description__icontains=search_query)
+                Q(title__icontains=search_query)
+                | Q(description__icontains=search_query)
             )
 
         # Calculate distance if coordinates provided
@@ -1179,9 +1182,10 @@ class GuestJobListView(APIView):
         search_query = request.query_params.get("search")
         if search_query:
             from django.db.models import Q
+
             jobs = jobs.filter(
-                Q(title__icontains=search_query) | 
-                Q(description__icontains=search_query)
+                Q(title__icontains=search_query)
+                | Q(description__icontains=search_query)
             )
 
         # Calculate distance if coordinates provided
@@ -1500,9 +1504,10 @@ class HandymanForYouJobListView(APIView):
         search_query = request.query_params.get("search")
         if search_query:
             from django.db.models import Q
+
             jobs = jobs.filter(
-                Q(title__icontains=search_query) | 
-                Q(description__icontains=search_query)
+                Q(title__icontains=search_query)
+                | Q(description__icontains=search_query)
             )
 
         # Get user's location for distance calculation
