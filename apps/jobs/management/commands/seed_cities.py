@@ -134,8 +134,9 @@ class Command(BaseCommand):
             else:
                 updated_count += 1
 
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Successfully seeded cities: {created_count} created, {updated_count} updated"
+        if options["verbosity"] > 0:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Successfully seeded cities: {created_count} created, {updated_count} updated"
+                )
             )
-        )
