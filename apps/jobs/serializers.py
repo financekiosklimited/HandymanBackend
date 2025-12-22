@@ -434,6 +434,20 @@ class JobUpdateSerializer(serializers.Serializer):
         help_text=f"List of tasks/items to be done (max {MAX_JOB_ITEMS} items, {MAX_JOB_ITEM_LENGTH} chars each)",
     )
 
+    images = serializers.ListField(
+        child=serializers.ImageField(use_url=True),
+        required=False,
+        allow_empty=True,
+        max_length=10,
+        help_text="New images to add (max 10 total images allowed)",
+    )
+    images_to_remove = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        help_text="List of image public_ids to remove",
+    )
+
     def validate_estimated_budget(self, value):
         """Validate budget is positive."""
         if value is not None and value <= Decimal("0"):
@@ -490,6 +504,31 @@ class JobUpdateSerializer(serializers.Serializer):
 
         return cleaned_items
 
+    def validate_images(self, value):
+        """Validate images."""
+        if value and len(value) > 10:
+            raise serializers.ValidationError("Maximum 10 images allowed.")
+
+        # Validate each image
+        for image in value:
+            # Check file size (max 5MB)
+            if image.size > 5 * 1024 * 1024:
+                raise serializers.ValidationError(
+                    f"Image '{image.name}' exceeds maximum size of 5MB."
+                )
+
+            # Check file type
+            allowed_types = ["image/jpeg", "image/jpg", "image/png"]
+            if (
+                hasattr(image, "content_type")
+                and image.content_type not in allowed_types
+            ):
+                raise serializers.ValidationError(
+                    f"Image '{image.name}' must be a JPEG or PNG file."
+                )
+
+        return value
+
     def validate(self, attrs):
         """Cross-field validation."""
         # Get current instance values for lat/lng if not provided in update
@@ -535,6 +574,34 @@ class JobUpdateSerializer(serializers.Serializer):
         # Handle city if provided
         if "city_id" in validated_data:
             instance.city = validated_data.pop("city_id")
+
+        # Handle images
+        images = validated_data.pop("images", [])
+        images_to_remove = validated_data.pop("images_to_remove", [])
+
+        # Delete removed images
+        if images_to_remove:
+            JobImage.objects.filter(job=instance, public_id__in=images_to_remove).delete()
+
+        # Add new images
+        if images:
+            from django.db.models import Max
+
+            # Calculate start order
+            current_max_order = (
+                instance.images.aggregate(Max("order"))["order__max"]
+                if instance.images.exists()
+                else -1
+            )
+            if current_max_order is None:
+                current_max_order = -1
+                
+            start_order = current_max_order + 1
+
+            for idx, image_file in enumerate(images):
+                JobImage.objects.create(
+                    job=instance, image=image_file, order=start_order + idx
+                )
 
         # Update remaining fields
         for field, value in validated_data.items():
