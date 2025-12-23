@@ -150,6 +150,7 @@ class NotificationService:
         body: str,
         target_role: str,
         data: dict | None = None,
+        triggered_by=None,
     ) -> Notification:
         """
         Create an in-app notification.
@@ -161,6 +162,7 @@ class NotificationService:
             body: Notification body
             target_role: Target role for the notification (handyman or homeowner)
             data: Optional data payload
+            triggered_by: User who triggered this notification (optional)
 
         Returns:
             Notification: Created notification
@@ -172,6 +174,7 @@ class NotificationService:
             body=body,
             target_role=target_role,
             data=data,
+            triggered_by=triggered_by,
         )
         logger.info(
             f"Created notification {notification.public_id} for user {user.email}"
@@ -229,6 +232,7 @@ class NotificationService:
         body: str,
         target_role: str,
         data: dict | None = None,
+        triggered_by=None,
     ) -> Notification:
         """
         Create an in-app notification and send push notification.
@@ -240,6 +244,7 @@ class NotificationService:
             body: Notification body
             target_role: Target role for the notification (handyman or homeowner)
             data: Optional data payload
+            triggered_by: User who triggered this notification (optional)
 
         Returns:
             Notification: Created notification
@@ -252,6 +257,7 @@ class NotificationService:
             body=body,
             target_role=target_role,
             data=data,
+            triggered_by=triggered_by,
         )
 
         # Send push notification

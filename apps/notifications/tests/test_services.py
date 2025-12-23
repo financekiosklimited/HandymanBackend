@@ -125,6 +125,24 @@ class NotificationServiceTests(TestCase):
         self.assertEqual(notification.target_role, "homeowner")
         self.assertEqual(notification.data, {"job_id": "123"})
         self.assertFalse(notification.is_read)
+        self.assertIsNone(notification.triggered_by)
+
+    def test_create_notification_with_triggered_by(self):
+        """Test creating a notification with triggered_by user."""
+        triggered_by_user = User.objects.create_user(
+            email="trigger@example.com", password="password123"
+        )
+        notification = self.service.create_notification(
+            user=self.user,
+            notification_type="job_application_received",
+            title="New Application",
+            body="You have a new job application.",
+            target_role="homeowner",
+            data={"job_id": "123"},
+            triggered_by=triggered_by_user,
+        )
+
+        self.assertEqual(notification.triggered_by, triggered_by_user)
 
     @patch("apps.notifications.services.firebase_service")
     def test_send_push_notification_success(self, mock_firebase):
@@ -198,6 +216,9 @@ class NotificationServiceTests(TestCase):
 
     def test_create_and_send_notification(self):
         """Test create_and_send_notification utility."""
+        triggered_by_user = User.objects.create_user(
+            email="trigger@example.com", password="password123"
+        )
         with patch.object(self.service, "create_notification") as mock_create:
             with patch.object(self.service, "send_push_notification") as mock_send:
                 self.service.create_and_send_notification(
@@ -207,6 +228,7 @@ class NotificationServiceTests(TestCase):
                     body="Body",
                     target_role="homeowner",
                     data={"d": "v"},
+                    triggered_by=triggered_by_user,
                 )
 
                 mock_create.assert_called_once_with(
@@ -216,6 +238,7 @@ class NotificationServiceTests(TestCase):
                     body="Body",
                     target_role="homeowner",
                     data={"d": "v"},
+                    triggered_by=triggered_by_user,
                 )
                 mock_send.assert_called_once_with(
                     user=self.user,

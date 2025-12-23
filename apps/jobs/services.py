@@ -72,6 +72,7 @@ class JobApplicationService:
                 "job_id": str(job.public_id),
                 "application_id": str(application.public_id),
             },
+            triggered_by=handyman,
         )
 
         logger.info(
@@ -137,6 +138,7 @@ class JobApplicationService:
                     "job_id": str(job.public_id),
                     "application_id": str(other_app.public_id),
                 },
+                triggered_by=homeowner,
             )
 
         # Notify approved handyman
@@ -150,6 +152,7 @@ class JobApplicationService:
                 "job_id": str(job.public_id),
                 "application_id": str(application.public_id),
             },
+            triggered_by=homeowner,
         )
 
         logger.info(
@@ -200,6 +203,7 @@ class JobApplicationService:
                 "job_id": str(job.public_id),
                 "application_id": str(application.public_id),
             },
+            triggered_by=homeowner,
         )
 
         logger.info(f"Rejected application {application.public_id}")
@@ -249,6 +253,7 @@ class JobApplicationService:
                 "job_id": str(job.public_id),
                 "application_id": str(application.public_id),
             },
+            triggered_by=handyman,
         )
 
         logger.info(f"Withdrew application {application.public_id}")

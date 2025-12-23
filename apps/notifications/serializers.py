@@ -12,6 +12,8 @@ class NotificationSerializer(serializers.ModelSerializer):
     Serializer for notification (read-only).
     """
 
+    thumbnail = serializers.SerializerMethodField()
+
     class Meta:
         model = Notification
         fields = [
@@ -19,6 +21,7 @@ class NotificationSerializer(serializers.ModelSerializer):
             "notification_type",
             "title",
             "body",
+            "thumbnail",
             "data",
             "target_role",
             "is_read",
@@ -27,6 +30,43 @@ class NotificationSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = fields
+
+    def get_thumbnail(self, obj):
+        """
+        Return thumbnail URL:
+        - If admin_broadcast: return system icon placeholder (!)
+        - If triggered by user with avatar: return avatar URL
+        - If triggered by user without avatar: return initials placeholder
+        - Otherwise: return system icon placeholder (!)
+        """
+
+        # Admin/system notification
+        if obj.notification_type == "admin_broadcast":
+            return "https://placehold.co/300x300?text=!"
+
+        # User-triggered notification
+        if obj.triggered_by:
+            # Get appropriate profile based on target_role
+            # target_role=homeowner means triggered by handyman
+            # target_role=handyman means triggered by homeowner
+            if obj.target_role == "homeowner":
+                profile = getattr(obj.triggered_by, "handyman_profile", None)
+            else:
+                profile = getattr(obj.triggered_by, "homeowner_profile", None)
+
+            # Return avatar if available
+            if profile and profile.avatar_url:
+                return profile.avatar_url
+
+            # Return initials placeholder
+            if profile and profile.display_name:
+                initials = "".join(
+                    [word[0].upper() for word in profile.display_name.split()[:2]]
+                )
+                return f"https://placehold.co/300x300?text={initials}"
+
+        # Fallback to system icon placeholder
+        return "https://placehold.co/300x300?text=!"
 
 
 class UserDeviceSerializer(serializers.ModelSerializer):

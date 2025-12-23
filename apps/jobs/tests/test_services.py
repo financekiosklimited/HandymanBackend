@@ -69,6 +69,8 @@ class JobApplicationServiceTests(TestCase):
         self.assertEqual(application.handyman, self.handyman)
         self.assertEqual(application.status, "pending")
         mock_notify.assert_called_once()
+        call_kwargs = mock_notify.call_args.kwargs
+        self.assertEqual(call_kwargs["triggered_by"], self.handyman)
 
     def test_apply_to_job_invalid_status(self):
         """Test applying to job with invalid status."""
@@ -129,6 +131,9 @@ class JobApplicationServiceTests(TestCase):
         )
         other_app = self.service.apply_to_job(other_handy, self.job)
 
+        # Reset mock to clear calls from apply_to_job
+        mock_notify.reset_mock()
+
         self.service.approve_application(self.homeowner, application)
 
         application.refresh_from_db()
@@ -140,7 +145,10 @@ class JobApplicationServiceTests(TestCase):
         other_app.refresh_from_db()
         self.assertEqual(other_app.status, "rejected")
 
-        self.assertTrue(mock_notify.called)
+        self.assertEqual(mock_notify.call_count, 2)
+        # Check both calls have triggered_by=homeowner
+        for call in mock_notify.call_args_list:
+            self.assertEqual(call.kwargs["triggered_by"], self.homeowner)
 
     def test_approve_application_wrong_owner(self):
         """Test approving someone else's job application."""
@@ -168,11 +176,16 @@ class JobApplicationServiceTests(TestCase):
         """Test successful application rejection."""
         application = self.service.apply_to_job(self.handyman, self.job)
 
+        # Reset mock to clear calls from apply_to_job
+        mock_notify.reset_mock()
+
         self.service.reject_application(self.homeowner, application)
 
         application.refresh_from_db()
         self.assertEqual(application.status, "rejected")
-        mock_notify.assert_called()
+        mock_notify.assert_called_once()
+        call_kwargs = mock_notify.call_args.kwargs
+        self.assertEqual(call_kwargs["triggered_by"], self.homeowner)
 
     def test_reject_application_wrong_owner(self):
         """Test rejecting someone else's job application."""
@@ -200,11 +213,16 @@ class JobApplicationServiceTests(TestCase):
         """Test successful application withdrawal."""
         application = self.service.apply_to_job(self.handyman, self.job)
 
+        # Reset mock to clear calls from apply_to_job
+        mock_notify.reset_mock()
+
         self.service.withdraw_application(self.handyman, application)
 
         application.refresh_from_db()
         self.assertEqual(application.status, "withdrawn")
-        mock_notify.assert_called()
+        mock_notify.assert_called_once()
+        call_kwargs = mock_notify.call_args.kwargs
+        self.assertEqual(call_kwargs["triggered_by"], self.handyman)
 
     def test_withdraw_application_wrong_handyman(self):
         """Test withdrawing someone else's application."""

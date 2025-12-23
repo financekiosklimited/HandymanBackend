@@ -97,6 +97,26 @@ class NotificationModelTest(TestCase):
         self.assertEqual(notification.data, {"job_id": "123"})
         self.assertFalse(notification.is_read)
         self.assertIsNone(notification.read_at)
+        self.assertIsNone(notification.triggered_by)
+
+    def test_create_notification_with_triggered_by(self):
+        """Test creating a notification with triggered_by user."""
+        triggered_by_user = User.objects.create_user(
+            email="trigger@test.com", password="testpass123"
+        )
+        notification = Notification.objects.create(
+            user=self.user,
+            notification_type="job_application_received",
+            title="New Application",
+            body="You have a new job application",
+            target_role="homeowner",
+            data={"job_id": "123"},
+            triggered_by=triggered_by_user,
+        )
+
+        self.assertIsNotNone(notification.public_id)
+        self.assertEqual(notification.user, self.user)
+        self.assertEqual(notification.triggered_by, triggered_by_user)
 
     def test_notification_type_choices(self):
         """Test notification type choices."""
