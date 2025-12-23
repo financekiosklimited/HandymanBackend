@@ -1356,6 +1356,305 @@ class JobUpdateSerializerValidationTests(TestCase):
         )
         self.assertTrue(serializer.is_valid())
 
+    def test_update_add_images_success(self):
+        """Test adding images to a job with no existing images succeeds."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        image = PILImage.new("RGB", (100, 100), color="red")
+        image_file = BytesIO()
+        image.save(image_file, format="JPEG")
+        image_file.seek(0)
+        uploaded_image = SimpleUploadedFile(
+            "test.jpg", image_file.read(), content_type="image/jpeg"
+        )
+
+        data = {"images": [uploaded_image]}
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        updated_job = serializer.save()
+
+        self.assertEqual(updated_job.images.count(), 1)
+        self.assertEqual(updated_job.images.first().order, 0)
+
+    def test_update_remove_images_success(self):
+        """Test removing existing images works correctly."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # Create an existing image
+        image = PILImage.new("RGB", (100, 100), color="blue")
+        image_file = BytesIO()
+        image.save(image_file, format="JPEG")
+        image_file.seek(0)
+        uploaded_image = SimpleUploadedFile(
+            "existing.jpg", image_file.read(), content_type="image/jpeg"
+        )
+        job_image = JobImage.objects.create(job=self.job, image=uploaded_image, order=0)
+
+        self.assertEqual(self.job.images.count(), 1)
+
+        data = {"images_to_remove": [str(job_image.public_id)]}
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        updated_job = serializer.save()
+
+        self.assertEqual(updated_job.images.count(), 0)
+
+    def test_update_add_and_remove_images(self):
+        """Test adding and removing images in same request works."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # Create existing images
+        for i in range(3):
+            image = PILImage.new("RGB", (100, 100), color="blue")
+            image_file = BytesIO()
+            image.save(image_file, format="JPEG")
+            image_file.seek(0)
+            uploaded_image = SimpleUploadedFile(
+                f"existing{i}.jpg", image_file.read(), content_type="image/jpeg"
+            )
+            JobImage.objects.create(job=self.job, image=uploaded_image, order=i)
+
+        self.assertEqual(self.job.images.count(), 3)
+        image_to_remove = self.job.images.first()
+
+        # Create new image to add
+        new_image = PILImage.new("RGB", (100, 100), color="green")
+        new_image_file = BytesIO()
+        new_image.save(new_image_file, format="JPEG")
+        new_image_file.seek(0)
+        new_uploaded_image = SimpleUploadedFile(
+            "new.jpg", new_image_file.read(), content_type="image/jpeg"
+        )
+
+        data = {
+            "images": [new_uploaded_image],
+            "images_to_remove": [str(image_to_remove.public_id)],
+        }
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        updated_job = serializer.save()
+
+        # 3 - 1 + 1 = 3
+        self.assertEqual(updated_job.images.count(), 3)
+
+    def test_update_images_total_count_exceeded(self):
+        """Test adding images that would exceed 10 total fails validation."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # Create 8 existing images
+        for i in range(8):
+            image = PILImage.new("RGB", (100, 100), color="blue")
+            image_file = BytesIO()
+            image.save(image_file, format="JPEG")
+            image_file.seek(0)
+            uploaded_image = SimpleUploadedFile(
+                f"existing{i}.jpg", image_file.read(), content_type="image/jpeg"
+            )
+            JobImage.objects.create(job=self.job, image=uploaded_image, order=i)
+
+        self.assertEqual(self.job.images.count(), 8)
+
+        # Try to add 5 more (8 + 5 = 13 > 10)
+        new_images = []
+        for i in range(5):
+            new_image = PILImage.new("RGB", (100, 100), color="green")
+            new_image_file = BytesIO()
+            new_image.save(new_image_file, format="JPEG")
+            new_image_file.seek(0)
+            new_images.append(
+                SimpleUploadedFile(
+                    f"new{i}.jpg", new_image_file.read(), content_type="image/jpeg"
+                )
+            )
+
+        data = {"images": new_images}
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("images", serializer.errors)
+        self.assertIn("Maximum 10 images allowed", str(serializer.errors["images"]))
+
+    def test_update_images_with_removal_under_limit(self):
+        """Test removing some + adding some that stays under 10 succeeds."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # Create 9 existing images
+        for i in range(9):
+            image = PILImage.new("RGB", (100, 100), color="blue")
+            image_file = BytesIO()
+            image.save(image_file, format="JPEG")
+            image_file.seek(0)
+            uploaded_image = SimpleUploadedFile(
+                f"existing{i}.jpg", image_file.read(), content_type="image/jpeg"
+            )
+            JobImage.objects.create(job=self.job, image=uploaded_image, order=i)
+
+        self.assertEqual(self.job.images.count(), 9)
+
+        # Remove 2, add 3: 9 - 2 + 3 = 10 (exactly at limit)
+        images_to_remove = [str(img.public_id) for img in self.job.images.all()[:2]]
+
+        new_images = []
+        for i in range(3):
+            new_image = PILImage.new("RGB", (100, 100), color="green")
+            new_image_file = BytesIO()
+            new_image.save(new_image_file, format="JPEG")
+            new_image_file.seek(0)
+            new_images.append(
+                SimpleUploadedFile(
+                    f"new{i}.jpg", new_image_file.read(), content_type="image/jpeg"
+                )
+            )
+
+        data = {"images": new_images, "images_to_remove": images_to_remove}
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        updated_job = serializer.save()
+
+        self.assertEqual(updated_job.images.count(), 10)
+
+    def test_update_images_invalid_size(self):
+        """Test image over 5MB fails validation."""
+        import random
+
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # Create a real image that's larger than 5MB
+        # Use random pixels to prevent compression
+        large_image = PILImage.new("RGB", (2000, 2000))
+        pixels = large_image.load()
+        for i in range(2000):
+            for j in range(2000):
+                pixels[i, j] = (
+                    random.randint(0, 255),
+                    random.randint(0, 255),
+                    random.randint(0, 255),
+                )
+
+        large_image_file = BytesIO()
+        large_image.save(large_image_file, format="PNG")
+        large_image_file.seek(0)
+
+        # Check that our test image is actually > 5MB
+        image_size = len(large_image_file.getvalue())
+        self.assertGreater(image_size, 5 * 1024 * 1024, "Test image should be > 5MB")
+
+        large_file = SimpleUploadedFile(
+            "large.png", large_image_file.read(), content_type="image/png"
+        )
+
+        data = {"images": [large_file]}
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("images", serializer.errors)
+        self.assertIn("exceeds maximum size of 5MB", str(serializer.errors["images"]))
+
+    def test_update_images_invalid_type(self):
+        """Test non-JPEG/PNG image fails validation."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # Create image with invalid content type
+        image = PILImage.new("RGB", (100, 100), color="red")
+        image_file = BytesIO()
+        image.save(image_file, format="JPEG")
+        image_file.seek(0)
+        invalid_type_image = SimpleUploadedFile(
+            "test.bmp", image_file.read(), content_type="image/bmp"
+        )
+
+        serializer = JobUpdateSerializer(
+            self.job, data={}, partial=True, context={"request": self.request}
+        )
+        # Manually call validate_images to test content type validation
+        from rest_framework import serializers as drf_serializers
+
+        with self.assertRaises(drf_serializers.ValidationError) as cm:
+            serializer.validate_images([invalid_type_image])
+        self.assertIn("must be a JPEG or PNG file", str(cm.exception))
+
+    def test_update_remove_nonexistent_images(self):
+        """Test removing UUIDs that don't exist doesn't cause errors."""
+        import uuid
+
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # Create one existing image
+        image = PILImage.new("RGB", (100, 100), color="blue")
+        image_file = BytesIO()
+        image.save(image_file, format="JPEG")
+        image_file.seek(0)
+        uploaded_image = SimpleUploadedFile(
+            "existing.jpg", image_file.read(), content_type="image/jpeg"
+        )
+        JobImage.objects.create(job=self.job, image=uploaded_image, order=0)
+
+        self.assertEqual(self.job.images.count(), 1)
+
+        # Try to remove a non-existent UUID
+        data = {"images_to_remove": [str(uuid.uuid4())]}
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        updated_job = serializer.save()
+
+        # Image count should remain unchanged
+        self.assertEqual(updated_job.images.count(), 1)
+
+    def test_update_images_order_calculation(self):
+        """Test new images get correct order values after existing images."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # Create existing images with orders 0, 1, 2
+        for i in range(3):
+            image = PILImage.new("RGB", (100, 100), color="blue")
+            image_file = BytesIO()
+            image.save(image_file, format="JPEG")
+            image_file.seek(0)
+            uploaded_image = SimpleUploadedFile(
+                f"existing{i}.jpg", image_file.read(), content_type="image/jpeg"
+            )
+            JobImage.objects.create(job=self.job, image=uploaded_image, order=i)
+
+        # Add 2 new images
+        new_images = []
+        for i in range(2):
+            new_image = PILImage.new("RGB", (100, 100), color="green")
+            new_image_file = BytesIO()
+            new_image.save(new_image_file, format="JPEG")
+            new_image_file.seek(0)
+            new_images.append(
+                SimpleUploadedFile(
+                    f"new{i}.jpg", new_image_file.read(), content_type="image/jpeg"
+                )
+            )
+
+        data = {"images": new_images}
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        updated_job = serializer.save()
+
+        self.assertEqual(updated_job.images.count(), 5)
+
+        # Check that new images have orders 3 and 4
+        orders = list(
+            updated_job.images.order_by("order").values_list("order", flat=True)
+        )
+        self.assertEqual(orders, [0, 1, 2, 3, 4])
+
 
 class JobApplicationCreateSerializerTests(TestCase):
     """Test cases for JobApplicationCreateSerializer."""

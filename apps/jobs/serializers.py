@@ -506,9 +506,6 @@ class JobUpdateSerializer(serializers.Serializer):
 
     def validate_images(self, value):
         """Validate images."""
-        if value and len(value) > 10:
-            raise serializers.ValidationError("Maximum 10 images allowed.")
-
         # Validate each image
         for image in value:
             # Check file size (max 5MB)
@@ -563,6 +560,27 @@ class JobUpdateSerializer(serializers.Serializer):
                         {"longitude": "Longitude must be between -180 and 180."}
                     )
 
+        # Validate total image count after add/remove
+        images = attrs.get("images", [])
+        images_to_remove = attrs.get("images_to_remove", [])
+
+        if images or images_to_remove:
+            current_count = instance.images.count() if instance else 0
+            removed_count = (
+                instance.images.filter(public_id__in=images_to_remove).count()
+                if instance and images_to_remove
+                else 0
+            )
+            new_total = current_count - removed_count + len(images)
+
+            if new_total > 10:
+                raise serializers.ValidationError(
+                    {
+                        "images": f"Maximum 10 images allowed. You have {current_count} images, "
+                        f"removing {removed_count}, adding {len(images)} would result in {new_total}."
+                    }
+                )
+
         return attrs
 
     def update(self, instance, validated_data):
@@ -579,29 +597,31 @@ class JobUpdateSerializer(serializers.Serializer):
         images = validated_data.pop("images", [])
         images_to_remove = validated_data.pop("images_to_remove", [])
 
-        # Delete removed images
-        if images_to_remove:
-            JobImage.objects.filter(job=instance, public_id__in=images_to_remove).delete()
+        # Wrap image operations in a transaction for data integrity
+        with transaction.atomic():
+            # Delete removed images
+            if images_to_remove:
+                JobImage.objects.filter(
+                    job=instance, public_id__in=images_to_remove
+                ).delete()
 
-        # Add new images
-        if images:
-            from django.db.models import Max
+            # Add new images
+            if images:
+                from django.db.models import Max
 
-            # Calculate start order
-            current_max_order = (
-                instance.images.aggregate(Max("order"))["order__max"]
-                if instance.images.exists()
-                else -1
-            )
-            if current_max_order is None:
-                current_max_order = -1
-                
-            start_order = current_max_order + 1
-
-            for idx, image_file in enumerate(images):
-                JobImage.objects.create(
-                    job=instance, image=image_file, order=start_order + idx
+                # Calculate start order
+                current_max_order = (
+                    instance.images.aggregate(Max("order"))["order__max"]
+                    if instance.images.exists()
+                    else -1
                 )
+
+                start_order = current_max_order + 1
+
+                for idx, image_file in enumerate(images):
+                    JobImage.objects.create(
+                        job=instance, image=image_file, order=start_order + idx
+                    )
 
         # Update remaining fields
         for field, value in validated_data.items():
