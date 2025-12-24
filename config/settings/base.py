@@ -446,6 +446,11 @@ UNFOLD = {
                         "icon": "phone",
                         "link": lambda request: "/admin/common/countryphonecode/",
                     },
+                    {
+                        "title": "Handyman Categories",
+                        "icon": "category",
+                        "link": lambda request: "/admin/profiles/handymancategory/",
+                    },
                 ],
             },
             {
