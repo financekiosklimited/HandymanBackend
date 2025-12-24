@@ -53,8 +53,8 @@ class WebHomeownerProfileViewTests(APITestCase):
         self.client.force_authenticate(user=self.user)
         data = {
             "display_name": "Updated Name",
-            "phone_number": "+9876543210",
             "address": "456 Oak Ave",
+            "date_of_birth": "1990-01-01",
         }
         response = self.client.put(self.url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -63,8 +63,10 @@ class WebHomeownerProfileViewTests(APITestCase):
         # Verify update in database
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.display_name, "Updated Name")
-        self.assertEqual(self.profile.phone_number, "+9876543210")
         self.assertEqual(self.profile.address, "456 Oak Ave")
+        self.assertEqual(self.profile.date_of_birth.isoformat(), "1990-01-01")
+        # phone_number should be ignored/unchanged
+        self.assertEqual(self.profile.phone_number, "+1234567890")
 
     def test_update_profile_partial(self):
         """Test partial update of homeowner profile."""
@@ -178,8 +180,9 @@ class WebHandymanProfileViewTests(APITestCase):
         self.client.force_authenticate(user=self.user)
         data = {
             "display_name": "Updated Handyman",
-            "phone_number": "+9876543210",
             "address": "123 New St",
+            "job_title": "Master Electrician",
+            "date_of_birth": "1990-01-01",
         }
         response = self.client.put(self.url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -188,8 +191,11 @@ class WebHandymanProfileViewTests(APITestCase):
         # Verify update in database
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.display_name, "Updated Handyman")
-        self.assertEqual(self.profile.phone_number, "+9876543210")
         self.assertEqual(self.profile.address, "123 New St")
+        self.assertEqual(self.profile.job_title, "Master Electrician")
+        self.assertEqual(self.profile.date_of_birth.isoformat(), "1990-01-01")
+        # phone_number should be ignored/unchanged
+        self.assertEqual(self.profile.phone_number, "+1234567890")
 
     def test_update_profile_partial(self):
         """Test partial update of handyman profile."""

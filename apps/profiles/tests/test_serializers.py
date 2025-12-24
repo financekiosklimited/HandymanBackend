@@ -5,7 +5,7 @@ from decimal import Decimal
 from django.test import TestCase
 
 from apps.accounts.models import User, UserRole
-from apps.profiles.models import HandymanProfile, HomeownerProfile
+from apps.profiles.models import HandymanCategory, HandymanProfile, HomeownerProfile
 from apps.profiles.serializers import (
     HandymanProfileSerializer,
     HandymanProfileUpdateSerializer,
@@ -36,8 +36,10 @@ class HomeownerProfileSerializerTests(TestCase):
         """Test serializer contains expected fields."""
         serializer = HomeownerProfileSerializer(self.profile)
         self.assertIn("display_name", serializer.data)
+        self.assertIn("email", serializer.data)
         self.assertIn("phone_number", serializer.data)
         self.assertIn("address", serializer.data)
+        self.assertIn("date_of_birth", serializer.data)
         self.assertIn("created_at", serializer.data)
         self.assertIn("updated_at", serializer.data)
 
@@ -45,6 +47,7 @@ class HomeownerProfileSerializerTests(TestCase):
         """Test serializer returns correct field values."""
         serializer = HomeownerProfileSerializer(self.profile)
         self.assertEqual(serializer.data["display_name"], "Test Homeowner")
+        self.assertEqual(serializer.data["email"], "homeowner@example.com")
         self.assertEqual(serializer.data["phone_number"], "+1234567890")
         self.assertEqual(serializer.data["address"], "123 Main St")
 
@@ -81,10 +84,30 @@ class HomeownerProfileUpdateSerializerTests(TestCase):
         """Test update serializer with valid data."""
         data = {
             "display_name": "Updated Name",
-            "phone_number": "+9876543210",
             "address": "456 Oak Ave",
+            "date_of_birth": "1990-01-01",
         }
         serializer = HomeownerProfileUpdateSerializer(self.profile, data=data)
+        self.assertTrue(serializer.is_valid())
+
+    def test_update_serializer_age_validation(self):
+        """Test update serializer age validation."""
+        from datetime import date
+
+        today = date.today()
+        under_18 = date(today.year - 17, today.month, today.day)
+        data = {"date_of_birth": under_18.isoformat()}
+        serializer = HomeownerProfileUpdateSerializer(
+            self.profile, data=data, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("date_of_birth", serializer.errors)
+
+        over_18 = date(today.year - 19, today.month, today.day)
+        data = {"date_of_birth": over_18.isoformat()}
+        serializer = HomeownerProfileUpdateSerializer(
+            self.profile, data=data, partial=True
+        )
         self.assertTrue(serializer.is_valid())
 
     def test_update_serializer_partial_update(self):
@@ -97,13 +120,30 @@ class HomeownerProfileUpdateSerializerTests(TestCase):
         serializer.save()
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.display_name, "Partial Update")
-        # Other fields should remain unchanged
+        # phone_number should be read-only (not in fields)
+        self.assertEqual(self.profile.phone_number, "+1234567890")
+
+    def test_update_serializer_phone_number_is_ignored(self):
+        """Test update serializer ignores phone_number if provided."""
+        data = {"display_name": "New Name", "phone_number": "+9999999999"}
+        serializer = HomeownerProfileUpdateSerializer(self.profile, data=data)
+        self.assertTrue(serializer.is_valid())
+        serializer.save()
+        self.profile.refresh_from_db()
         self.assertEqual(self.profile.phone_number, "+1234567890")
 
     def test_update_serializer_empty_optional_fields(self):
         """Test update serializer allows empty optional fields."""
         data = {"display_name": "Name", "phone_number": "", "address": ""}
         serializer = HomeownerProfileUpdateSerializer(self.profile, data=data)
+        self.assertTrue(serializer.is_valid())
+
+    def test_update_serializer_null_date_of_birth(self):
+        """Test update serializer allows null date_of_birth (covers else branch)."""
+        data = {"display_name": "Name", "date_of_birth": None}
+        serializer = HomeownerProfileUpdateSerializer(
+            self.profile, data=data, partial=True
+        )
         self.assertTrue(serializer.is_valid())
 
 
@@ -116,20 +156,30 @@ class HandymanProfileSerializerTests(TestCase):
             email="handyman@example.com", password="testpass123"
         )
         UserRole.objects.create(user=self.user, role="handyman")
+        self.category = HandymanCategory.objects.create(name="Electrical")
         self.profile = HandymanProfile.objects.create(
             user=self.user,
             display_name="Test Handyman",
             rating=Decimal("4.50"),
             phone_number="+1234567890",
             address="789 Pine Rd",
+            job_title="Electrician",
+            category=self.category,
+            id_number="ID123",
+            date_of_birth="1990-01-01",
         )
 
     def test_serializer_contains_expected_fields(self):
         """Test serializer contains expected fields."""
         serializer = HandymanProfileSerializer(self.profile)
         self.assertIn("display_name", serializer.data)
+        self.assertIn("email", serializer.data)
         self.assertIn("rating", serializer.data)
         self.assertIn("hourly_rate", serializer.data)
+        self.assertIn("job_title", serializer.data)
+        self.assertIn("category", serializer.data)
+        self.assertIn("id_number", serializer.data)
+        self.assertIn("date_of_birth", serializer.data)
         self.assertIn("latitude", serializer.data)
         self.assertIn("longitude", serializer.data)
         self.assertIn("is_active", serializer.data)
@@ -152,8 +202,13 @@ class HandymanProfileSerializerTests(TestCase):
 
         serializer = HandymanProfileSerializer(self.profile)
         self.assertEqual(serializer.data["display_name"], "Test Handyman")
+        self.assertEqual(serializer.data["email"], "handyman@example.com")
         self.assertEqual(serializer.data["rating"], "4.50")
         self.assertEqual(serializer.data["hourly_rate"], "75.00")
+        self.assertEqual(serializer.data["job_title"], "Electrician")
+        self.assertEqual(serializer.data["category"]["name"], "Electrical")
+        self.assertEqual(serializer.data["id_number"], "ID123")
+        self.assertEqual(serializer.data["date_of_birth"], "1990-01-01")
         self.assertEqual(serializer.data["latitude"], "43.651070")
         self.assertEqual(serializer.data["longitude"], "-79.347015")
         self.assertTrue(serializer.data["is_active"])
@@ -192,6 +247,7 @@ class HandymanProfileUpdateSerializerTests(TestCase):
             email="handyman@example.com", password="testpass123"
         )
         UserRole.objects.create(user=self.user, role="handyman")
+        self.category = HandymanCategory.objects.create(name="Electrical")
         self.profile = HandymanProfile.objects.create(
             user=self.user,
             display_name="Test Handyman",
@@ -204,11 +260,30 @@ class HandymanProfileUpdateSerializerTests(TestCase):
         """Test update serializer with valid data."""
         data = {
             "display_name": "Updated Handyman",
-            "phone_number": "+9876543210",
             "address": "123 New St",
+            "job_title": "Master Electrician",
+            "category_id": str(self.category.public_id),
+            "date_of_birth": "1990-01-01",
         }
         serializer = HandymanProfileUpdateSerializer(self.profile, data=data)
         self.assertTrue(serializer.is_valid())
+        serializer.save()
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.job_title, "Master Electrician")
+        self.assertEqual(self.profile.category, self.category)
+
+    def test_update_serializer_age_validation(self):
+        """Test update serializer age validation."""
+        from datetime import date
+
+        today = date.today()
+        under_18 = date(today.year - 17, today.month, today.day)
+        data = {"date_of_birth": under_18.isoformat()}
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile, data=data, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("date_of_birth", serializer.errors)
 
     def test_update_serializer_partial_update(self):
         """Test update serializer with partial data."""
@@ -220,7 +295,7 @@ class HandymanProfileUpdateSerializerTests(TestCase):
         serializer.save()
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.display_name, "Partial Update")
-        # Other fields should remain unchanged
+        # phone_number should be read-only (not in fields)
         self.assertEqual(self.profile.phone_number, "+1234567890")
 
     def test_update_serializer_does_not_include_rating(self):
@@ -237,8 +312,16 @@ class HandymanProfileUpdateSerializerTests(TestCase):
 
     def test_update_serializer_empty_optional_fields(self):
         """Test update serializer allows empty optional fields."""
-        data = {"display_name": "Name", "phone_number": "", "address": ""}
+        data = {"display_name": "Name", "address": ""}
         serializer = HandymanProfileUpdateSerializer(self.profile, data=data)
+        self.assertTrue(serializer.is_valid())
+
+    def test_update_serializer_null_date_of_birth(self):
+        """Test update serializer allows null date_of_birth (covers else branch)."""
+        data = {"display_name": "Name", "date_of_birth": None}
+        serializer = HandymanProfileUpdateSerializer(
+            self.profile, data=data, partial=True
+        )
         self.assertTrue(serializer.is_valid())
 
     def test_update_serializer_rejects_hourly_rate_lte_zero(self):

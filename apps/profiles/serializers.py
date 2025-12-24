@@ -8,7 +8,15 @@ from apps.common.serializers import (
     create_list_response_serializer,
     create_response_serializer,
 )
-from apps.profiles.models import HandymanProfile, HomeownerProfile
+from apps.profiles.models import HandymanCategory, HandymanProfile, HomeownerProfile
+
+
+class HandymanCategorySerializer(serializers.ModelSerializer):
+    """Serializer for handyman categories."""
+
+    class Meta:
+        model = HandymanCategory
+        fields = ["public_id", "name"]
 
 
 class HomeownerProfileSerializer(serializers.ModelSerializer):
@@ -18,21 +26,25 @@ class HomeownerProfileSerializer(serializers.ModelSerializer):
 
     is_phone_verified = serializers.BooleanField(read_only=True)
     avatar_url = serializers.URLField(read_only=True, allow_null=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
 
     class Meta:
         model = HomeownerProfile
         fields = [
             "display_name",
             "avatar_url",
+            "email",
             "phone_number",
             "phone_verified_at",
             "is_phone_verified",
             "address",
+            "date_of_birth",
             "created_at",
             "updated_at",
         ]
         read_only_fields = [
             "avatar_url",
+            "email",
             "phone_verified_at",
             "is_phone_verified",
             "created_at",
@@ -43,20 +55,26 @@ class HomeownerProfileSerializer(serializers.ModelSerializer):
 class HomeownerProfileUpdateSerializer(serializers.ModelSerializer):
     """
     Serializer for updating homeowner profile.
-    Resets phone_verified_at when phone_number changes.
     """
 
     class Meta:
         model = HomeownerProfile
-        fields = ["display_name", "phone_number", "address"]
+        fields = ["display_name", "address", "date_of_birth"]
 
-    def update(self, instance, validated_data):
-        """Reset phone verification if phone number changes."""
-        new_phone = validated_data.get("phone_number")
-        if new_phone is not None and new_phone != instance.phone_number:
-            # Phone number changed, reset verification
-            instance.phone_verified_at = None
-        return super().update(instance, validated_data)
+    def validate_date_of_birth(self, value):
+        """Must be at least 18 years old."""
+        if value:
+            from datetime import date
+
+            today = date.today()
+            age = (
+                today.year
+                - value.year
+                - ((today.month, today.day) < (value.month, value.day))
+            )
+            if age < 18:
+                raise serializers.ValidationError("Must be at least 18 years old.")
+        return value
 
 
 class HandymanProfileSerializer(serializers.ModelSerializer):
@@ -69,14 +87,21 @@ class HandymanProfileSerializer(serializers.ModelSerializer):
 
     is_phone_verified = serializers.BooleanField(read_only=True)
     avatar_url = serializers.URLField(read_only=True, allow_null=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
+    category = HandymanCategorySerializer(read_only=True)
 
     class Meta:
         model = HandymanProfile
         fields = [
             "display_name",
             "avatar_url",
+            "email",
             "rating",
             "hourly_rate",
+            "job_title",
+            "category",
+            "id_number",
+            "date_of_birth",
             "latitude",
             "longitude",
             "is_active",
@@ -91,7 +116,9 @@ class HandymanProfileSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "avatar_url",
+            "email",
             "rating",
+            "id_number",
             "is_approved",
             "phone_verified_at",
             "is_phone_verified",
@@ -105,22 +132,46 @@ class HandymanProfileUpdateSerializer(serializers.ModelSerializer):
     Serializer for updating handyman profile.
 
     Notes:
-    - Resets phone_verified_at when phone_number changes.
     - If updating latitude/longitude, both must be provided together.
     """
+
+    category_id = serializers.SlugRelatedField(
+        slug_field="public_id",
+        queryset=HandymanCategory.objects.all(),
+        source="category",
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = HandymanProfile
         fields = [
             "display_name",
             "hourly_rate",
+            "job_title",
+            "category_id",
+            "date_of_birth",
             "latitude",
             "longitude",
             "is_active",
             "is_available",
-            "phone_number",
             "address",
         ]
+
+    def validate_date_of_birth(self, value):
+        """Must be at least 18 years old."""
+        if value:
+            from datetime import date
+
+            today = date.today()
+            age = (
+                today.year
+                - value.year
+                - ((today.month, today.day) < (value.month, value.day))
+            )
+            if age < 18:
+                raise serializers.ValidationError("Must be at least 18 years old.")
+        return value
 
     def validate(self, attrs):
         """Cross-field validation."""
@@ -158,13 +209,6 @@ class HandymanProfileUpdateSerializer(serializers.ModelSerializer):
             )
 
         return attrs
-
-    def update(self, instance, validated_data):
-        """Reset phone verification if phone number changes."""
-        new_phone = validated_data.get("phone_number")
-        if new_phone is not None and new_phone != instance.phone_number:
-            instance.phone_verified_at = None
-        return super().update(instance, validated_data)
 
 
 # Response serializers with envelope format

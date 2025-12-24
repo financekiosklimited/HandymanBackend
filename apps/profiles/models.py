@@ -7,6 +7,24 @@ from django.db import models
 from apps.common.models import BaseModel
 
 
+class HandymanCategory(BaseModel):
+    """
+    Predefined categories for handyman services.
+    """
+
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        db_table = "handyman_categories"
+        ordering = ["name"]
+        verbose_name_plural = "Handyman Categories"
+
+    def __str__(self):
+        return self.name
+
+
 class HandymanProfile(BaseModel):
     """
     Profile for handyman users.
@@ -26,6 +44,24 @@ class HandymanProfile(BaseModel):
         help_text="Profile avatar image",
     )
     rating = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True)
+
+    # Professional details
+    job_title = models.CharField(max_length=100, blank=True)
+    category = models.ForeignKey(
+        "profiles.HandymanCategory",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="handymen",
+    )
+    id_number = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="National ID number (for future verification)",
+    )
+
+    # Personal details
+    date_of_birth = models.DateField(null=True, blank=True)
 
     # Pricing
     hourly_rate = models.DecimalField(
@@ -100,6 +136,7 @@ class HomeownerProfile(BaseModel):
     phone_number = models.CharField(max_length=20, blank=True)
     phone_verified_at = models.DateTimeField(null=True, blank=True)
     address = models.TextField(blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
 
     class Meta:
         db_table = "homeowner_profiles"

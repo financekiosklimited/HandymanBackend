@@ -1524,33 +1524,21 @@ class JobUpdateSerializerValidationTests(TestCase):
 
     def test_update_images_invalid_size(self):
         """Test image over 5MB fails validation."""
-        import random
-
         from apps.jobs.serializers import JobUpdateSerializer
 
-        # Create a real image that's larger than 5MB
-        # Use random pixels to prevent compression
-        large_image = PILImage.new("RGB", (2000, 2000))
-        pixels = large_image.load()
-        for i in range(2000):
-            for j in range(2000):
-                pixels[i, j] = (
-                    random.randint(0, 255),
-                    random.randint(0, 255),
-                    random.randint(0, 255),
-                )
+        # Create a minimal valid 1x1 PNG image
+        tiny_image = PILImage.new("RGB", (1, 1), color="red")
+        image_file = BytesIO()
+        tiny_image.save(image_file, format="PNG")
+        image_file.seek(0)
+        image_content = image_file.read()
 
-        large_image_file = BytesIO()
-        large_image.save(large_image_file, format="PNG")
-        large_image_file.seek(0)
-
-        # Check that our test image is actually > 5MB
-        image_size = len(large_image_file.getvalue())
-        self.assertGreater(image_size, 5 * 1024 * 1024, "Test image should be > 5MB")
-
+        # Create a mock file object that reports size > 5MB but has valid image content
         large_file = SimpleUploadedFile(
-            "large.png", large_image_file.read(), content_type="image/png"
+            "large.png", image_content, content_type="image/png"
         )
+        # Override the size attribute to simulate a large file
+        large_file.size = 6 * 1024 * 1024
 
         data = {"images": [large_file]}
         serializer = JobUpdateSerializer(

@@ -8,7 +8,57 @@ from django.test import TestCase
 from PIL import Image as PILImage
 
 from apps.accounts.models import User, UserRole
-from apps.profiles.models import HandymanProfile, HomeownerProfile
+from apps.profiles.models import HandymanCategory, HandymanProfile, HomeownerProfile
+
+
+class HandymanCategoryModelTests(TestCase):
+    """Test cases for HandymanCategory model."""
+
+    def test_create_handyman_category(self):
+        """Test creating a handyman category."""
+        category = HandymanCategory.objects.create(
+            name="Electrical", description="Electrical services"
+        )
+        self.assertEqual(category.name, "Electrical")
+        self.assertEqual(category.description, "Electrical services")
+        self.assertTrue(category.is_active)
+        self.assertIsNotNone(category.public_id)
+        self.assertIsNotNone(category.created_at)
+        self.assertIsNotNone(category.updated_at)
+
+    def test_handyman_category_str_representation(self):
+        """Test string representation of handyman category."""
+        category = HandymanCategory.objects.create(name="Plumbing")
+        self.assertEqual(str(category), "Plumbing")
+
+    def test_handyman_category_ordering(self):
+        """Test categories are ordered by name."""
+        HandymanCategory.objects.create(name="Plumbing")
+        HandymanCategory.objects.create(name="Electrical")
+        HandymanCategory.objects.create(name="Carpentry")
+
+        categories = HandymanCategory.objects.all()
+        self.assertEqual(categories[0].name, "Carpentry")
+        self.assertEqual(categories[1].name, "Electrical")
+        self.assertEqual(categories[2].name, "Plumbing")
+
+    def test_handyman_category_unique_name(self):
+        """Test category name must be unique."""
+        from django.db import IntegrityError
+
+        HandymanCategory.objects.create(name="Plumbing")
+        with self.assertRaises(IntegrityError):
+            HandymanCategory.objects.create(name="Plumbing")
+
+    def test_handyman_category_is_active_default(self):
+        """Test is_active defaults to True."""
+        category = HandymanCategory.objects.create(name="Painting")
+        self.assertTrue(category.is_active)
+
+    def test_handyman_category_blank_description(self):
+        """Test category can have blank description."""
+        category = HandymanCategory.objects.create(name="Cleaning")
+        self.assertEqual(category.description, "")
 
 
 class HandymanProfileModelTests(TestCase):
@@ -115,6 +165,50 @@ class HandymanProfileModelTests(TestCase):
         profile = HandymanProfile.objects.create(user=self.user, display_name="Test")
         self.assertIsNone(profile.avatar_url)
 
+    def test_handyman_profile_with_category(self):
+        """Test handyman profile with category relationship."""
+        category = HandymanCategory.objects.create(name="Electrical")
+        profile = HandymanProfile.objects.create(
+            user=self.user,
+            display_name="Electrician",
+            category=category,
+            job_title="Senior Electrician",
+        )
+        self.assertEqual(profile.category, category)
+        self.assertEqual(profile.job_title, "Senior Electrician")
+        # Test reverse relationship
+        self.assertIn(profile, category.handymen.all())
+
+    def test_handyman_profile_category_set_null_on_delete(self):
+        """Test category is set to null when deleted (SET_NULL)."""
+        category = HandymanCategory.objects.create(name="Plumbing")
+        profile = HandymanProfile.objects.create(
+            user=self.user, display_name="Plumber", category=category
+        )
+        category.delete()
+        profile.refresh_from_db()
+        self.assertIsNone(profile.category)
+        # Profile should still exist
+        self.assertTrue(HandymanProfile.objects.filter(id=profile.id).exists())
+
+    def test_handyman_profile_new_fields(self):
+        """Test new fields on handyman profile."""
+        from datetime import date
+
+        category = HandymanCategory.objects.create(name="Carpentry")
+        profile = HandymanProfile.objects.create(
+            user=self.user,
+            display_name="Carpenter",
+            job_title="Master Carpenter",
+            category=category,
+            id_number="ID123456",
+            date_of_birth=date(1990, 5, 15),
+        )
+        self.assertEqual(profile.job_title, "Master Carpenter")
+        self.assertEqual(profile.category.name, "Carpentry")
+        self.assertEqual(profile.id_number, "ID123456")
+        self.assertEqual(profile.date_of_birth, date(1990, 5, 15))
+
 
 class HomeownerProfileModelTests(TestCase):
     """Test cases for HomeownerProfile model."""
@@ -208,3 +302,14 @@ class HomeownerProfileModelTests(TestCase):
         """Test avatar_url property returns None when no avatar."""
         profile = HomeownerProfile.objects.create(user=self.user, display_name="Test")
         self.assertIsNone(profile.avatar_url)
+
+    def test_homeowner_profile_date_of_birth(self):
+        """Test homeowner profile with date_of_birth field."""
+        from datetime import date
+
+        profile = HomeownerProfile.objects.create(
+            user=self.user,
+            display_name="Test Homeowner",
+            date_of_birth=date(1985, 3, 20),
+        )
+        self.assertEqual(profile.date_of_birth, date(1985, 3, 20))

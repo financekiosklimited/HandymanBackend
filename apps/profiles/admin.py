@@ -7,7 +7,20 @@ from django.utils.html import format_html
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
-from .models import HandymanProfile, HomeownerProfile
+from .models import HandymanCategory, HandymanProfile, HomeownerProfile
+
+
+@admin.register(HandymanCategory)
+class HandymanCategoryAdmin(ModelAdmin):
+    """
+    Admin interface for HandymanCategory model.
+    """
+
+    list_display = ("name", "is_active", "created_at")
+    search_fields = ("name", "description")
+    list_filter = ("is_active", "created_at")
+    ordering = ("name",)
+    readonly_fields = ("public_id", "created_at", "updated_at")
 
 
 @admin.register(HandymanProfile)
@@ -53,7 +66,19 @@ class HandymanProfileAdmin(ModelAdmin):
     fieldsets = (
         (
             "Profile Information",
-            {"fields": ("public_id", "user", "display_name", "avatar")},
+            {
+                "fields": (
+                    "public_id",
+                    "user",
+                    "display_name",
+                    "avatar",
+                    "date_of_birth",
+                )
+            },
+        ),
+        (
+            "Professional Details",
+            {"fields": ("job_title", "category", "id_number")},
         ),
         (
             "Listing Status",
@@ -145,7 +170,15 @@ class HomeownerProfileAdmin(ModelAdmin):
     fieldsets = (
         (
             "Profile Information",
-            {"fields": ("public_id", "user", "display_name", "avatar")},
+            {
+                "fields": (
+                    "public_id",
+                    "user",
+                    "display_name",
+                    "avatar",
+                    "date_of_birth",
+                )
+            },
         ),
         (
             "Contact & Verification",
