@@ -1,6 +1,8 @@
 {% extends "admin/base.html" %}
 {% load i18n l10n unfold %}
 
+{% block title %}{% trans "Send Broadcast Notification" %} | {{ site_title|default:_('Django administration') }}{% endblock %}
+
 {% block branding %}
     {% include "unfold/helpers/site_branding.html" %}
 {% endblock %}
