@@ -1,6 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal
 from io import StringIO
+from unittest.mock import patch
 
 from django.core.management import call_command
 from django.test import TestCase
@@ -128,3 +129,26 @@ class ProcessOverdueDisputesCommandTests(TestCase):
         self.assertIsNotNone(overdue.resolved_at)
         self.assertEqual(future.status, "in_review")
         self.assertIn("Auto-resolved 1 disputes", out.getvalue())
+
+    @patch("apps.jobs.services.dispute_service.resolve_dispute")
+    def test_overdue_disputes_with_errors(self, mock_resolve):
+        """Test that errors during dispute resolution are handled and reported."""
+        mock_resolve.side_effect = Exception("Resolution failed")
+
+        now = timezone.now()
+        JobDispute.objects.create(
+            job=self.job,
+            initiated_by=self.homeowner,
+            reason="Issue",
+            status="pending",
+            resolution_deadline=now - timedelta(days=1),
+        )
+
+        out = StringIO()
+        err = StringIO()
+        call_command("process_overdue_disputes", stdout=out, stderr=err)
+
+        # Should report 0 resolved and 1 failure
+        self.assertIn("Auto-resolved 0 disputes", out.getvalue())
+        self.assertIn("Failed to resolve 1 disputes", out.getvalue())
+        self.assertIn("Resolution failed", err.getvalue())

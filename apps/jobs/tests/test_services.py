@@ -766,3 +766,109 @@ class OngoingServicesTests(TestCase):
         self.task1.refresh_from_db()
         self.assertFalse(self.task1.is_completed)
         self.assertEqual(report.tasks_worked.count(), 1)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_stop_session_end_time_before_start_time(self, mock_notify):
+        """Test stopping a session with end time before or equal to start time."""
+        photo = SimpleUploadedFile("start.jpg", b"data", content_type="image/jpeg")
+        start_time = timezone.now()
+        session = work_session_service.start_session(
+            handyman=self.handyman,
+            job=self.job,
+            started_at=start_time,
+            start_latitude=1,
+            start_longitude=1,
+            start_photo=photo,
+        )
+        # Try to stop with end time before start time
+        with self.assertRaisesRegex(ValidationError, "End time must be after start"):
+            work_session_service.stop_session(
+                session=session,
+                ended_at=start_time - timedelta(hours=1),
+                end_latitude=1,
+                end_longitude=1,
+            )
+        # Try to stop with end time equal to start time
+        with self.assertRaisesRegex(ValidationError, "End time must be after start"):
+            work_session_service.stop_session(
+                session=session,
+                ended_at=start_time,
+                end_latitude=1,
+                end_longitude=1,
+            )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_add_media_task_not_belonging_to_job(self, mock_notify):
+        """Test adding media with a task that doesn't belong to the job."""
+        # Create a different job with its own task
+        other_job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Other job",
+            description="Different job",
+            estimated_budget=200,
+            category=self.category,
+            city=self.city,
+            address="456 St",
+            status="in_progress",
+        )
+        other_task = JobTask.objects.create(job=other_job, title="Other Task", order=0)
+
+        # Start a session for self.job
+        photo = SimpleUploadedFile("start.jpg", b"data", content_type="image/jpeg")
+        session = work_session_service.start_session(
+            handyman=self.handyman,
+            job=self.job,
+            started_at=timezone.now(),
+            start_latitude=1,
+            start_longitude=1,
+            start_photo=photo,
+        )
+
+        # Try to add media with task from other_job
+        with self.assertRaisesRegex(
+            ValidationError, "Task does not belong to this job"
+        ):
+            work_session_service.add_media(
+                work_session=session,
+                media_type="photo",
+                file=SimpleUploadedFile(
+                    "media.jpg", b"data", content_type="image/jpeg"
+                ),
+                file_size=1024,
+                task=other_task,
+            )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_submit_report_task_not_belonging_to_job(self, mock_notify):
+        """Test submitting report with a task that doesn't belong to the job."""
+        # Create a different job with its own task
+        other_job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Other job",
+            description="Different job",
+            estimated_budget=200,
+            category=self.category,
+            city=self.city,
+            address="456 St",
+            status="in_progress",
+        )
+        other_task = JobTask.objects.create(job=other_job, title="Other Task", order=0)
+
+        # Try to submit report with task from other_job
+        with self.assertRaisesRegex(ValidationError, "does not belong to this job"):
+            daily_report_service.submit_report(
+                handyman=self.handyman,
+                job=self.job,
+                report_date=timezone.now().date(),
+                summary="Did work",
+                total_work_duration=timedelta(hours=2),
+                task_entries=[{"task": other_task, "marked_complete": True}],
+            )
