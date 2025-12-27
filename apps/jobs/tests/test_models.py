@@ -1,8 +1,10 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.test import TestCase
+from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.jobs.models import (
@@ -13,6 +15,7 @@ from apps.jobs.models import (
     JobApplication,
     JobCategory,
     JobImage,
+    WorkSession,
 )
 
 
@@ -689,3 +692,93 @@ class JobApplicationModelTests(TestCase):
         except Exception:
             pass
         self.assertIsNone(app.status_at)
+
+
+class WorkSessionModelTests(TestCase):
+    """Test cases for WorkSession model."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com",
+            password="testpass123",
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com",
+            password="testpass123",
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix sink",
+            description="Leaky sink",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+        )
+
+    def test_work_session_duration_with_ended_at(self):
+        """Test duration property returns correct timedelta when session is completed."""
+        started = timezone.now()
+        ended = started + timedelta(hours=2, minutes=30)
+        session = WorkSession.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            started_at=started,
+            ended_at=ended,
+            start_latitude="43.651070",
+            start_longitude="-79.347015",
+            status="completed",
+        )
+        self.assertEqual(session.duration, timedelta(hours=2, minutes=30))
+
+    def test_work_session_duration_without_ended_at(self):
+        """Test duration property returns None when session is not ended."""
+        session = WorkSession.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            started_at=timezone.now(),
+            start_latitude="43.651070",
+            start_longitude="-79.347015",
+            status="in_progress",
+        )
+        self.assertIsNone(session.duration)
+
+    def test_work_session_duration_seconds_with_ended_at(self):
+        """Test duration_seconds property returns correct value when session is completed."""
+        started = timezone.now()
+        ended = started + timedelta(hours=2, minutes=30)  # 9000 seconds
+        session = WorkSession.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            started_at=started,
+            ended_at=ended,
+            start_latitude="43.651070",
+            start_longitude="-79.347015",
+            status="completed",
+        )
+        self.assertEqual(session.duration_seconds, 9000)
+
+    def test_work_session_duration_seconds_without_ended_at(self):
+        """Test duration_seconds property returns None when session is not ended."""
+        session = WorkSession.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            started_at=timezone.now(),
+            start_latitude="43.651070",
+            start_longitude="-79.347015",
+            status="in_progress",
+        )
+        self.assertIsNone(session.duration_seconds)

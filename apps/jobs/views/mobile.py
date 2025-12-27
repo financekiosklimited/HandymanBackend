@@ -28,10 +28,24 @@ from apps.common.responses import (
     success_response,
     validation_error_response,
 )
-from apps.jobs.models import City, Job, JobApplication, JobCategory
+from apps.jobs.models import (
+    City,
+    DailyReport,
+    Job,
+    JobApplication,
+    JobCategory,
+    WorkSession,
+)
 from apps.jobs.serializers import (
     CityListResponseSerializer,
     CitySerializer,
+    CompletionRejectSerializer,
+    DailyReportCreateSerializer,
+    DailyReportDetailResponseSerializer,
+    DailyReportListResponseSerializer,
+    DailyReportReviewSerializer,
+    DailyReportSerializer,
+    DisputeCreateSerializer,
     ForYouJobListResponseSerializer,
     ForYouJobSerializer,
     GuestJobDetailResponseSerializer,
@@ -56,10 +70,26 @@ from apps.jobs.serializers import (
     JobCreateSerializer,
     JobDetailResponseSerializer,
     JobDetailSerializer,
+    JobDisputeDetailResponseSerializer,
+    JobDisputeListResponseSerializer,
+    JobDisputeSerializer,
     JobListResponseSerializer,
     JobListSerializer,
     JobUpdateResponseSerializer,
     JobUpdateSerializer,
+    WorkSessionDetailResponseSerializer,
+    WorkSessionListResponseSerializer,
+    WorkSessionMediaCreateSerializer,
+    WorkSessionMediaSerializer,
+    WorkSessionSerializer,
+    WorkSessionStartSerializer,
+    WorkSessionStopSerializer,
+)
+from apps.jobs.services import (
+    daily_report_service,
+    dispute_service,
+    job_completion_service,
+    work_session_service,
 )
 
 
@@ -2327,3 +2357,922 @@ class HomeownerApplicationRejectView(APIView):
             )
         except Exception as e:
             return validation_error_response({"detail": str(e)})
+
+
+# ========================
+# Ongoing Job Views
+# ========================
+
+
+class BaseHomeownerOngoingView(APIView):
+    """
+    Base view for homeowner ongoing job endpoints.
+    Ensures user is the homeowner of the job.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+        PhoneVerifiedPermission,
+    ]
+
+    def get_job(self, public_id):
+        """Get job and validate homeowner access."""
+        job = get_object_or_404(
+            Job.objects.filter(homeowner=self.request.user),
+            public_id=public_id,
+        )
+        return job
+
+
+class BaseHandymanOngoingView(APIView):
+    """
+    Base view for handyman ongoing job endpoints.
+    Ensures user is the assigned handyman of the job.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+        PhoneVerifiedPermission,
+    ]
+
+    def get_job(self, public_id):
+        """Get job and validate handyman access."""
+        job = get_object_or_404(
+            Job.objects.filter(assigned_handyman=self.request.user),
+            public_id=public_id,
+        )
+        return job
+
+
+# Homeowner Ongoing Job Views
+
+
+class HomeownerWorkSessionListView(BaseHomeownerOngoingView):
+    """
+    View for homeowner to list work sessions for a specific job.
+    """
+
+    @extend_schema(
+        operation_id="mobile_homeowner_jobs_sessions_list",
+        responses={
+            200: WorkSessionListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="List all work sessions for a specific job. Accessible by the homeowner.",
+        summary="List work sessions",
+        tags=["Mobile Homeowner Ongoing Jobs"],
+    )
+    def get(self, request, public_id):
+        job = self.get_job(public_id)
+        sessions = job.work_sessions.all()
+        serializer = WorkSessionSerializer(sessions, many=True)
+        return success_response(
+            serializer.data, message="Work sessions retrieved successfully"
+        )
+
+
+class HomeownerWorkSessionDetailView(BaseHomeownerOngoingView):
+    """
+    View for homeowner to get details of a specific work session.
+    """
+
+    @extend_schema(
+        operation_id="mobile_homeowner_jobs_sessions_retrieve",
+        responses={
+            200: WorkSessionDetailResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Get details of a specific work session. Accessible by the homeowner.",
+        summary="Get work session detail",
+        tags=["Mobile Homeowner Ongoing Jobs"],
+    )
+    def get(self, request, public_id, session_id):
+        job = self.get_job(public_id)
+        session = get_object_or_404(job.work_sessions.all(), public_id=session_id)
+        serializer = WorkSessionSerializer(session)
+        return success_response(
+            serializer.data, message="Work session retrieved successfully"
+        )
+
+
+class HomeownerDailyReportListView(BaseHomeownerOngoingView):
+    """
+    View for homeowner to list daily reports for a specific job.
+    """
+
+    @extend_schema(
+        operation_id="mobile_homeowner_jobs_reports_list",
+        responses={
+            200: DailyReportListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="List all daily reports for a specific job. Accessible by the homeowner.",
+        summary="List daily reports",
+        tags=["Mobile Homeowner Ongoing Jobs"],
+    )
+    def get(self, request, public_id):
+        job = self.get_job(public_id)
+        reports = job.daily_reports.all()
+        serializer = DailyReportSerializer(reports, many=True)
+        return success_response(
+            serializer.data, message="Daily reports retrieved successfully"
+        )
+
+
+class HomeownerDailyReportDetailView(BaseHomeownerOngoingView):
+    """
+    View for homeowner to get details of a specific daily report.
+    """
+
+    @extend_schema(
+        operation_id="mobile_homeowner_jobs_reports_retrieve",
+        responses={
+            200: DailyReportDetailResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Get details of a specific daily report. Accessible by the homeowner.",
+        summary="Get daily report detail",
+        tags=["Mobile Homeowner Ongoing Jobs"],
+    )
+    def get(self, request, public_id, report_id):
+        job = self.get_job(public_id)
+        report = get_object_or_404(job.daily_reports.all(), public_id=report_id)
+        serializer = DailyReportSerializer(report)
+        return success_response(
+            serializer.data, message="Daily report retrieved successfully"
+        )
+
+
+class HomeownerJobDisputeListView(BaseHomeownerOngoingView):
+    """
+    View for homeowner to list disputes for a specific job.
+    """
+
+    @extend_schema(
+        operation_id="mobile_homeowner_jobs_disputes_list",
+        responses={
+            200: JobDisputeListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="List all disputes for a specific job. Accessible by the homeowner.",
+        summary="List job disputes",
+        tags=["Mobile Homeowner Ongoing Jobs"],
+    )
+    def get(self, request, public_id):
+        job = self.get_job(public_id)
+        disputes = job.disputes.all()
+        serializer = JobDisputeSerializer(disputes, many=True)
+        return success_response(
+            serializer.data, message="Job disputes retrieved successfully"
+        )
+
+
+# Handyman Ongoing Job Views
+
+
+class HandymanWorkSessionListView(BaseHandymanOngoingView):
+    """
+    View for handyman to list work sessions for a specific job.
+    """
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_sessions_list",
+        responses={
+            200: WorkSessionListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="List all work sessions for a specific job. Accessible by the assigned handyman.",
+        summary="List work sessions",
+        tags=["Mobile Handyman Ongoing Jobs"],
+    )
+    def get(self, request, public_id):
+        job = self.get_job(public_id)
+        sessions = job.work_sessions.all()
+        serializer = WorkSessionSerializer(sessions, many=True)
+        return success_response(
+            serializer.data, message="Work sessions retrieved successfully"
+        )
+
+
+class HandymanWorkSessionDetailView(BaseHandymanOngoingView):
+    """
+    View for handyman to get details of a specific work session.
+    """
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_sessions_retrieve",
+        responses={
+            200: WorkSessionDetailResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Get details of a specific work session. Accessible by the assigned handyman.",
+        summary="Get work session detail",
+        tags=["Mobile Handyman Ongoing Jobs"],
+    )
+    def get(self, request, public_id, session_id):
+        job = self.get_job(public_id)
+        session = get_object_or_404(job.work_sessions.all(), public_id=session_id)
+        serializer = WorkSessionSerializer(session)
+        return success_response(
+            serializer.data, message="Work session retrieved successfully"
+        )
+
+
+class HandymanDailyReportListView(BaseHandymanOngoingView):
+    """
+    View for handyman to list daily reports for a specific job.
+    """
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_reports_list",
+        responses={
+            200: DailyReportListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="List all daily reports for a specific job. Accessible by the assigned handyman.",
+        summary="List daily reports",
+        tags=["Mobile Handyman Ongoing Jobs"],
+    )
+    def get(self, request, public_id):
+        job = self.get_job(public_id)
+        reports = job.daily_reports.all()
+        serializer = DailyReportSerializer(reports, many=True)
+        return success_response(
+            serializer.data, message="Daily reports retrieved successfully"
+        )
+
+
+class HandymanDailyReportDetailView(BaseHandymanOngoingView):
+    """
+    View for handyman to get details of a specific daily report.
+    """
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_reports_retrieve",
+        responses={
+            200: DailyReportDetailResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Get details of a specific daily report. Accessible by the assigned handyman.",
+        summary="Get daily report detail",
+        tags=["Mobile Handyman Ongoing Jobs"],
+    )
+    def get(self, request, public_id, report_id):
+        job = self.get_job(public_id)
+        report = get_object_or_404(job.daily_reports.all(), public_id=report_id)
+        serializer = DailyReportSerializer(report)
+        return success_response(
+            serializer.data, message="Daily report retrieved successfully"
+        )
+
+
+class HandymanJobDisputeListView(BaseHandymanOngoingView):
+    """
+    View for handyman to list disputes for a specific job.
+    """
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_disputes_list",
+        responses={
+            200: JobDisputeListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="List all disputes for a specific job. Accessible by the assigned handyman.",
+        summary="List job disputes",
+        tags=["Mobile Handyman Ongoing Jobs"],
+    )
+    def get(self, request, public_id):
+        job = self.get_job(public_id)
+        disputes = job.disputes.all()
+        serializer = JobDisputeSerializer(disputes, many=True)
+        return success_response(
+            serializer.data, message="Job disputes retrieved successfully"
+        )
+
+
+# ========================
+# Handyman Write Endpoints
+# ========================
+
+
+class HandymanWorkSessionStartView(BaseHandymanOngoingView):
+    """
+    View for handyman to start a work session.
+    """
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_sessions_start",
+        request=WorkSessionStartSerializer,
+        responses={
+            201: WorkSessionDetailResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Start a new work session for a job. "
+            "Requires location coordinates and a photo. "
+            "Only one active session per job is allowed."
+        ),
+        summary="Start work session",
+        tags=["Mobile Handyman Ongoing Jobs"],
+        examples=[
+            OpenApiExample(
+                "Start Session Request",
+                value={
+                    "started_at": "2024-01-15T09:00:00Z",
+                    "start_latitude": 43.6532,
+                    "start_longitude": -79.3832,
+                    "start_accuracy": 10.5,
+                },
+                request_only=True,
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id):
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id)
+        serializer = WorkSessionStartSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            session = work_session_service.start_session(
+                handyman=request.user,
+                job=job,
+                started_at=serializer.validated_data["started_at"],
+                start_latitude=serializer.validated_data["start_latitude"],
+                start_longitude=serializer.validated_data["start_longitude"],
+                start_photo=serializer.validated_data["start_photo"],
+                start_accuracy=serializer.validated_data.get("start_accuracy"),
+            )
+            return created_response(
+                WorkSessionSerializer(session).data,
+                message="Work session started successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HandymanWorkSessionStopView(BaseHandymanOngoingView):
+    """
+    View for handyman to stop a work session.
+    """
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_sessions_stop",
+        request=WorkSessionStopSerializer,
+        responses={
+            200: WorkSessionDetailResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=("Stop an active work session. Requires end location coordinates."),
+        summary="Stop work session",
+        tags=["Mobile Handyman Ongoing Jobs"],
+        examples=[
+            OpenApiExample(
+                "Stop Session Request",
+                value={
+                    "ended_at": "2024-01-15T17:00:00Z",
+                    "end_latitude": 43.6532,
+                    "end_longitude": -79.3832,
+                    "end_accuracy": 8.0,
+                },
+                request_only=True,
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id, session_id):
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id)
+        session = get_object_or_404(
+            WorkSession.objects.filter(job=job, handyman=request.user),
+            public_id=session_id,
+        )
+
+        serializer = WorkSessionStopSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            session = work_session_service.stop_session(
+                session=session,
+                ended_at=serializer.validated_data["ended_at"],
+                end_latitude=serializer.validated_data["end_latitude"],
+                end_longitude=serializer.validated_data["end_longitude"],
+                end_accuracy=serializer.validated_data.get("end_accuracy"),
+            )
+            return success_response(
+                WorkSessionSerializer(session).data,
+                message="Work session stopped successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HandymanWorkSessionMediaUploadView(BaseHandymanOngoingView):
+    """
+    View for handyman to upload media to a work session.
+    """
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_sessions_media_upload",
+        request=WorkSessionMediaCreateSerializer,
+        responses={
+            201: OpenApiTypes.OBJECT,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Upload a photo or video to an active work session. "
+            "For videos, duration_seconds is required."
+        ),
+        summary="Upload session media",
+        tags=["Mobile Handyman Ongoing Jobs"],
+        examples=[
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id, session_id):
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id)
+        session = get_object_or_404(
+            WorkSession.objects.filter(job=job, handyman=request.user),
+            public_id=session_id,
+        )
+
+        serializer = WorkSessionMediaCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            media = work_session_service.add_media(
+                work_session=session,
+                media_type=serializer.validated_data["media_type"],
+                file=serializer.validated_data["file"],
+                file_size=serializer.validated_data["file_size"],
+                description=serializer.validated_data.get("description", ""),
+                task=serializer.validated_data.get("task_id"),
+                duration_seconds=serializer.validated_data.get("duration_seconds"),
+            )
+            return created_response(
+                WorkSessionMediaSerializer(media).data,
+                message="Media uploaded successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HandymanDailyReportCreateView(BaseHandymanOngoingView):
+    """
+    View for handyman to create a daily report.
+    """
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_reports_create",
+        request=DailyReportCreateSerializer,
+        responses={
+            201: DailyReportDetailResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Submit a daily work report for a job. Only one report per day is allowed."
+        ),
+        summary="Create daily report",
+        tags=["Mobile Handyman Ongoing Jobs"],
+        examples=[
+            OpenApiExample(
+                "Create Report Request",
+                value={
+                    "report_date": "2024-01-15",
+                    "summary": "Completed tiling work in the bathroom.",
+                    "total_work_duration_seconds": 28800,
+                    "tasks": [
+                        {
+                            "task_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "notes": "Finished floor tiles",
+                            "marked_complete": True,
+                        }
+                    ],
+                },
+                request_only=True,
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id):
+        from datetime import timedelta
+
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id)
+        serializer = DailyReportCreateSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        # Convert seconds to timedelta
+        duration = timedelta(
+            seconds=serializer.validated_data["total_work_duration_seconds"]
+        )
+
+        # Process task entries - task_id is already validated to JobTask
+        task_entries = []
+        for task_data in serializer.validated_data.get("tasks", []):
+            task_entries.append(
+                {
+                    "task": task_data["task_id"],  # Already a JobTask instance
+                    "notes": task_data.get("notes", ""),
+                    "marked_complete": task_data.get("marked_complete", False),
+                }
+            )
+
+        try:
+            report = daily_report_service.submit_report(
+                handyman=request.user,
+                job=job,
+                report_date=serializer.validated_data["report_date"],
+                summary=serializer.validated_data["summary"],
+                total_work_duration=duration,
+                task_entries=task_entries,
+            )
+            return created_response(
+                DailyReportSerializer(report).data,
+                message="Daily report submitted successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HandymanCompletionRequestView(BaseHandymanOngoingView):
+    """
+    View for handyman to request job completion.
+    """
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_completion_request",
+        request=None,
+        responses={
+            200: OpenApiTypes.OBJECT,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=("Request job completion. Job must be in 'in_progress' status."),
+        summary="Request job completion",
+        tags=["Mobile Handyman Ongoing Jobs"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Completion requested successfully",
+                    "data": {"status": "pending_completion"},
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id):
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id)
+
+        try:
+            job = job_completion_service.request_completion(
+                handyman=request.user,
+                job=job,
+            )
+            return success_response(
+                {"status": job.status},
+                message="Completion requested successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+# ========================
+# Homeowner Write Endpoints
+# ========================
+
+
+class HomeownerDailyReportReviewView(BaseHomeownerOngoingView):
+    """
+    View for homeowner to review (approve/reject) a daily report.
+    """
+
+    @extend_schema(
+        operation_id="mobile_homeowner_jobs_reports_review",
+        request=DailyReportReviewSerializer,
+        responses={
+            200: DailyReportDetailResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Review a daily report by approving or rejecting it. "
+            "Only pending reports can be reviewed."
+        ),
+        summary="Review daily report",
+        tags=["Mobile Homeowner Ongoing Jobs"],
+        examples=[
+            OpenApiExample(
+                "Approve Report",
+                value={
+                    "decision": "approved",
+                    "comment": "Great work today!",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Reject Report",
+                value={
+                    "decision": "rejected",
+                    "comment": "Missing details about the electrical work.",
+                },
+                request_only=True,
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id, report_id):
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id)
+        report = get_object_or_404(
+            DailyReport.objects.filter(job=job),
+            public_id=report_id,
+        )
+
+        serializer = DailyReportReviewSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            report = daily_report_service.review_report(
+                homeowner=request.user,
+                report=report,
+                decision=serializer.validated_data["decision"],
+                comment=serializer.validated_data.get("comment", ""),
+            )
+            return success_response(
+                DailyReportSerializer(report).data,
+                message=f"Report {serializer.validated_data['decision']} successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HomeownerCompletionApproveView(BaseHomeownerOngoingView):
+    """
+    View for homeowner to approve job completion.
+    """
+
+    @extend_schema(
+        operation_id="mobile_homeowner_jobs_completion_approve",
+        request=None,
+        responses={
+            200: OpenApiTypes.OBJECT,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Approve job completion and mark job as completed. "
+            "Job must be in 'pending_completion' status."
+        ),
+        summary="Approve job completion",
+        tags=["Mobile Homeowner Ongoing Jobs"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Job completed successfully",
+                    "data": {"status": "completed"},
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id):
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id)
+
+        try:
+            job = job_completion_service.approve_completion(
+                homeowner=request.user,
+                job=job,
+            )
+            return success_response(
+                {"status": job.status},
+                message="Job completed successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HomeownerCompletionRejectView(BaseHomeownerOngoingView):
+    """
+    View for homeowner to reject job completion.
+    """
+
+    @extend_schema(
+        operation_id="mobile_homeowner_jobs_completion_reject",
+        request=CompletionRejectSerializer,
+        responses={
+            200: OpenApiTypes.OBJECT,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Reject job completion and return job to 'in_progress' status. "
+            "Job must be in 'pending_completion' status."
+        ),
+        summary="Reject job completion",
+        tags=["Mobile Homeowner Ongoing Jobs"],
+        examples=[
+            OpenApiExample(
+                "Reject Completion",
+                value={
+                    "reason": "The bathroom tile grouting is incomplete.",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Completion rejected",
+                    "data": {"status": "in_progress"},
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id):
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id)
+
+        serializer = CompletionRejectSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            job = job_completion_service.reject_completion(
+                homeowner=request.user,
+                job=job,
+                reason=serializer.validated_data.get("reason", ""),
+            )
+            return success_response(
+                {"status": job.status},
+                message="Completion rejected",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HomeownerDisputeCreateView(BaseHomeownerOngoingView):
+    """
+    View for homeowner to create a dispute.
+    """
+
+    @extend_schema(
+        operation_id="mobile_homeowner_jobs_disputes_create",
+        request=DisputeCreateSerializer,
+        responses={
+            201: JobDisputeDetailResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Open a dispute for a job. "
+            "Job must be in 'in_progress', 'pending_completion', or 'completed' status."
+        ),
+        summary="Create dispute",
+        tags=["Mobile Homeowner Ongoing Jobs"],
+        examples=[
+            OpenApiExample(
+                "Create Dispute Request",
+                value={
+                    "reason": "Work quality does not match what was agreed upon.",
+                    "disputed_report_ids": [
+                        "123e4567-e89b-12d3-a456-426614174000",
+                    ],
+                },
+                request_only=True,
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id):
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id)
+
+        serializer = DisputeCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            dispute = dispute_service.open_dispute(
+                homeowner=request.user,
+                job=job,
+                reason=serializer.validated_data["reason"],
+                disputed_reports=serializer.validated_data.get(
+                    "disputed_report_ids", []
+                ),
+            )
+            return created_response(
+                JobDisputeSerializer(dispute).data,
+                message="Dispute created successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})

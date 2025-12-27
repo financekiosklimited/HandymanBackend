@@ -1814,3 +1814,236 @@ class HomeownerJobApplicationListSerializerTests(TestCase):
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
         self.assertIn("images", serializer.errors)
+
+
+class OngoingSerializerTests(TestCase):
+    """Test cases for ongoing job serializers."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix sink",
+            description="Leaky sink",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+        )
+        from apps.jobs.models import JobTask
+
+        self.task = JobTask.objects.create(job=self.job, title="Task 1", order=0)
+
+    def test_work_session_media_create_video_without_duration(self):
+        """Test video media upload requires duration_seconds."""
+        from apps.jobs.serializers import WorkSessionMediaCreateSerializer
+
+        image = PILImage.new("RGB", (100, 100), color="red")
+        image_file = BytesIO()
+        image.save(image_file, format="JPEG")
+        image_file.seek(0)
+        video_file = SimpleUploadedFile(
+            "video.mp4", image_file.read(), content_type="video/mp4"
+        )
+
+        data = {
+            "media_type": "video",
+            "file": video_file,
+            "file_size": 1000,
+        }
+        serializer = WorkSessionMediaCreateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("duration_seconds", str(serializer.errors))
+
+    def test_work_session_media_create_invalid_task_id(self):
+        """Test media upload with invalid task_id."""
+        import uuid
+
+        from apps.jobs.serializers import WorkSessionMediaCreateSerializer
+
+        image = PILImage.new("RGB", (100, 100), color="red")
+        image_file = BytesIO()
+        image.save(image_file, format="JPEG")
+        image_file.seek(0)
+        photo_file = SimpleUploadedFile(
+            "photo.jpg", image_file.read(), content_type="image/jpeg"
+        )
+
+        data = {
+            "media_type": "photo",
+            "file": photo_file,
+            "file_size": 1000,
+            "task_id": str(uuid.uuid4()),
+        }
+        serializer = WorkSessionMediaCreateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("task_id", serializer.errors)
+
+    def test_work_session_media_create_valid_task_id(self):
+        """Test media upload with valid task_id."""
+        from apps.jobs.serializers import WorkSessionMediaCreateSerializer
+
+        image = PILImage.new("RGB", (100, 100), color="red")
+        image_file = BytesIO()
+        image.save(image_file, format="JPEG")
+        image_file.seek(0)
+        photo_file = SimpleUploadedFile(
+            "photo.jpg", image_file.read(), content_type="image/jpeg"
+        )
+
+        data = {
+            "media_type": "photo",
+            "file": photo_file,
+            "file_size": 1000,
+            "task_id": str(self.task.public_id),
+        }
+        serializer = WorkSessionMediaCreateSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["task_id"], self.task)
+
+    def test_work_session_media_create_task_id_none(self):
+        """Test media upload with task_id None."""
+        from apps.jobs.serializers import WorkSessionMediaCreateSerializer
+
+        image = PILImage.new("RGB", (100, 100), color="red")
+        image_file = BytesIO()
+        image.save(image_file, format="JPEG")
+        image_file.seek(0)
+        photo_file = SimpleUploadedFile(
+            "photo.jpg", image_file.read(), content_type="image/jpeg"
+        )
+
+        data = {
+            "media_type": "photo",
+            "file": photo_file,
+            "file_size": 1000,
+        }
+        serializer = WorkSessionMediaCreateSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_work_session_media_create_task_id_explicit_none(self):
+        """Test media upload with task_id explicitly set to None."""
+        from apps.jobs.serializers import WorkSessionMediaCreateSerializer
+
+        image = PILImage.new("RGB", (100, 100), color="red")
+        image_file = BytesIO()
+        image.save(image_file, format="JPEG")
+        image_file.seek(0)
+        photo_file = SimpleUploadedFile(
+            "photo.jpg", image_file.read(), content_type="image/jpeg"
+        )
+
+        data = {
+            "media_type": "photo",
+            "file": photo_file,
+            "file_size": 1000,
+            "task_id": None,
+        }
+        serializer = WorkSessionMediaCreateSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertIsNone(serializer.validated_data.get("task_id"))
+
+    def test_dispute_create_invalid_report_ids(self):
+        """Test dispute create with invalid report IDs."""
+        import uuid
+
+        from apps.jobs.serializers import DisputeCreateSerializer
+
+        data = {
+            "reason": "Work not complete",
+            "disputed_report_ids": [str(uuid.uuid4()), str(uuid.uuid4())],
+        }
+        serializer = DisputeCreateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("disputed_report_ids", serializer.errors)
+
+    def test_dispute_create_empty_report_ids(self):
+        """Test dispute create with empty report IDs list."""
+        from apps.jobs.serializers import DisputeCreateSerializer
+
+        data = {
+            "reason": "Work not complete",
+            "disputed_report_ids": [],
+        }
+        serializer = DisputeCreateSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["disputed_report_ids"], [])
+
+    def test_dispute_resolve_refund_without_percentage(self):
+        """Test dispute resolve with full refund auto-sets percentage to 100."""
+        from apps.jobs.serializers import DisputeResolveSerializer
+
+        data = {
+            "status": "resolved_full_refund",
+        }
+        serializer = DisputeResolveSerializer(data=data)
+        # Full refund no longer requires manual percentage - it's auto-set to 100
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["refund_percentage"], 100)
+
+    def test_dispute_resolve_partial_refund_without_percentage(self):
+        """Test dispute resolve with partial refund status but no percentage."""
+        from apps.jobs.serializers import DisputeResolveSerializer
+
+        data = {
+            "status": "resolved_partial_refund",
+        }
+        serializer = DisputeResolveSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("refund_percentage", str(serializer.errors))
+
+    def test_dispute_resolve_pay_handyman_no_percentage_required(self):
+        """Test dispute resolve with pay_handyman doesn't require percentage."""
+        from apps.jobs.serializers import DisputeResolveSerializer
+
+        data = {
+            "status": "resolved_pay_handyman",
+            "admin_notes": "Resolved in favor of handyman",
+        }
+        serializer = DisputeResolveSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_dispute_create_valid_report_ids(self):
+        """Test dispute create with valid report IDs."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from apps.jobs.models import DailyReport
+        from apps.jobs.serializers import DisputeCreateSerializer
+
+        report = DailyReport.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            report_date=timezone.now().date(),
+            summary="Work done",
+            total_work_duration=timedelta(hours=2),
+            review_deadline=timezone.now() + timedelta(days=3),
+        )
+
+        data = {
+            "reason": "Issue with report",
+            "disputed_report_ids": [str(report.public_id)],
+        }
+        serializer = DisputeCreateSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(len(serializer.validated_data["disputed_report_ids"]), 1)
+        self.assertEqual(serializer.validated_data["disputed_report_ids"][0], report)

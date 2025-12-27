@@ -15,7 +15,13 @@ def get_kpi_cards():
     Get KPI card data for dashboard.
     """
     from apps.accounts.models import User
-    from apps.jobs.models import Job, JobApplication
+    from apps.jobs.models import (
+        DailyReport,
+        Job,
+        JobApplication,
+        JobDispute,
+        WorkSession,
+    )
 
     return [
         {
@@ -23,12 +29,24 @@ def get_kpi_cards():
             "metric": User.objects.count(),
         },
         {
-            "title": "Total Jobs",
-            "metric": Job.objects.count(),
+            "title": "Jobs In Progress",
+            "metric": Job.objects.filter(status="in_progress").count(),
         },
         {
-            "title": "Open Jobs",
-            "metric": Job.objects.filter(status="open").count(),
+            "title": "Pending Completion",
+            "metric": Job.objects.filter(status="pending_completion").count(),
+        },
+        {
+            "title": "Pending Daily Reports",
+            "metric": DailyReport.objects.filter(status="pending").count(),
+        },
+        {
+            "title": "Open Disputes",
+            "metric": JobDispute.objects.exclude(status__startswith="resolved").count(),
+        },
+        {
+            "title": "Active Work Sessions",
+            "metric": WorkSession.objects.filter(status="in_progress").count(),
         },
         {
             "title": "Pending Applications",
@@ -91,7 +109,9 @@ def get_jobs_by_status_chart_data():
         "draft": "Draft",
         "open": "Open",
         "in_progress": "In Progress",
+        "pending_completion": "Pending Completion",
         "completed": "Completed",
+        "disputed": "Disputed",
         "cancelled": "Cancelled",
     }
 

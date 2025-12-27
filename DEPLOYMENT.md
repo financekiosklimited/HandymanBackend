@@ -154,6 +154,31 @@ Add `DATABASES['default']['CONN_MAX_AGE'] = 600` in settings.
 
 ---
 
+## Scheduled Tasks
+
+Configure scheduled tasks in Coolify: **Projects → Application → Scheduled Tasks**
+
+### Process Overdue Reports
+
+Auto-approves daily reports that pass review deadline (3 days).
+
+| Field | Value |
+|-------|-------|
+| **Name** | Process Overdue Reports |
+| **Command** | `uv run python manage.py process_overdue_reports` |
+| **Frequency** | `0 * * * *` |
+
+### Process Overdue Disputes
+
+Auto-resolves disputes (pay handyman) that pass resolution deadline (3 days).
+
+| Field | Value |
+|-------|-------|
+| **Name** | Process Overdue Disputes |
+| **Command** | `uv run python manage.py process_overdue_disputes` |
+| **Frequency** | `0 * * * *` |
+---
+
 ## Backups
 
 Coolify handles PostgreSQL backups automatically. Manual:
@@ -168,4 +193,4 @@ docker exec -i <postgres> psql -U postgres solutionbank < backup.sql
 
 ---
 
-**Last Updated:** 2025-12-26
+**Last Updated:** 2025-12-27

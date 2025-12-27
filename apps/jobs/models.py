@@ -77,7 +77,9 @@ class Job(BaseModel):
         ("draft", "Draft"),
         ("open", "Open"),
         ("in_progress", "In Progress"),
+        ("pending_completion", "Pending Completion"),
         ("completed", "Completed"),
+        ("disputed", "Disputed"),
         ("cancelled", "Cancelled"),
         ("deleted", "Deleted"),
     ]
@@ -111,6 +113,17 @@ class Job(BaseModel):
         blank=True,
         help_text="List of tasks/items to be done for this job",
     )
+
+    assigned_handyman = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_jobs",
+        help_text="The handyman assigned to this job",
+    )
+    completion_requested_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
 
     # Dummy data flag for demo purposes
     is_dummy = models.BooleanField(default=False, db_index=True)
@@ -211,6 +224,41 @@ class Job(BaseModel):
         super().save(*args, **kwargs)
 
 
+class JobTask(BaseModel):
+    """
+    Individual task/item within a job.
+    Migrated from job_items JSON field for better tracking.
+    """
+
+    job = models.ForeignKey("Job", on_delete=models.CASCADE, related_name="tasks")
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    order = models.PositiveIntegerField(default=0)
+    is_completed = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    completed_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="completed_tasks",
+    )
+
+    class Meta:
+        db_table = "job_tasks"
+        ordering = ["order", "created_at"]
+        verbose_name = "Job Task"
+        verbose_name_plural = "Job Tasks"
+        indexes = [
+            models.Index(fields=["job"]),
+            models.Index(fields=["is_completed"]),
+        ]
+
+    def __str__(self):
+        status = "✓" if self.is_completed else "○"
+        return f"{status} {self.title}"
+
+
 class JobImage(BaseModel):
     """
     Job image model for storing multiple images per job.
@@ -233,6 +281,278 @@ class JobImage(BaseModel):
 
     def __str__(self):
         return f"Image {self.order} for {self.job.title}"
+
+
+class WorkSession(BaseModel):
+    """
+    Tracks a work session (START to STOP) for a job.
+    """
+
+    STATUS_CHOICES = [
+        ("in_progress", "In Progress"),
+        ("completed", "Completed"),
+    ]
+
+    job = models.ForeignKey(
+        "Job", on_delete=models.CASCADE, related_name="work_sessions"
+    )
+    handyman = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="work_sessions",
+    )
+
+    # Timestamps
+    started_at = models.DateTimeField()
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    # Start location & photo (required)
+    start_latitude = models.DecimalField(max_digits=9, decimal_places=6)
+    start_longitude = models.DecimalField(max_digits=9, decimal_places=6)
+    start_accuracy = models.FloatField(null=True, blank=True)
+    start_photo = models.ImageField(upload_to="work-sessions/start-photos/%Y/%m/%d/")
+
+    # End location (captured on STOP)
+    end_latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True
+    )
+    end_longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True
+    )
+    end_accuracy = models.FloatField(null=True, blank=True)
+
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default="in_progress"
+    )
+
+    class Meta:
+        db_table = "work_sessions"
+        ordering = ["-started_at"]
+        verbose_name = "Work Session"
+        verbose_name_plural = "Work Sessions"
+        indexes = [
+            models.Index(fields=["job"]),
+            models.Index(fields=["handyman"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["-started_at"]),
+        ]
+
+    def __str__(self):
+        return f"Work session for {self.job.title} on {self.started_at.date()}"
+
+    @property
+    def duration(self):
+        """Return duration as timedelta."""
+        if self.ended_at and self.started_at:
+            return self.ended_at - self.started_at
+        return None
+
+    @property
+    def duration_seconds(self):
+        """Return duration in seconds."""
+        if self.duration:
+            return int(self.duration.total_seconds())
+        return None
+
+
+class WorkSessionMedia(BaseModel):
+    """
+    Photos/videos uploaded during a work session.
+    """
+
+    MEDIA_TYPE_CHOICES = [
+        ("photo", "Photo"),
+        ("video", "Video"),
+    ]
+
+    work_session = models.ForeignKey(
+        "WorkSession", on_delete=models.CASCADE, related_name="media"
+    )
+    media_type = models.CharField(max_length=10, choices=MEDIA_TYPE_CHOICES)
+    file = models.FileField(upload_to="work-sessions/media/%Y/%m/%d/")
+    thumbnail = models.ImageField(
+        upload_to="work-sessions/thumbnails/%Y/%m/%d/",
+        null=True,
+        blank=True,
+    )
+    description = models.TextField(blank=True)
+    task = models.ForeignKey(
+        "JobTask",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="media",
+        help_text="Optional: Link to specific task",
+    )
+    file_size = models.PositiveIntegerField(help_text="File size in bytes")
+    duration_seconds = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Duration for videos"
+    )
+
+    class Meta:
+        db_table = "work_session_media"
+        ordering = ["-created_at"]
+        verbose_name = "Work Session Media"
+        verbose_name_plural = "Work Session Media"
+        indexes = [
+            models.Index(fields=["work_session"]),
+            models.Index(fields=["media_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.media_type} for {self.work_session}"
+
+
+class DailyReport(BaseModel):
+    """
+    Daily work report submitted by handyman.
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Pending Review"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+    ]
+
+    job = models.ForeignKey(
+        "Job", on_delete=models.CASCADE, related_name="daily_reports"
+    )
+    handyman = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="daily_reports_submitted",
+    )
+    report_date = models.DateField()
+
+    # Content
+    summary = models.TextField(help_text="Description of work done today")
+
+    # Calculated from work sessions
+    total_work_duration = models.DurationField(
+        help_text="Total work duration for this day"
+    )
+
+    # Review
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    homeowner_comment = models.TextField(blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="daily_reports_reviewed",
+    )
+
+    # Auto-approval deadline (3 days from creation)
+    review_deadline = models.DateTimeField()
+
+    class Meta:
+        db_table = "daily_reports"
+        ordering = ["-report_date"]
+        verbose_name = "Daily Report"
+        verbose_name_plural = "Daily Reports"
+        unique_together = ["job", "report_date"]
+        indexes = [
+            models.Index(fields=["job"]),
+            models.Index(fields=["handyman"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["-report_date"]),
+            models.Index(fields=["review_deadline"]),
+        ]
+
+    def __str__(self):
+        return f"Daily report for {self.job.title} on {self.report_date}"
+
+
+class DailyReportTask(BaseModel):
+    """
+    Tasks worked on in a daily report.
+    """
+
+    daily_report = models.ForeignKey(
+        "DailyReport", on_delete=models.CASCADE, related_name="tasks_worked"
+    )
+    task = models.ForeignKey(
+        "JobTask", on_delete=models.CASCADE, related_name="daily_report_entries"
+    )
+    notes = models.TextField(blank=True, help_text="Notes about this task")
+    marked_complete = models.BooleanField(
+        default=False, help_text="Handyman marked this task as complete"
+    )
+
+    class Meta:
+        db_table = "daily_report_tasks"
+        unique_together = ["daily_report", "task"]
+        ordering = ["task__order"]
+        verbose_name = "Daily Report Task"
+        verbose_name_plural = "Daily Report Tasks"
+
+    def __str__(self):
+        return f"{self.task.title} in report {self.daily_report.report_date}"
+
+
+class JobDispute(BaseModel):
+    """
+    Dispute raised by homeowner about job work.
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Pending Admin Review"),
+        ("in_review", "Under Review"),
+        ("resolved_full_refund", "Resolved - Full Refund"),
+        ("resolved_partial_refund", "Resolved - Partial Refund"),
+        ("resolved_pay_handyman", "Resolved - Pay Handyman"),
+        ("cancelled", "Cancelled"),
+    ]
+
+    job = models.ForeignKey("Job", on_delete=models.CASCADE, related_name="disputes")
+    initiated_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="disputes_initiated",
+    )
+
+    # Dispute details
+    reason = models.TextField()
+    disputed_reports = models.ManyToManyField(
+        "DailyReport", blank=True, related_name="disputes"
+    )
+
+    # Resolution
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="pending")
+    admin_notes = models.TextField(blank=True)
+    resolved_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="disputes_resolved",
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    refund_percentage = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Refund percentage (0-100)"
+    )
+
+    # Auto-resolution deadline (3 days)
+    resolution_deadline = models.DateTimeField()
+
+    class Meta:
+        db_table = "job_disputes"
+        ordering = ["-created_at"]
+        verbose_name = "Job Dispute"
+        verbose_name_plural = "Job Disputes"
+        indexes = [
+            models.Index(fields=["job"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["resolution_deadline"]),
+        ]
+        permissions = [
+            ("can_manage_disputes", "Can resolve and manage job disputes"),
+        ]
+
+    def __str__(self):
+        return f"Dispute for {self.job.title} ({self.status})"
 
 
 class JobApplication(BaseModel):

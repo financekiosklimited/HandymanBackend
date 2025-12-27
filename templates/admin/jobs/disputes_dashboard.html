@@ -1,0 +1,254 @@
+{% extends "admin/base.html" %}
+{% load i18n unfold %}
+
+{% block title %}{% trans "Disputes Dashboard" %} | {{ site_title|default:_('Django administration') }}{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="px-4 py-3 md:px-8 md:py-6">
+    <nav class="flex" aria-label="Breadcrumb">
+        <ol class="inline-flex items-center space-x-1 md:space-x-3">
+            <li class="inline-flex items-center">
+                <a href="{% url 'admin:index' %}" class="text-gray-500 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400">
+                    {% trans "Home" %}
+                </a>
+            </li>
+            <li>
+                <div class="flex items-center">
+                    <span class="mx-2 text-gray-400">/</span>
+                    <span class="text-gray-700 dark:text-gray-300">{% trans "Disputes Dashboard" %}</span>
+                </div>
+            </li>
+        </ol>
+    </nav>
+</div>
+{% endblock %}
+
+{% block content %}
+{% component "unfold/components/container.html" %}
+    <!-- Header -->
+    <div class="mb-8">
+        <div class="flex items-center gap-3 mb-2">
+            <span class="material-symbols-outlined text-primary-600 dark:text-primary-400 text-3xl">gavel</span>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{% trans "Disputes Dashboard" %}</h1>
+        </div>
+        <p class="text-gray-500 dark:text-gray-400">
+            {% trans "Manage and resolve job disputes. Review pending cases and take action." %}
+        </p>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+        <!-- Pending -->
+        {% component "unfold/components/card.html" %}
+            <div class="flex items-center justify-between">
+                <div>
+                    {% component "unfold/components/text.html" with class="text-sm text-gray-500 dark:text-gray-400" %}
+                        {% trans "Pending Review" %}
+                    {% endcomponent %}
+                    {% component "unfold/components/title.html" with class="text-3xl text-orange-600 dark:text-orange-400" %}
+                        {{ kpis.pending_count }}
+                    {% endcomponent %}
+                </div>
+                <span class="material-symbols-outlined text-4xl text-orange-200 dark:text-orange-800">hourglass_top</span>
+            </div>
+        {% endcomponent %}
+
+        <!-- In Review -->
+        {% component "unfold/components/card.html" %}
+            <div class="flex items-center justify-between">
+                <div>
+                    {% component "unfold/components/text.html" with class="text-sm text-gray-500 dark:text-gray-400" %}
+                        {% trans "In Review" %}
+                    {% endcomponent %}
+                    {% component "unfold/components/title.html" with class="text-3xl text-blue-600 dark:text-blue-400" %}
+                        {{ kpis.in_review_count }}
+                    {% endcomponent %}
+                </div>
+                <span class="material-symbols-outlined text-4xl text-blue-200 dark:text-blue-800">pending</span>
+            </div>
+        {% endcomponent %}
+
+        <!-- Overdue -->
+        {% component "unfold/components/card.html" %}
+            <div class="flex items-center justify-between">
+                <div>
+                    {% component "unfold/components/text.html" with class="text-sm text-gray-500 dark:text-gray-400" %}
+                        {% trans "Overdue" %}
+                    {% endcomponent %}
+                    {% component "unfold/components/title.html" with class="text-3xl text-red-600 dark:text-red-400" %}
+                        {{ kpis.overdue_count }}
+                    {% endcomponent %}
+                </div>
+                <span class="material-symbols-outlined text-4xl text-red-200 dark:text-red-800">warning</span>
+            </div>
+        {% endcomponent %}
+
+        <!-- Due Soon -->
+        {% component "unfold/components/card.html" %}
+            <div class="flex items-center justify-between">
+                <div>
+                    {% component "unfold/components/text.html" with class="text-sm text-gray-500 dark:text-gray-400" %}
+                        {% trans "Due Soon (24h)" %}
+                    {% endcomponent %}
+                    {% component "unfold/components/title.html" with class="text-3xl text-amber-600 dark:text-amber-400" %}
+                        {{ kpis.due_soon_count }}
+                    {% endcomponent %}
+                </div>
+                <span class="material-symbols-outlined text-4xl text-amber-200 dark:text-amber-800">schedule</span>
+            </div>
+        {% endcomponent %}
+
+        <!-- Resolved This Week -->
+        {% component "unfold/components/card.html" %}
+            <div class="flex items-center justify-between">
+                <div>
+                    {% component "unfold/components/text.html" with class="text-sm text-gray-500 dark:text-gray-400" %}
+                        {% trans "Resolved (7d)" %}
+                    {% endcomponent %}
+                    {% component "unfold/components/title.html" with class="text-3xl text-green-600 dark:text-green-400" %}
+                        {{ kpis.resolved_this_week }}
+                    {% endcomponent %}
+                </div>
+                <span class="material-symbols-outlined text-4xl text-green-200 dark:text-green-800">check_circle</span>
+            </div>
+        {% endcomponent %}
+    </div>
+
+    <!-- Pending Disputes Table -->
+    {% component "unfold/components/card.html" with class="overflow-hidden" %}
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {% trans "Pending Disputes" %}
+            </h2>
+            <a href="{% url 'admin:jobs_jobdispute_changelist' %}" class="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
+                {% trans "View All" %} &rarr;
+            </a>
+        </div>
+
+        {% if disputes %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead class="bg-gray-50 dark:bg-gray-800">
+                    <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            {% trans "Job" %}
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            {% trans "Parties" %}
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            {% trans "Reason" %}
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            {% trans "Status" %}
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            {% trans "Deadline" %}
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            {% trans "Actions" %}
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                    {% for dispute in disputes %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <a href="{% url 'admin:jobs_job_change' dispute.job.pk %}" class="text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300 font-medium">
+                                {{ dispute.job.title|truncatechars:30 }}
+                            </a>
+                            <div class="text-xs text-gray-500 dark:text-gray-400">
+                                ${{ dispute.job.estimated_budget }}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="text-sm">
+                                <div class="flex items-center gap-1 text-gray-900 dark:text-gray-100">
+                                    <span class="text-xs">Homeowner:</span>
+                                    <span class="font-medium">{{ dispute.job.homeowner.email|truncatechars:20 }}</span>
+                                </div>
+                                {% if dispute.job.assigned_handyman %}
+                                <div class="flex items-center gap-1 text-gray-500 dark:text-gray-400">
+                                    <span class="text-xs">Handyman:</span>
+                                    <span>{{ dispute.job.assigned_handyman.email|truncatechars:20 }}</span>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <p class="text-sm text-gray-700 dark:text-gray-300 max-w-xs truncate" title="{{ dispute.reason }}">
+                                {{ dispute.reason|truncatechars:50 }}
+                            </p>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% if dispute.status == "pending" %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
+                                    Pending
+                                </span>
+                            {% elif dispute.status == "in_review" %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                    In Review
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% if dispute.resolution_deadline < now %}
+                                <span class="inline-flex items-center gap-1 text-red-600 dark:text-red-400 font-semibold text-sm">
+                                    <span class="material-symbols-outlined text-base">error</span>
+                                    OVERDUE
+                                </span>
+                                <div class="text-xs text-gray-500">{{ dispute.resolution_deadline|date:"M d, H:i" }}</div>
+                            {% elif dispute.resolution_deadline < now|add:"86400" %}
+                                <span class="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-semibold text-sm">
+                                    <span class="material-symbols-outlined text-base">schedule</span>
+                                    DUE SOON
+                                </span>
+                                <div class="text-xs text-gray-500">{{ dispute.resolution_deadline|date:"M d, H:i" }}</div>
+                            {% else %}
+                                <span class="text-sm text-gray-700 dark:text-gray-300">
+                                    {{ dispute.resolution_deadline|date:"M d, H:i" }}
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <div class="flex items-center justify-end gap-2">
+                                <a href="{% url 'admin:jobs_jobdispute_change' dispute.pk %}" 
+                                   class="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
+                                   title="View Details">
+                                    <span class="material-symbols-outlined text-xl">visibility</span>
+                                </a>
+                                {% if can_manage %}
+                                <a href="{% url 'admin:jobs_jobdispute_resolve' dispute.pk %}" 
+                                   class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors">
+                                    <span class="material-symbols-outlined text-base mr-1">gavel</span>
+                                    Resolve
+                                </a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="px-6 py-12 text-center">
+            <span class="material-symbols-outlined text-6xl text-gray-300 dark:text-gray-600 mb-4">celebration</span>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-1">{% trans "No pending disputes" %}</h3>
+            <p class="text-gray-500 dark:text-gray-400">{% trans "All disputes have been resolved. Great job!" %}</p>
+        </div>
+        {% endif %}
+    {% endcomponent %}
+
+{% endcomponent %}
+
+<style>
+    .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+</style>
+{% endblock %}

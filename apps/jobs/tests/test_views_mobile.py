@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 from io import BytesIO
 from unittest.mock import patch
@@ -9,7 +10,12 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import User, UserRole
-from apps.jobs.models import City, Job, JobApplication, JobCategory
+from apps.jobs.models import (
+    City,
+    Job,
+    JobApplication,
+    JobCategory,
+)
 from apps.profiles.models import HandymanProfile, HomeownerProfile
 
 
@@ -1260,7 +1266,6 @@ class MobileForYouJobListViewTests(APITestCase):
 
     def test_for_you_distance_sorting(self):
         """Test that jobs are sorted by recency first, then distance."""
-        from datetime import timedelta
 
         from django.utils import timezone
 

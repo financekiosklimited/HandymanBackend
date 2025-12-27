@@ -369,6 +369,11 @@ UNFOLD = {
                 "separator": True,
                 "items": [
                     {
+                        "title": "Disputes Dashboard",
+                        "icon": "gavel",
+                        "link": lambda request: "/admin/jobs/jobdispute/dashboard/",
+                    },
+                    {
                         "title": "Job Listings",
                         "icon": "work",
                         "link": lambda request: "/admin/jobs/job/",

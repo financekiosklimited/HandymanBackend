@@ -12,10 +12,16 @@ from apps.jobs.models import (
     MAX_JOB_ITEM_LENGTH,
     MAX_JOB_ITEMS,
     City,
+    DailyReport,
+    DailyReportTask,
     Job,
     JobApplication,
     JobCategory,
+    JobDispute,
     JobImage,
+    JobTask,
+    WorkSession,
+    WorkSessionMedia,
 )
 
 
@@ -834,3 +840,475 @@ HandymanJobDetailResponseSerializer = create_response_serializer(
 HandymanForYouJobListResponseSerializer = create_list_response_serializer(
     ForYouJobSerializer, "HandymanForYouJobListResponse"
 )
+
+
+# ========================
+# Ongoing Job Serializers
+# ========================
+
+
+class JobTaskSerializer(serializers.ModelSerializer):
+    """
+    Serializer for job tasks (read-only).
+    """
+
+    class Meta:
+        model = JobTask
+        fields = [
+            "public_id",
+            "title",
+            "description",
+            "order",
+            "is_completed",
+            "completed_at",
+        ]
+        read_only_fields = fields
+
+
+class WorkSessionMediaSerializer(serializers.ModelSerializer):
+    """
+    Serializer for work session media (read-only).
+    """
+
+    file = serializers.FileField(use_url=True)
+    thumbnail = serializers.ImageField(use_url=True)
+
+    class Meta:
+        model = WorkSessionMedia
+        fields = [
+            "public_id",
+            "media_type",
+            "file",
+            "thumbnail",
+            "description",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class WorkSessionSerializer(serializers.ModelSerializer):
+    """
+    Serializer for work sessions (read-only).
+    """
+
+    start_photo = serializers.ImageField(use_url=True)
+    media = WorkSessionMediaSerializer(many=True, read_only=True)
+    duration_seconds = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = WorkSession
+        fields = [
+            "public_id",
+            "status",
+            "started_at",
+            "ended_at",
+            "duration_seconds",
+            "start_latitude",
+            "start_longitude",
+            "start_photo",
+            "end_latitude",
+            "end_longitude",
+            "media",
+        ]
+        read_only_fields = fields
+
+
+class DailyReportTaskSerializer(serializers.ModelSerializer):
+    """
+    Serializer for tasks in a daily report (read-only).
+    """
+
+    task = JobTaskSerializer(read_only=True)
+
+    class Meta:
+        model = DailyReportTask
+        fields = ["public_id", "task", "notes", "marked_complete"]
+        read_only_fields = fields
+
+
+class DailyReportSerializer(serializers.ModelSerializer):
+    """
+    Serializer for daily reports (read-only).
+    """
+
+    tasks_worked = DailyReportTaskSerializer(many=True, read_only=True)
+    total_work_duration_seconds = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DailyReport
+        fields = [
+            "public_id",
+            "report_date",
+            "summary",
+            "status",
+            "total_work_duration_seconds",
+            "homeowner_comment",
+            "reviewed_at",
+            "review_deadline",
+            "tasks_worked",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_total_work_duration_seconds(self, obj):
+        """Get total work duration in seconds."""
+        if obj.total_work_duration:
+            return int(obj.total_work_duration.total_seconds())
+        return 0
+
+
+class JobDisputeSerializer(serializers.ModelSerializer):
+    """
+    Serializer for job disputes (read-only).
+    """
+
+    disputed_reports = DailyReportSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = JobDispute
+        fields = [
+            "public_id",
+            "reason",
+            "status",
+            "admin_notes",
+            "resolved_at",
+            "refund_percentage",
+            "resolution_deadline",
+            "disputed_reports",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+# ========================
+# Ongoing Job Write Serializers
+# ========================
+
+
+class WorkSessionMediaCreateSerializer(serializers.Serializer):
+    """
+    Serializer for uploading media to a work session.
+    """
+
+    media_type = serializers.ChoiceField(
+        choices=[("photo", "Photo"), ("video", "Video")],
+        help_text="Type of media",
+    )
+    file = serializers.FileField(
+        help_text="Media file (photo or video)",
+    )
+    file_size = serializers.IntegerField(
+        help_text="File size in bytes",
+    )
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Optional description of the media",
+    )
+    task_id = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+        help_text="Optional task this media is associated with",
+    )
+    duration_seconds = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="Duration in seconds (required for video)",
+    )
+
+    def validate_task_id(self, value):
+        """Validate task exists if provided."""
+        if value is None:
+            return None
+        try:
+            task = JobTask.objects.get(public_id=value)
+            return task
+        except JobTask.DoesNotExist:
+            raise serializers.ValidationError("Invalid task.")
+
+    def validate(self, attrs):
+        """Cross-field validation."""
+        media_type = attrs.get("media_type")
+        duration_seconds = attrs.get("duration_seconds")
+
+        if media_type == "video" and not duration_seconds:
+            raise serializers.ValidationError(
+                {"duration_seconds": "Duration is required for video uploads."}
+            )
+
+        return attrs
+
+
+class DisputeCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating a dispute.
+    """
+
+    reason = serializers.CharField(
+        help_text="Reason for the dispute",
+    )
+    disputed_report_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        help_text="List of daily report public_ids to dispute",
+    )
+
+    def validate_disputed_report_ids(self, value):
+        """Validate that all report IDs exist."""
+        if not value:
+            return []
+
+        reports = []
+        for report_id in value:
+            try:
+                report = DailyReport.objects.get(public_id=report_id)
+                reports.append(report)
+            except DailyReport.DoesNotExist:
+                raise serializers.ValidationError(
+                    f"Daily report with ID {report_id} not found."
+                )
+        return reports
+
+
+class DisputeResolveSerializer(serializers.Serializer):
+    """
+    Serializer for resolving a dispute (admin only).
+    """
+
+    RESOLUTION_CHOICES = [
+        ("resolved_full_refund", "Full Refund"),
+        ("resolved_partial_refund", "Partial Refund"),
+        ("resolved_pay_handyman", "Pay Handyman"),
+    ]
+
+    status = serializers.ChoiceField(
+        choices=RESOLUTION_CHOICES,
+        help_text="Resolution status",
+    )
+    admin_notes = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Admin notes about the resolution",
+    )
+    refund_percentage = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=1,
+        max_value=99,
+        help_text="Refund percentage (required for partial refund, 1-99%)",
+    )
+
+    def validate(self, attrs):
+        """Cross-field validation."""
+        status = attrs.get("status")
+        refund_percentage = attrs.get("refund_percentage")
+
+        if status == "resolved_partial_refund":
+            if refund_percentage is None:
+                raise serializers.ValidationError(
+                    {
+                        "refund_percentage": "Refund percentage is required for partial refund resolution."
+                    }
+                )
+        elif status == "resolved_full_refund":
+            # Full refund is implicitly 100%
+            attrs["refund_percentage"] = 100
+
+        return attrs
+
+
+# Response envelope serializers for ongoing job entities
+
+WorkSessionListResponseSerializer = create_list_response_serializer(
+    WorkSessionSerializer, "WorkSessionListResponse"
+)
+
+WorkSessionDetailResponseSerializer = create_response_serializer(
+    WorkSessionSerializer, "WorkSessionDetailResponse"
+)
+
+DailyReportListResponseSerializer = create_list_response_serializer(
+    DailyReportSerializer, "DailyReportListResponse"
+)
+
+DailyReportDetailResponseSerializer = create_response_serializer(
+    DailyReportSerializer, "DailyReportDetailResponse"
+)
+
+JobDisputeListResponseSerializer = create_list_response_serializer(
+    JobDisputeSerializer, "JobDisputeListResponse"
+)
+
+JobDisputeDetailResponseSerializer = create_response_serializer(
+    JobDisputeSerializer, "JobDisputeDetailResponse"
+)
+
+
+# ========================
+# Write Operation Serializers
+# ========================
+
+
+class WorkSessionStartSerializer(serializers.Serializer):
+    """
+    Serializer for starting a work session.
+    """
+
+    started_at = serializers.DateTimeField(
+        help_text="Timestamp when work started",
+    )
+    start_latitude = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        coerce_to_string=False,
+        help_text="Latitude coordinate at start",
+    )
+    start_longitude = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        coerce_to_string=False,
+        help_text="Longitude coordinate at start",
+    )
+    start_accuracy = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        coerce_to_string=False,
+        help_text="GPS accuracy in meters (optional)",
+    )
+    start_photo = serializers.ImageField(
+        help_text="Photo taken at start of work",
+    )
+
+    def validate_start_latitude(self, value):
+        """Validate latitude range."""
+        if not (-90 <= value <= 90):
+            raise serializers.ValidationError("Latitude must be between -90 and 90.")
+        return value
+
+    def validate_start_longitude(self, value):
+        """Validate longitude range."""
+        if not (-180 <= value <= 180):
+            raise serializers.ValidationError("Longitude must be between -180 and 180.")
+        return value
+
+
+class WorkSessionStopSerializer(serializers.Serializer):
+    """
+    Serializer for stopping a work session.
+    """
+
+    ended_at = serializers.DateTimeField(
+        help_text="Timestamp when work ended",
+    )
+    end_latitude = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        coerce_to_string=False,
+        help_text="Latitude coordinate at end",
+    )
+    end_longitude = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        coerce_to_string=False,
+        help_text="Longitude coordinate at end",
+    )
+    end_accuracy = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        coerce_to_string=False,
+        help_text="GPS accuracy in meters (optional)",
+    )
+
+    def validate_end_latitude(self, value):
+        """Validate latitude range."""
+        if not (-90 <= value <= 90):
+            raise serializers.ValidationError("Latitude must be between -90 and 90.")
+        return value
+
+    def validate_end_longitude(self, value):
+        """Validate longitude range."""
+        if not (-180 <= value <= 180):
+            raise serializers.ValidationError("Longitude must be between -180 and 180.")
+        return value
+
+
+class DailyReportTaskEntrySerializer(serializers.Serializer):
+    """
+    Serializer for a task entry in a daily report.
+    """
+
+    task_id = serializers.UUIDField(
+        help_text="Public ID of the task",
+    )
+    notes = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Notes about work done on this task",
+    )
+    marked_complete = serializers.BooleanField(
+        default=False,
+        help_text="Whether to mark the task as complete",
+    )
+
+    def validate_task_id(self, value):
+        """Validate task exists."""
+        try:
+            task = JobTask.objects.get(public_id=value)
+            return task
+        except JobTask.DoesNotExist:
+            raise serializers.ValidationError("Invalid task.")
+
+
+class DailyReportCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating a daily report.
+    """
+
+    report_date = serializers.DateField(
+        help_text="Date of the report (YYYY-MM-DD)",
+    )
+    summary = serializers.CharField(
+        help_text="Summary of work done today",
+    )
+    total_work_duration_seconds = serializers.IntegerField(
+        min_value=0,
+        help_text="Total work duration in seconds",
+    )
+    tasks = DailyReportTaskEntrySerializer(
+        many=True,
+        required=False,
+        help_text="List of tasks worked on today",
+    )
+
+
+class DailyReportReviewSerializer(serializers.Serializer):
+    """
+    Serializer for reviewing (accepting/rejecting) a daily report.
+    """
+
+    decision = serializers.ChoiceField(
+        choices=[("approved", "Approved"), ("rejected", "Rejected")],
+        help_text="Decision on the report",
+    )
+    comment = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Optional comment from homeowner",
+    )
+
+
+class CompletionRejectSerializer(serializers.Serializer):
+    """
+    Serializer for rejecting job completion.
+    """
+
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Reason for rejection",
+    )

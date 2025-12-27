@@ -54,11 +54,14 @@ class DashboardTests(TestCase):
 
     def test_get_kpi_cards(self):
         cards = get_kpi_cards()
-        self.assertEqual(len(cards), 4)
-        self.assertEqual(cards[0]["metric"], 1)  # 1 user
-        self.assertEqual(cards[1]["metric"], 2)  # 2 jobs
-        self.assertEqual(cards[2]["metric"], 1)  # 1 open job
-        self.assertEqual(cards[3]["metric"], 1)  # 1 pending app
+        self.assertEqual(len(cards), 7)
+        self.assertEqual(cards[0]["metric"], 1)  # total users
+        self.assertEqual(cards[1]["metric"], 0)  # in progress
+        self.assertEqual(cards[2]["metric"], 0)  # pending completion
+        self.assertEqual(cards[3]["metric"], 0)  # pending daily reports
+        self.assertEqual(cards[4]["metric"], 0)  # open disputes
+        self.assertEqual(cards[5]["metric"], 0)  # active sessions
+        self.assertEqual(cards[6]["metric"], 1)  # pending apps
 
     def test_get_user_signups_chart_data(self):
         # Create a user 31 days ago (should not be in chart)
@@ -84,8 +87,8 @@ class DashboardTests(TestCase):
         chart_data = json.loads(chart_json)
 
         self.assertIn("labels", chart_data)
-        # draft, open, in_progress, completed, cancelled
-        self.assertEqual(chart_data["datasets"][0]["data"], [1, 1, 0, 0, 0])
+        # draft, open, in_progress, pending_completion, completed, disputed, cancelled
+        self.assertEqual(chart_data["datasets"][0]["data"], [1, 1, 0, 0, 0, 0, 0])
 
     def test_dashboard_callback(self):
         context = {}
