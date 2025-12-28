@@ -108,11 +108,6 @@ class Job(BaseModel):
         blank=True,
         help_text="Timestamp when status was last changed",
     )
-    job_items = models.JSONField(
-        default=list,
-        blank=True,
-        help_text="List of tasks/items to be done for this job",
-    )
 
     assigned_handyman = models.ForeignKey(
         "accounts.User",
@@ -183,28 +178,6 @@ class Job(BaseModel):
                     {"longitude": "Longitude must be between -180 and 180."}
                 )
 
-        # Validate job_items
-        if self.job_items:
-            if not isinstance(self.job_items, list):
-                raise ValidationError({"job_items": "Job items must be a list."})
-
-            if len(self.job_items) > MAX_JOB_ITEMS:
-                raise ValidationError(
-                    {"job_items": f"Maximum {MAX_JOB_ITEMS} items allowed."}
-                )
-
-            for idx, item in enumerate(self.job_items):
-                if not isinstance(item, str):
-                    raise ValidationError(
-                        {"job_items": f"Item at index {idx} must be a string."}
-                    )
-                if len(item) > MAX_JOB_ITEM_LENGTH:
-                    raise ValidationError(
-                        {
-                            "job_items": f"Item at index {idx} exceeds maximum length of {MAX_JOB_ITEM_LENGTH} characters."
-                        }
-                    )
-
     def save(self, *args, **kwargs):
         """
         Override save to run validation and track status changes.
@@ -227,7 +200,7 @@ class Job(BaseModel):
 class JobTask(BaseModel):
     """
     Individual task/item within a job.
-    Migrated from job_items JSON field for better tracking.
+    Tracks completion status, who completed it, and when.
     """
 
     job = models.ForeignKey("Job", on_delete=models.CASCADE, related_name="tasks")

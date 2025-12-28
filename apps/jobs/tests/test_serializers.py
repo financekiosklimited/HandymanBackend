@@ -14,6 +14,7 @@ from apps.jobs.models import (
     Job,
     JobCategory,
     JobImage,
+    JobTask,
 )
 from apps.jobs.serializers import (
     CitySerializer,
@@ -149,8 +150,10 @@ class JobListSerializerTests(TestCase):
             city=self.city,
             address="123 Main St",
             status="open",
-            job_items=["Check pipes", "Replace washer"],
         )
+        # Create tasks for the job
+        JobTask.objects.create(job=job, title="Check pipes", order=0)
+        JobTask.objects.create(job=job, title="Replace washer", order=1)
 
         serializer = JobListSerializer(job)
         data = serializer.data
@@ -174,9 +177,11 @@ class JobListSerializerTests(TestCase):
         self.assertIn("images", data)
         self.assertEqual(data["images"], [])
 
-        # Check job_items
-        self.assertIn("job_items", data)
-        self.assertEqual(data["job_items"], ["Check pipes", "Replace washer"])
+        # Check tasks
+        self.assertIn("tasks", data)
+        self.assertEqual(len(data["tasks"]), 2)
+        self.assertEqual(data["tasks"][0]["title"], "Check pipes")
+        self.assertEqual(data["tasks"][1]["title"], "Replace washer")
 
 
 class JobDetailSerializerTests(TestCase):
@@ -394,18 +399,23 @@ class JobCreateSerializerTests(TestCase):
             serializer.validate_images([image_file] * 11)
         self.assertIn("Maximum 10 images allowed", str(cm.exception))
 
-    def test_validate_job_items(self):
-        """Test validation and cleaning of job items."""
+    def test_validate_tasks(self):
+        """Test validation and cleaning of tasks."""
         from apps.jobs.serializers import JobCreateSerializer
 
         serializer = JobCreateSerializer(context={"request": self.request})
 
-        items = ["  Task 1  ", "", "Task 2", "   "]
-        cleaned = serializer.validate_job_items(items)
-        self.assertEqual(cleaned, ["Task 1", "Task 2"])
+        tasks = [
+            {"title": "  Task 1  "},
+            {"title": ""},
+            {"title": "Task 2"},
+            {"title": "   "},
+        ]
+        cleaned = serializer.validate_tasks(tasks)
+        self.assertEqual(cleaned, [{"title": "Task 1"}, {"title": "Task 2"}])
 
-        self.assertEqual(serializer.validate_job_items([]), [])
-        self.assertEqual(serializer.validate_job_items(None), [])
+        self.assertEqual(serializer.validate_tasks([]), [])
+        self.assertEqual(serializer.validate_tasks(None), [])
 
 
 class JobUpdateSerializerTests(TestCase):
@@ -524,6 +534,26 @@ class JobUpdateSerializerTests(TestCase):
         )
         self.assertFalse(serializer.is_valid())
 
+    def test_update_tasks_removes_empty_titles(self):
+        """Test updating tasks removes entries with empty titles after stripping."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        data = {
+            "tasks": [
+                {"title": "Valid task"},
+                {"title": ""},
+                {"title": "  "},
+                {"title": "Another valid task"},
+            ],
+        }
+
+        serializer = JobUpdateSerializer(self.job, data=data, partial=True)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+        updated_job = serializer.save()
+        task_titles = list(updated_job.tasks.values_list("title", flat=True))
+        self.assertEqual(task_titles, ["Valid task", "Another valid task"])
+
     def test_validate_postal_code_invalid(self):
         """Test validation fails with invalid postal code."""
         from apps.jobs.serializers import JobCreateSerializer
@@ -590,8 +620,8 @@ class JobUpdateSerializerTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("longitude", serializer.errors)
 
-    def test_create_job_with_job_items(self):
-        """Test creating a job with job_items."""
+    def test_create_job_with_tasks(self):
+        """Test creating a job with tasks."""
         data = {
             "title": "Bathroom Renovation",
             "description": "Complete renovation",
@@ -599,19 +629,25 @@ class JobUpdateSerializerTests(TestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "job_items": ["Remove old tiles", "Install new tiles", "Paint walls"],
+            "tasks": [
+                {"title": "Remove old tiles"},
+                {"title": "Install new tiles"},
+                {"title": "Paint walls"},
+            ],
         }
 
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertTrue(serializer.is_valid())
 
         job = serializer.save()
+        self.assertEqual(job.tasks.count(), 3)
+        task_titles = list(job.tasks.values_list("title", flat=True))
         self.assertEqual(
-            job.job_items, ["Remove old tiles", "Install new tiles", "Paint walls"]
+            task_titles, ["Remove old tiles", "Install new tiles", "Paint walls"]
         )
 
-    def test_create_job_without_job_items(self):
-        """Test creating a job without job_items defaults to empty list."""
+    def test_create_job_without_tasks(self):
+        """Test creating a job without tasks defaults to empty."""
         data = {
             "title": "Test Job",
             "description": "Test",
@@ -625,10 +661,10 @@ class JobUpdateSerializerTests(TestCase):
         self.assertTrue(serializer.is_valid())
 
         job = serializer.save()
-        self.assertEqual(job.job_items, [])
+        self.assertEqual(job.tasks.count(), 0)
 
-    def test_job_items_serialization_in_response(self):
-        """Test job_items is included in serialized response."""
+    def test_tasks_serialization_in_response(self):
+        """Test tasks is included in serialized response."""
         job = Job.objects.create(
             homeowner=self.user,
             title="Test",
@@ -637,18 +673,21 @@ class JobUpdateSerializerTests(TestCase):
             category=self.category,
             city=self.city,
             address="123 Main St",
-            job_items=["Task 1", "Task 2"],
         )
+        JobTask.objects.create(job=job, title="Task 1", order=0)
+        JobTask.objects.create(job=job, title="Task 2", order=1)
 
         serializer = JobDetailSerializer(job)
         data = serializer.data
 
-        self.assertIn("job_items", data)
-        self.assertEqual(data["job_items"], ["Task 1", "Task 2"])
+        self.assertIn("tasks", data)
+        self.assertEqual(len(data["tasks"]), 2)
+        self.assertEqual(data["tasks"][0]["title"], "Task 1")
+        self.assertEqual(data["tasks"][1]["title"], "Task 2")
 
-    def test_job_items_max_items_validation(self):
-        """Test job_items cannot exceed maximum number of items."""
-        job_items = [f"Task {i}" for i in range(MAX_JOB_ITEMS + 1)]
+    def test_tasks_max_items_validation(self):
+        """Test tasks cannot exceed maximum number of items."""
+        tasks = [{"title": f"Task {i}"} for i in range(MAX_JOB_ITEMS + 1)]
         data = {
             "title": "Test",
             "description": "Test",
@@ -656,16 +695,16 @@ class JobUpdateSerializerTests(TestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "job_items": job_items,
+            "tasks": tasks,
         }
 
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
-        self.assertIn("job_items", serializer.errors)
+        self.assertIn("tasks", serializer.errors)
 
-    def test_job_items_max_length_validation(self):
-        """Test each job item cannot exceed maximum length."""
-        long_item = "x" * (MAX_JOB_ITEM_LENGTH + 1)
+    def test_tasks_max_length_validation(self):
+        """Test each task title cannot exceed maximum length."""
+        long_title = "x" * (MAX_JOB_ITEM_LENGTH + 1)
         data = {
             "title": "Test",
             "description": "Test",
@@ -673,15 +712,15 @@ class JobUpdateSerializerTests(TestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "job_items": [long_item],
+            "tasks": [{"title": long_title}],
         }
 
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
-        self.assertIn("job_items", serializer.errors)
+        self.assertIn("tasks", serializer.errors)
 
-    def test_job_items_strips_whitespace(self):
-        """Test job_items strips whitespace from items."""
+    def test_tasks_strips_whitespace(self):
+        """Test tasks strips whitespace from titles."""
         data = {
             "title": "Test",
             "description": "Test",
@@ -689,17 +728,18 @@ class JobUpdateSerializerTests(TestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "job_items": ["  Task with spaces  ", "Normal task"],
+            "tasks": [{"title": "  Task with spaces  "}, {"title": "Normal task"}],
         }
 
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertTrue(serializer.is_valid())
 
         job = serializer.save()
-        self.assertEqual(job.job_items, ["Task with spaces", "Normal task"])
+        task_titles = list(job.tasks.values_list("title", flat=True))
+        self.assertEqual(task_titles, ["Task with spaces", "Normal task"])
 
-    def test_job_items_removes_empty_strings(self):
-        """Test job_items removes empty strings after stripping."""
+    def test_tasks_removes_empty_titles(self):
+        """Test tasks removes entries with empty titles after stripping."""
         data = {
             "title": "Test",
             "description": "Test",
@@ -707,14 +747,20 @@ class JobUpdateSerializerTests(TestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "job_items": ["Valid task", "", "  ", "Another valid task"],
+            "tasks": [
+                {"title": "Valid task"},
+                {"title": ""},
+                {"title": "  "},
+                {"title": "Another valid task"},
+            ],
         }
 
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertTrue(serializer.is_valid())
 
         job = serializer.save()
-        self.assertEqual(job.job_items, ["Valid task", "Another valid task"])
+        task_titles = list(job.tasks.values_list("title", flat=True))
+        self.assertEqual(task_titles, ["Valid task", "Another valid task"])
 
 
 class HandymanJobDetailSerializerTests(TestCase):
@@ -1054,8 +1100,8 @@ class JobCreateSerializerValidationTests(TestCase):
         self.assertIn("city_id", serializer.errors)
         self.assertIn("Invalid city", str(serializer.errors["city_id"]))
 
-    def test_validate_job_items_empty_returns_empty_list(self):
-        """Test empty job_items returns empty list."""
+    def test_validate_tasks_empty_returns_empty(self):
+        """Test empty tasks returns empty and creates no tasks."""
         from apps.jobs.serializers import JobCreateSerializer
 
         data = {
@@ -1065,13 +1111,13 @@ class JobCreateSerializerValidationTests(TestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "job_items": [],
+            "tasks": [],
         }
 
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertTrue(serializer.is_valid())
         job = serializer.save()
-        self.assertEqual(job.job_items, [])
+        self.assertEqual(job.tasks.count(), 0)
 
 
 class JobUpdateSerializerValidationTests(TestCase):
@@ -1209,16 +1255,260 @@ class JobUpdateSerializerValidationTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("latitude", serializer.errors)
 
-    def test_update_empty_job_items(self):
-        """Test updating with empty job_items."""
+    def test_update_empty_tasks(self):
+        """Test updating with empty tasks preserves existing tasks (no implicit delete)."""
         from apps.jobs.serializers import JobUpdateSerializer
 
-        data = {"job_items": []}
+        # First create some tasks
+        JobTask.objects.create(job=self.job, title="Existing Task", order=0)
+        self.assertEqual(self.job.tasks.count(), 1)
+
+        # Empty tasks array should preserve existing tasks
+        data = {"tasks": []}
 
         serializer = JobUpdateSerializer(
             self.job, data=data, partial=True, context={"request": self.request}
         )
         self.assertTrue(serializer.is_valid())
+        job = serializer.save()
+        # Tasks are preserved (no implicit delete)
+        self.assertEqual(job.tasks.count(), 1)
+
+    def test_update_tasks_replaces_all(self):
+        """Test updating tasks with explicit deletes replaces specified tasks."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # First create some tasks
+        task1 = JobTask.objects.create(job=self.job, title="Old Task 1", order=0)
+        task2 = JobTask.objects.create(job=self.job, title="Old Task 2", order=1)
+        self.assertEqual(self.job.tasks.count(), 2)
+
+        # To replace all tasks, explicitly delete old ones and create new ones
+        data = {
+            "tasks": [
+                {"public_id": str(task1.public_id), "_delete": True},
+                {"public_id": str(task2.public_id), "_delete": True},
+                {"title": "New Task 1"},
+                {"title": "New Task 2"},
+                {"title": "New Task 3"},
+            ]
+        }
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid())
+        job = serializer.save()
+        self.assertEqual(job.tasks.count(), 3)
+        task_titles = list(job.tasks.values_list("title", flat=True))
+        self.assertEqual(task_titles, ["New Task 1", "New Task 2", "New Task 3"])
+
+    def test_update_task_preserves_is_completed(self):
+        """Test updating a task preserves its is_completed status."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # Create a completed task
+        task = JobTask.objects.create(
+            job=self.job, title="Completed Task", order=0, is_completed=True
+        )
+
+        # Update the title
+        data = {
+            "tasks": [
+                {"public_id": str(task.public_id), "title": "Renamed Task"},
+            ]
+        }
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid())
+        serializer.save()
+
+        task.refresh_from_db()
+        self.assertEqual(task.title, "Renamed Task")
+        self.assertTrue(task.is_completed)  # Preserved!
+
+    def test_update_task_by_public_id(self):
+        """Test updating an existing task by public_id."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        task = JobTask.objects.create(
+            job=self.job, title="Original Title", description="", order=0
+        )
+        original_public_id = task.public_id
+
+        data = {
+            "tasks": [
+                {
+                    "public_id": str(task.public_id),
+                    "title": "Updated Title",
+                    "description": "New description",
+                },
+            ]
+        }
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid())
+        serializer.save()
+
+        task.refresh_from_db()
+        self.assertEqual(task.public_id, original_public_id)  # Same ID
+        self.assertEqual(task.title, "Updated Title")
+        self.assertEqual(task.description, "New description")
+
+    def test_delete_task_by_public_id(self):
+        """Test deleting a task using _delete flag."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        task1 = JobTask.objects.create(job=self.job, title="Task 1", order=0)
+        JobTask.objects.create(job=self.job, title="Task 2", order=1)
+
+        data = {
+            "tasks": [
+                {"public_id": str(task1.public_id), "_delete": True},
+            ]
+        }
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid())
+        job = serializer.save()
+
+        self.assertEqual(job.tasks.count(), 1)
+        self.assertEqual(job.tasks.first().title, "Task 2")
+
+    def test_mixed_task_operations(self):
+        """Test creating, updating, and deleting tasks in one request."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        JobTask.objects.create(job=self.job, title="Keep Me", order=0)
+        task2 = JobTask.objects.create(job=self.job, title="Update Me", order=1)
+        task3 = JobTask.objects.create(job=self.job, title="Delete Me", order=2)
+
+        data = {
+            "tasks": [
+                {"public_id": str(task2.public_id), "title": "I Was Updated"},
+                {"public_id": str(task3.public_id), "_delete": True},
+                {"title": "I Am New"},
+            ]
+        }
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid())
+        job = serializer.save()
+
+        self.assertEqual(job.tasks.count(), 3)  # 1 updated + 1 new + 1 preserved
+        titles = list(job.tasks.order_by("order").values_list("title", flat=True))
+        # Order: updated (idx 0), new (idx 2), preserved (moved to end)
+        self.assertIn("I Was Updated", titles)
+        self.assertIn("I Am New", titles)
+        self.assertIn("Keep Me", titles)  # Preserved
+        self.assertNotIn("Delete Me", titles)  # Deleted
+
+    def test_validate_delete_without_public_id(self):
+        """Test that _delete without public_id raises validation error."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        data = {
+            "tasks": [
+                {"_delete": True},  # No public_id
+            ]
+        }
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("tasks", serializer.errors)
+
+    def test_validate_invalid_public_id(self):
+        """Test that invalid public_id raises validation error."""
+        from uuid import uuid4
+
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        data = {
+            "tasks": [
+                {"public_id": str(uuid4()), "title": "Should Fail"},
+            ]
+        }
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("tasks", serializer.errors)
+
+    def test_omitted_tasks_preserved(self):
+        """Test that tasks not in the update request are preserved."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        JobTask.objects.create(job=self.job, title="Task 1", order=0)
+        JobTask.objects.create(job=self.job, title="Task 2", order=1)
+
+        # Only send one new task, don't mention existing tasks
+        data = {
+            "tasks": [
+                {"title": "New Task"},
+            ]
+        }
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid())
+        job = serializer.save()
+
+        # All 3 tasks should exist (2 preserved + 1 new)
+        self.assertEqual(job.tasks.count(), 3)
+        titles = list(job.tasks.values_list("title", flat=True))
+        self.assertIn("Task 1", titles)
+        self.assertIn("Task 2", titles)
+        self.assertIn("New Task", titles)
+
+    def test_update_task_description_only(self):
+        """Test updating only a task's description without changing title."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        task = JobTask.objects.create(
+            job=self.job, title="Original Title", description="Old desc", order=0
+        )
+
+        # Update only description, no title field
+        data = {
+            "tasks": [
+                {
+                    "public_id": str(task.public_id),
+                    "description": "New description",
+                },
+            ]
+        }
+
+        serializer = JobUpdateSerializer(
+            self.job, data=data, partial=True, context={"request": self.request}
+        )
+        self.assertTrue(serializer.is_valid())
+        serializer.save()
+
+        task.refresh_from_db()
+        self.assertEqual(task.title, "Original Title")  # Unchanged
+        self.assertEqual(task.description, "New description")
+
+    def test_validate_tasks_without_instance(self):
+        """Test validate_tasks returns value as-is when no instance."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        # Create serializer without instance
+        serializer = JobUpdateSerializer(data={})
+        # Manually call validate_tasks without instance
+        result = serializer.validate_tasks([{"title": "Test"}])
+        self.assertEqual(result, [{"title": "Test"}])
 
     def test_update_postal_code_formatting(self):
         """Test postal code formatting in update."""

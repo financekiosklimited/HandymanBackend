@@ -2,12 +2,10 @@ from datetime import timedelta
 
 from django import forms
 from django.contrib import admin, messages
-from django.db import models
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path
 from django.utils import timezone
 from django.utils.html import format_html
-from django_jsonform.widgets import JSONFormWidget
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
 
@@ -149,19 +147,6 @@ class DisputeDeadlineFilter(admin.SimpleListFilter):
         if self.value() == "on_track":
             return queryset.filter(resolution_deadline__gte=now + timedelta(hours=24))
         return queryset
-
-
-# Schema for job_items JSONField
-JOB_ITEMS_SCHEMA = {
-    "type": "array",
-    "title": "Job Tasks",
-    "items": {
-        "type": "string",
-        "title": "Task",
-        "maxLength": 255,
-    },
-    "maxItems": 20,
-}
 
 
 class JobTaskInline(TabularInline):
@@ -490,13 +475,6 @@ class JobAdmin(ModelAdmin):
             {"fields": ("estimated_budget",)},
         ),
         (
-            "Tasks",
-            {
-                "fields": ("job_items",),
-                "description": "List of tasks/items to be done for this job (max 20 items, 255 chars each)",
-            },
-        ),
-        (
             "Completion",
             {
                 "fields": ("completion_requested_at", "completed_at"),
@@ -507,12 +485,6 @@ class JobAdmin(ModelAdmin):
             {"fields": ("created_at", "updated_at")},
         ),
     )
-
-    formfield_overrides = {
-        models.JSONField: {
-            "widget": JSONFormWidget(schema=JOB_ITEMS_SCHEMA),
-        },
-    }
 
     @display(description="Homeowner")
     def homeowner_email(self, obj):

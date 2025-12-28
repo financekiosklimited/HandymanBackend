@@ -898,16 +898,20 @@ class MobileJobUpdateDeleteViewTests(APITestCase):
         response = self.client.put(self.url, {"title": "Test"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_update_job_with_job_items(self):
-        """Test updating job items."""
-        data = {"job_items": ["Task 1", "Task 2", "Task 3"]}
+    def test_update_job_with_tasks(self):
+        """Test updating job tasks."""
+        data = {
+            "tasks": [{"title": "Task 1"}, {"title": "Task 2"}, {"title": "Task 3"}]
+        }
 
         self.client.force_authenticate(user=self.user)
         response = self.client.put(self.url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(
-            response.data["data"]["job_items"], ["Task 1", "Task 2", "Task 3"]
-        )
+        tasks = response.data["data"]["tasks"]
+        self.assertEqual(len(tasks), 3)
+        self.assertEqual(tasks[0]["title"], "Task 1")
+        self.assertEqual(tasks[1]["title"], "Task 2")
+        self.assertEqual(tasks[2]["title"], "Task 3")
 
     def test_update_job_with_coordinates(self):
         """Test updating job coordinates."""
@@ -2260,9 +2264,7 @@ class HandymanJobDetailViewTests(APITestCase):
 
         # Apply to job
         JobApplication.objects.create(
-            job=job,
-            handyman=self.handyman,
-            status="approved"
+            job=job, handyman=self.handyman, status="approved"
         )
 
         url = f"/api/v1/mobile/handyman/jobs/{job.public_id}/"

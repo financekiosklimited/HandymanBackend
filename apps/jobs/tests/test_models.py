@@ -8,13 +8,12 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.jobs.models import (
-    MAX_JOB_ITEM_LENGTH,
-    MAX_JOB_ITEMS,
     City,
     Job,
     JobApplication,
     JobCategory,
     JobImage,
+    JobTask,
     WorkSession,
 )
 
@@ -355,9 +354,8 @@ class JobModelTests(TestCase):
         self.assertEqual(jobs[0].id, job2.id)  # Most recent first
         self.assertEqual(jobs[1].id, job1.id)
 
-    def test_create_job_with_job_items(self):
-        """Test creating a job with job_items."""
-        job_items = ["Fix the faucet", "Replace pipes", "Install new sink"]
+    def test_create_job_with_tasks(self):
+        """Test creating a job with tasks."""
         job = Job.objects.create(
             homeowner=self.user,
             title="Plumbing Work",
@@ -366,13 +364,20 @@ class JobModelTests(TestCase):
             category=self.category,
             city=self.city,
             address="123 Main St",
-            job_items=job_items,
         )
-        self.assertEqual(job.job_items, job_items)
-        self.assertEqual(len(job.job_items), 3)
+        # Create tasks
+        JobTask.objects.create(job=job, title="Fix the faucet", order=0)
+        JobTask.objects.create(job=job, title="Replace pipes", order=1)
+        JobTask.objects.create(job=job, title="Install new sink", order=2)
 
-    def test_job_items_default_empty_list(self):
-        """Test job_items defaults to empty list."""
+        self.assertEqual(job.tasks.count(), 3)
+        self.assertEqual(
+            list(job.tasks.values_list("title", flat=True)),
+            ["Fix the faucet", "Replace pipes", "Install new sink"],
+        )
+
+    def test_job_without_tasks(self):
+        """Test job can be created without tasks."""
         job = Job.objects.create(
             homeowner=self.user,
             title="Test",
@@ -382,73 +387,7 @@ class JobModelTests(TestCase):
             city=self.city,
             address="123 Main St",
         )
-        self.assertEqual(job.job_items, [])
-
-    def test_job_items_max_items_validation(self):
-        """Test job cannot have more than MAX_JOB_ITEMS items."""
-        job_items = [f"Task {i}" for i in range(MAX_JOB_ITEMS + 1)]
-        with self.assertRaises(ValidationError) as context:
-            job = Job(
-                homeowner=self.user,
-                title="Test",
-                description="Test",
-                estimated_budget=Decimal("50.00"),
-                category=self.category,
-                city=self.city,
-                address="123 Main St",
-                job_items=job_items,
-            )
-            job.save()
-        self.assertIn("job_items", context.exception.message_dict)
-
-    def test_job_items_max_length_validation(self):
-        """Test job item cannot exceed MAX_JOB_ITEM_LENGTH characters."""
-        long_item = "x" * (MAX_JOB_ITEM_LENGTH + 1)
-        with self.assertRaises(ValidationError) as context:
-            job = Job(
-                homeowner=self.user,
-                title="Test",
-                description="Test",
-                estimated_budget=Decimal("50.00"),
-                category=self.category,
-                city=self.city,
-                address="123 Main St",
-                job_items=[long_item],
-            )
-            job.save()
-        self.assertIn("job_items", context.exception.message_dict)
-
-    def test_job_items_must_be_list(self):
-        """Test job_items must be a list."""
-        with self.assertRaises(ValidationError) as context:
-            job = Job(
-                homeowner=self.user,
-                title="Test",
-                description="Test",
-                estimated_budget=Decimal("50.00"),
-                category=self.category,
-                city=self.city,
-                address="123 Main St",
-                job_items="not a list",
-            )
-            job.save()
-        self.assertIn("job_items", context.exception.message_dict)
-
-    def test_job_items_items_must_be_strings(self):
-        """Test each job item must be a string."""
-        with self.assertRaises(ValidationError) as context:
-            job = Job(
-                homeowner=self.user,
-                title="Test",
-                description="Test",
-                estimated_budget=Decimal("50.00"),
-                category=self.category,
-                city=self.city,
-                address="123 Main St",
-                job_items=["Valid item", 123, "Another valid"],
-            )
-            job.save()
-        self.assertIn("job_items", context.exception.message_dict)
+        self.assertEqual(job.tasks.count(), 0)
 
     def test_job_save_sets_status_at_on_new_instance(self):
         """Test that status_at is set when creating a new job with status."""

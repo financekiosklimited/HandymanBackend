@@ -24,7 +24,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import User, UserRole
-from apps.jobs.models import City, Job, JobCategory, JobImage
+from apps.jobs.models import City, Job, JobCategory, JobImage, JobTask
 from apps.profiles.models import HandymanProfile, HomeownerProfile
 
 # Configuration
@@ -509,7 +509,7 @@ class Command(BaseCommand):
             lat, lng = self._vary_coordinates(city.latitude, city.longitude)
 
             num_items = random.randint(2, 4)
-            job_items = random.sample(JOB_ITEMS, min(num_items, len(JOB_ITEMS)))
+            task_titles = random.sample(JOB_ITEMS, min(num_items, len(JOB_ITEMS)))
 
             job = Job(
                 homeowner=homeowner,
@@ -524,10 +524,13 @@ class Command(BaseCommand):
                 longitude=lng,
                 status=status,
                 status_at=now,
-                job_items=job_items,
                 is_dummy=True,
             )
             job.save()
+
+            # Create job tasks
+            for idx, task_title in enumerate(task_titles):
+                JobTask.objects.create(job=job, title=task_title, order=idx)
 
             # Use shared job image path directly (no upload)
             if job_image_path:

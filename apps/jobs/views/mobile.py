@@ -396,10 +396,10 @@ class JobListCreateView(APIView):
                     "latitude": 43.651070,
                     "longitude": -79.347015,
                     "status": "open",
-                    "job_items": [
-                        "Inspect faucet and pipes",
-                        "Replace worn washers",
-                        "Test for leaks",
+                    "tasks": [
+                        {"title": "Inspect faucet and pipes"},
+                        {"title": "Replace worn washers"},
+                        {"title": "Test for leaks"},
                     ],
                 },
                 request_only=True,
@@ -524,10 +524,31 @@ class JobDetailView(APIView):
                         "longitude": -79.347015,
                         "status": "open",
                         "status_at": "2024-01-15T10:30:00Z",
-                        "job_items": [
-                            "Inspect faucet and pipes",
-                            "Replace worn washers",
-                            "Test for leaks",
+                        "tasks": [
+                            {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174020",
+                                "title": "Inspect faucet and pipes",
+                                "description": "",
+                                "order": 0,
+                                "is_completed": False,
+                                "completed_at": None,
+                            },
+                            {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174021",
+                                "title": "Replace worn washers",
+                                "description": "",
+                                "order": 1,
+                                "is_completed": False,
+                                "completed_at": None,
+                            },
+                            {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174022",
+                                "title": "Test for leaks",
+                                "description": "",
+                                "order": 2,
+                                "is_completed": False,
+                                "completed_at": None,
+                            },
                         ],
                         "images": [
                             {
@@ -620,15 +641,28 @@ class JobDetailView(APIView):
                 request_only=True,
             ),
             OpenApiExample(
-                "Update Job Items",
+                "Update Tasks - Mixed Operations",
                 value={
-                    "job_items": [
-                        "Inspect faucet and pipes",
-                        "Replace worn washers",
-                        "Test for leaks",
-                        "Clean up work area",
+                    "tasks": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174030",
+                            "title": "Inspect faucet and pipes (updated)",
+                        },
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174031",
+                            "_delete": True,
+                        },
+                        {"title": "New task - Test for leaks"},
+                        {"title": "New task - Clean up work area"},
                     ],
                 },
+                description=(
+                    "Update tasks with CRUD operations. "
+                    "Use public_id to update existing tasks, "
+                    "_delete: true to delete tasks, "
+                    "or omit public_id to create new tasks. "
+                    "Tasks not included are preserved."
+                ),
                 request_only=True,
             ),
             OpenApiExample(
@@ -660,11 +694,39 @@ class JobDetailView(APIView):
                         "longitude": -79.347015,
                         "status": "open",
                         "status_at": "2024-01-16T14:30:00Z",
-                        "job_items": [
-                            "Inspect faucet and pipes",
-                            "Replace worn washers",
-                            "Test for leaks",
-                            "Clean up work area",
+                        "tasks": [
+                            {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174030",
+                                "title": "Inspect faucet and pipes",
+                                "description": "",
+                                "order": 0,
+                                "is_completed": False,
+                                "completed_at": None,
+                            },
+                            {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174031",
+                                "title": "Replace worn washers",
+                                "description": "",
+                                "order": 1,
+                                "is_completed": False,
+                                "completed_at": None,
+                            },
+                            {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174032",
+                                "title": "Test for leaks",
+                                "description": "",
+                                "order": 2,
+                                "is_completed": False,
+                                "completed_at": None,
+                            },
+                            {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174033",
+                                "title": "Clean up work area",
+                                "description": "",
+                                "order": 3,
+                                "is_completed": False,
+                                "completed_at": None,
+                            },
                         ],
                         "images": [],
                         "created_at": "2024-01-15T10:30:00Z",
@@ -900,10 +962,31 @@ class ForYouJobListView(APIView):
                             "latitude": 43.651070,
                             "longitude": -79.347015,
                             "status": "open",
-                            "job_items": [
-                                "Inspect faucet and pipes",
-                                "Replace worn washers",
-                                "Test for leaks",
+                            "tasks": [
+                                {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174040",
+                                    "title": "Inspect faucet and pipes",
+                                    "description": "",
+                                    "order": 0,
+                                    "is_completed": False,
+                                    "completed_at": None,
+                                },
+                                {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174041",
+                                    "title": "Replace worn washers",
+                                    "description": "",
+                                    "order": 1,
+                                    "is_completed": False,
+                                    "completed_at": None,
+                                },
+                                {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174042",
+                                    "title": "Test for leaks",
+                                    "description": "",
+                                    "order": 2,
+                                    "is_completed": False,
+                                    "completed_at": None,
+                                },
                             ],
                             "images": [],
                             "created_at": "2024-01-15T10:30:00Z",
@@ -1163,9 +1246,23 @@ class GuestJobListView(APIView):
                             "latitude": 43.651070,
                             "longitude": -79.347015,
                             "status": "open",
-                            "job_items": [
-                                "Inspect faucet and pipes",
-                                "Replace worn washers",
+                            "tasks": [
+                                {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174050",
+                                    "title": "Inspect faucet and pipes",
+                                    "description": "",
+                                    "order": 0,
+                                    "is_completed": False,
+                                    "completed_at": None,
+                                },
+                                {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174051",
+                                    "title": "Replace worn washers",
+                                    "description": "",
+                                    "order": 1,
+                                    "is_completed": False,
+                                    "completed_at": None,
+                                },
                             ],
                             "images": [],
                             "created_at": "2024-01-15T10:30:00Z",
@@ -1355,9 +1452,23 @@ class GuestJobDetailView(APIView):
                         "longitude": -79.347015,
                         "status": "open",
                         "status_at": "2024-01-15T10:30:00Z",
-                        "job_items": [
-                            "Inspect faucet and pipes",
-                            "Replace worn washers",
+                        "tasks": [
+                            {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174060",
+                                "title": "Inspect faucet and pipes",
+                                "description": "",
+                                "order": 0,
+                                "is_completed": False,
+                                "completed_at": None,
+                            },
+                            {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174061",
+                                "title": "Replace worn washers",
+                                "description": "",
+                                "order": 1,
+                                "is_completed": False,
+                                "completed_at": None,
+                            },
                         ],
                         "images": [],
                         "created_at": "2024-01-15T10:30:00Z",
@@ -1648,7 +1759,24 @@ class HandymanJobDetailView(APIView):
                             "name": "Toronto",
                         },
                         "status": "open",
-                        "job_items": ["Inspect faucet", "Replace washers"],
+                        "tasks": [
+                            {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174070",
+                                "title": "Inspect faucet",
+                                "description": "",
+                                "order": 0,
+                                "is_completed": False,
+                                "completed_at": None,
+                            },
+                            {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174071",
+                                "title": "Replace washers",
+                                "description": "",
+                                "order": 1,
+                                "is_completed": False,
+                                "completed_at": None,
+                            },
+                        ],
                         "has_applied": True,
                         "my_application": {
                             "public_id": "423e4567-e89b-12d3-a456-426614174000",
