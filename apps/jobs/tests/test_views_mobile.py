@@ -2260,9 +2260,7 @@ class HandymanJobDetailViewTests(APITestCase):
 
         # Apply to job
         JobApplication.objects.create(
-            job=job,
-            handyman=self.handyman,
-            status="approved"
+            job=job, handyman=self.handyman, status="approved"
         )
 
         url = f"/api/v1/mobile/handyman/jobs/{job.public_id}/"
