@@ -47,7 +47,25 @@ class CitySerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class JobImageSerializer(serializers.ModelSerializer):
+
+class JobTaskSerializer(serializers.ModelSerializer):
+    """
+    Serializer for job tasks (read-only).
+    """
+
+    class Meta:
+        model = JobTask
+        fields = [
+            "public_id",
+            "title",
+            "description",
+            "order",
+            "is_completed",
+            "completed_at",
+        ]
+        read_only_fields = fields
+
+
     """
     Serializer for job image (read-only).
     """
@@ -106,7 +124,10 @@ class JobDetailSerializer(JobListSerializer):
     Same as JobListSerializer for now.
     """
 
-    pass
+    tasks = JobTaskSerializer(many=True, read_only=True)
+
+    class Meta(JobListSerializer.Meta):
+        fields = JobListSerializer.Meta.fields + ["tasks"]
 
 
 class ForYouJobSerializer(JobListSerializer):
@@ -847,22 +868,7 @@ HandymanForYouJobListResponseSerializer = create_list_response_serializer(
 # ========================
 
 
-class JobTaskSerializer(serializers.ModelSerializer):
-    """
-    Serializer for job tasks (read-only).
-    """
 
-    class Meta:
-        model = JobTask
-        fields = [
-            "public_id",
-            "title",
-            "description",
-            "order",
-            "is_completed",
-            "completed_at",
-        ]
-        read_only_fields = fields
 
 
 class WorkSessionMediaSerializer(serializers.ModelSerializer):
