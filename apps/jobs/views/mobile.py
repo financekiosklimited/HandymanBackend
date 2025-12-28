@@ -1,4 +1,4 @@
-from django.db.models import Case, FloatField, Value, When
+from django.db.models import Case, FloatField, Q, Value, When
 from django.db.models.functions import ACos, Cos, Radians, Sin
 from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
@@ -1672,7 +1672,8 @@ class HandymanJobDetailView(APIView):
         job = get_object_or_404(
             Job.objects.select_related("category", "city")
             .prefetch_related("images", "applications")
-            .filter(status="open"),
+            .filter(Q(status="open") | Q(applications__handyman=request.user))
+            .distinct(),
             public_id=public_id,
         )
 

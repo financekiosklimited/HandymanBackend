@@ -2244,6 +2244,55 @@ class HandymanJobDetailViewTests(APITestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_get_job_detail_applied_active(self):
+        """Test getting job detail for in-progress job where handyman applied."""
+        # Create in-progress job
+        job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Active Job",
+            description="Work in progress",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+        )
+
+        # Apply to job
+        JobApplication.objects.create(
+            job=job,
+            handyman=self.handyman,
+            status="approved"
+        )
+
+        url = f"/api/v1/mobile/handyman/jobs/{job.public_id}/"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["title"], "Active Job")
+        # Should show application status
+        self.assertTrue(response.data["data"]["has_applied"])
+        self.assertEqual(response.data["data"]["my_application"]["status"], "approved")
+
+    def test_get_job_detail_active_not_applied(self):
+        """Test getting in-progress job where handyman DID NOT apply returns 404."""
+        # Create in-progress job
+        job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Other Active Job",
+            description="Work in progress",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+        )
+
+        url = f"/api/v1/mobile/handyman/jobs/{job.public_id}/"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
 
 class HandymanJobApplicationListCreateViewTests(APITestCase):
     """Test cases for handyman JobApplicationListCreateView."""
