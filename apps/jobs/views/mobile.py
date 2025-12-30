@@ -83,7 +83,10 @@ from apps.jobs.serializers import (
     WorkSessionMediaSerializer,
     WorkSessionSerializer,
     WorkSessionStartSerializer,
+    WorkSessionStartSerializer,
     WorkSessionStopSerializer,
+    JobTaskStatusSerializer,
+    JobTaskSerializer,
 )
 from apps.jobs.services import (
     daily_report_service,
@@ -3405,3 +3408,100 @@ class HomeownerDisputeCreateView(BaseHomeownerOngoingView):
             )
         except ValidationError as e:
             return validation_error_response({"detail": str(e.message)})
+
+
+class HandymanJobTaskStatusView(APIView):
+    """
+    View for handymen to update task completion status.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_tasks_status_update",
+        request=JobTaskStatusSerializer,
+        responses={
+            200: JobTaskSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Update the completion status of a specific job task. "
+            "Only the assigned handyman can update tasks. "
+            "Requires authenticated handyman with verified email."
+        ),
+        summary="Update task status",
+        tags=["Mobile Handyman Jobs"],
+        examples=[
+            OpenApiExample(
+                "Mark Complete Request",
+                value={"is_completed": True},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Unmark Complete Request",
+                value={"is_completed": False},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Task status updated successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174020",
+                        "title": "Inspect faucet and pipes",
+                        "description": "",
+                        "order": 0,
+                        "is_completed": True,
+                        "completed_at": "2024-01-15T11:00:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def patch(self, request, public_id, task_id):
+        """Update task status."""
+        # Verify job exists and user is the assigned handyman
+        job = get_object_or_404(
+            Job.objects.filter(status="in_progress"),
+            public_id=public_id,
+            assigned_handyman=request.user,
+        )
+
+        task = get_object_or_404(job.tasks, public_id=task_id)
+
+        serializer = JobTaskStatusSerializer(task, data=request.data)
+        if serializer.is_valid():
+            # Update status
+            is_completed = serializer.validated_data["is_completed"]
+            
+            if is_completed and not task.is_completed:
+                task.is_completed = True
+                from django.utils import timezone
+                task.completed_at = timezone.now()
+            elif not is_completed and task.is_completed:
+                task.is_completed = False
+                task.completed_at = None
+            
+            task.save()
+
+            response_serializer = JobTaskSerializer(task)
+            return success_response(
+                response_serializer.data, message="Task status updated successfully"
+            )
+        return validation_error_response(serializer.errors)

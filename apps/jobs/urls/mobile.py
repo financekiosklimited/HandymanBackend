@@ -188,4 +188,10 @@ urlpatterns = [
         mobile_views.HandymanCompletionRequestView.as_view(),
         name="mobile_handyman_jobs_completion_request",
     ),
+    path(
+        "handyman/jobs/<uuid:public_id>/tasks/<uuid:task_id>/status/",
+        mobile_views.HandymanJobTaskStatusView.as_view(),
+        name="mobile_handyman_jobs_tasks_status_update",
+    ),
+
 ]
