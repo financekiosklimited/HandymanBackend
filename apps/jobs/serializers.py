@@ -78,6 +78,24 @@ class JobTaskSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class JobTaskListSerializer(serializers.ModelSerializer):
+    """
+    Serializer for job task in list/detail views (read-only).
+    """
+
+    class Meta:
+        model = JobTask
+        fields = [
+            "public_id",
+            "title",
+            "description",
+            "order",
+            "is_completed",
+            "completed_at",
+        ]
+        read_only_fields = fields
+
+
 class JobListSerializer(serializers.ModelSerializer):
     """
     Serializer for job listing (read-only).
@@ -89,11 +107,7 @@ class JobListSerializer(serializers.ModelSerializer):
     estimated_budget = serializers.DecimalField(
         max_digits=10, decimal_places=2, coerce_to_string=False
     )
-    job_items = serializers.ListField(
-        child=serializers.CharField(),
-        read_only=True,
-        help_text="List of tasks/items to be done for this job",
-    )
+    tasks = JobTaskListSerializer(many=True, read_only=True)
 
     class Meta:
         model = Job
@@ -110,7 +124,7 @@ class JobListSerializer(serializers.ModelSerializer):
             "longitude",
             "status",
             "status_at",
-            "job_items",
+            "tasks",
             "images",
             "created_at",
             "updated_at",
@@ -177,6 +191,44 @@ class HandymanJobDetailSerializer(JobDetailSerializer):
                     "status_at": application.status_at,
                 }
         return None
+
+
+class JobTaskInputSerializer(serializers.Serializer):
+    """
+    Serializer for task input (create/update/delete).
+
+    Usage:
+    - To CREATE a new task: {"title": "Task title", "description": "optional"}
+    - To UPDATE an existing task: {"public_id": "uuid", "title": "New title"}
+    - To DELETE an existing task: {"public_id": "uuid", "_delete": true}
+
+    Notes:
+    - Tasks not included in the array are preserved (no implicit delete)
+    - Array index determines task order for tasks in the array
+    - Empty titles are filtered out
+    """
+
+    public_id = serializers.UUIDField(
+        required=False,
+        help_text="Task public_id (required for update/delete, omit for create)",
+    )
+    title = serializers.CharField(
+        max_length=MAX_JOB_ITEM_LENGTH,
+        required=False,
+        allow_blank=True,  # Allow blank so validate_tasks can filter them out
+        help_text="Task title (required for create, optional for update)",
+    )
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="Task description (optional)",
+    )
+    _delete = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Set to true to delete this task (requires public_id)",
+    )
 
 
 class JobCreateSerializer(serializers.Serializer):
@@ -247,12 +299,12 @@ class JobCreateSerializer(serializers.Serializer):
         max_length=10,
         help_text="Job images (max 10 files, each max 5MB, JPEG/PNG only)",
     )
-    job_items = serializers.ListField(
-        child=serializers.CharField(max_length=MAX_JOB_ITEM_LENGTH, allow_blank=True),
+    tasks = serializers.ListField(
+        child=JobTaskInputSerializer(),
         required=False,
         allow_empty=True,
         max_length=MAX_JOB_ITEMS,
-        help_text=f"List of tasks/items to be done (max {MAX_JOB_ITEMS} items, {MAX_JOB_ITEM_LENGTH} chars each)",
+        help_text=f"List of tasks to be done (max {MAX_JOB_ITEMS} tasks)",
     )
 
     def validate_estimated_budget(self, value):
@@ -306,15 +358,19 @@ class JobCreateSerializer(serializers.Serializer):
 
         return value
 
-    def validate_job_items(self, value):
-        """Validate and clean job items."""
+    def validate_tasks(self, value):
+        """Validate and clean tasks."""
         if not value:
             return []
 
-        # Strip whitespace and filter out empty strings
-        cleaned_items = [item.strip() for item in value if item and item.strip()]
+        # Filter out tasks with empty titles after stripping whitespace
+        cleaned_tasks = []
+        for task in value:
+            title = task.get("title", "").strip()
+            if title:
+                cleaned_tasks.append({"title": title})
 
-        return cleaned_items
+        return cleaned_tasks
 
     def validate_postal_code(self, value):
         """Validate Canadian postal code format."""
@@ -362,16 +418,17 @@ class JobCreateSerializer(serializers.Serializer):
         return attrs
 
     def create(self, validated_data):
-        """Create job with images."""
+        """Create job with images and tasks."""
         # Extract category and city (already validated)
         category = validated_data.pop("category_id")
         city = validated_data.pop("city_id")
         images = validated_data.pop("images", [])
+        tasks = validated_data.pop("tasks", [])
 
         # Get homeowner from context
         homeowner = self.context["request"].user
 
-        # Create job and images in a transaction
+        # Create job, images, and tasks in a transaction
         with transaction.atomic():
             job = Job.objects.create(
                 homeowner=homeowner,
@@ -383,6 +440,14 @@ class JobCreateSerializer(serializers.Serializer):
             # Create job images
             for idx, image_file in enumerate(images):
                 JobImage.objects.create(job=job, image=image_file, order=idx)
+
+            # Create job tasks
+            for idx, task_data in enumerate(tasks):
+                JobTask.objects.create(
+                    job=job,
+                    title=task_data["title"],
+                    order=idx,
+                )
 
         return job
 
@@ -453,12 +518,12 @@ class JobUpdateSerializer(serializers.Serializer):
         required=False,
         help_text="Job status (only draft, open, in_progress allowed)",
     )
-    job_items = serializers.ListField(
-        child=serializers.CharField(max_length=MAX_JOB_ITEM_LENGTH, allow_blank=True),
+    tasks = serializers.ListField(
+        child=JobTaskInputSerializer(),
         required=False,
         allow_empty=True,
         max_length=MAX_JOB_ITEMS,
-        help_text=f"List of tasks/items to be done (max {MAX_JOB_ITEMS} items, {MAX_JOB_ITEM_LENGTH} chars each)",
+        help_text=f"List of tasks (max {MAX_JOB_ITEMS}). Supports create/update/delete operations.",
     )
 
     images = serializers.ListField(
@@ -521,15 +586,83 @@ class JobUpdateSerializer(serializers.Serializer):
             return f"{cleaned[:3]} {cleaned[3:]}"
         return value
 
-    def validate_job_items(self, value):
-        """Validate and clean job items."""
+    def validate_tasks(self, value):
+        """
+        Validate and clean tasks for update operations.
+
+        Validates:
+        - public_id must belong to the job instance if provided
+        - _delete requires public_id
+        - New tasks (no public_id) require a non-empty title
+        - Filters out tasks with empty titles (except deletes)
+        """
         if not value:
             return []
 
-        # Strip whitespace and filter out empty strings
-        cleaned_items = [item.strip() for item in value if item and item.strip()]
+        instance = self.instance
+        if not instance:
+            return value
 
-        return cleaned_items
+        # Get existing task public_ids for this job
+        existing_task_ids = {str(t.public_id) for t in instance.tasks.all()}
+
+        cleaned_tasks = []
+        for task in value:
+            public_id = task.get("public_id")
+            delete = task.get("_delete", False)
+            title = task.get("title", "").strip() if task.get("title") else ""
+            description = (
+                task.get("description", "").strip() if task.get("description") else ""
+            )
+
+            # Validate _delete requires public_id
+            if delete and not public_id:
+                raise serializers.ValidationError(
+                    "Cannot delete a task without public_id."
+                )
+
+            # Validate public_id belongs to this job
+            if public_id and str(public_id) not in existing_task_ids:
+                raise serializers.ValidationError(
+                    f"Task with public_id '{public_id}' does not belong to this job."
+                )
+
+            # For delete operations, just pass through
+            if delete:
+                cleaned_tasks.append(
+                    {
+                        "public_id": public_id,
+                        "_delete": True,
+                    }
+                )
+                continue
+
+            # For new tasks (no public_id), require non-empty title
+            if not public_id and not title:
+                # Skip empty new tasks (filter them out)
+                continue
+
+            # For updates with public_id but no title change, still include
+            if public_id:
+                cleaned_tasks.append(
+                    {
+                        "public_id": public_id,
+                        "title": title
+                        if title
+                        else None,  # None means don't update title
+                        "description": description if description else None,
+                    }
+                )
+            else:
+                # New task with valid title
+                cleaned_tasks.append(
+                    {
+                        "title": title,
+                        "description": description,
+                    }
+                )
+
+        return cleaned_tasks
 
     def validate_images(self, value):
         """Validate images."""
@@ -611,7 +744,7 @@ class JobUpdateSerializer(serializers.Serializer):
         return attrs
 
     def update(self, instance, validated_data):
-        """Update job fields."""
+        """Update job fields, images, and tasks."""
         # Handle category if provided
         if "category_id" in validated_data:
             instance.category = validated_data.pop("category_id")
@@ -624,7 +757,10 @@ class JobUpdateSerializer(serializers.Serializer):
         images = validated_data.pop("images", [])
         images_to_remove = validated_data.pop("images_to_remove", [])
 
-        # Wrap image operations in a transaction for data integrity
+        # Handle tasks (replace all if provided)
+        tasks = validated_data.pop("tasks", None)
+
+        # Wrap all operations in a transaction for data integrity
         with transaction.atomic():
             # Delete removed images
             if images_to_remove:
@@ -650,11 +786,63 @@ class JobUpdateSerializer(serializers.Serializer):
                         job=instance, image=image_file, order=start_order + idx
                     )
 
-        # Update remaining fields
-        for field, value in validated_data.items():
-            setattr(instance, field, value)
+            # Handle tasks with proper CRUD operations
+            if tasks is not None:
+                # Build map of existing tasks by public_id
+                existing_tasks = {str(t.public_id): t for t in instance.tasks.all()}
+                processed_task_ids = set()
 
-        instance.save()
+                # Calculate starting order for new tasks
+                # Tasks in the array get order based on their index
+                # Tasks not in the array keep their existing order
+                for idx, task_data in enumerate(tasks):
+                    public_id = task_data.get("public_id")
+                    delete = task_data.get("_delete", False)
+
+                    if public_id:
+                        public_id_str = str(public_id)
+                        task = existing_tasks.get(public_id_str)
+
+                        # Task existence is validated in validate_tasks
+                        if delete:
+                            # DELETE: Remove the task
+                            task.delete()
+                            processed_task_ids.add(public_id_str)  # Track as processed
+                        else:
+                            # UPDATE: Update task fields
+                            if task_data.get("title") is not None:
+                                task.title = task_data["title"]
+                            if task_data.get("description") is not None:
+                                task.description = task_data["description"]
+                            task.order = idx
+                            task.save()
+                            processed_task_ids.add(public_id_str)
+                    else:
+                        # CREATE: New task (no public_id)
+                        # Empty titles are already filtered in validate_tasks
+                        JobTask.objects.create(
+                            job=instance,
+                            title=task_data["title"],
+                            description=task_data.get("description", ""),
+                            order=idx,
+                        )
+
+                # Tasks not in the request are preserved (no implicit delete)
+                # But we need to adjust their order to come after processed tasks
+                max_order = len(tasks)
+                for public_id_str, task in existing_tasks.items():
+                    if public_id_str not in processed_task_ids:
+                        # Task was not in the request, keep it but adjust order
+                        task.order = max_order
+                        task.save()
+                        max_order += 1
+
+            # Update remaining fields
+            for field, value in validated_data.items():
+                setattr(instance, field, value)
+
+            instance.save()
+
         return instance
 
 
