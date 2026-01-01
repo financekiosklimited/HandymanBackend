@@ -562,6 +562,135 @@ class DailyReportService:
         logger.info("Daily report %s reviewed as %s", report.public_id, decision)
         return report
 
+    @transaction.atomic
+    def update_report(
+        self,
+        handyman,
+        report,
+        summary=None,
+        total_work_duration=None,
+        task_entries=None,
+    ):
+        if report.handyman != handyman:
+            raise ValidationError("You can only edit your own reports.")
+
+        if report.status not in ("pending", "rejected"):
+            raise ValidationError("Only pending or rejected reports can be edited.")
+
+        if report.status == "rejected":
+            report.status = "pending"
+            report.reviewed_by = None
+            report.reviewed_at = None
+            report.homeowner_comment = ""
+            report.save(
+                update_fields=[
+                    "status",
+                    "reviewed_by",
+                    "reviewed_at",
+                    "homeowner_comment",
+                    "updated_at",
+                ]
+            )
+
+        if summary is not None:
+            report.summary = summary
+
+        if total_work_duration is not None:
+            report.total_work_duration = total_work_duration
+
+        report.save(update_fields=["summary", "total_work_duration", "updated_at"])
+
+        if task_entries is not None:
+            existing_tasks = list(report.tasks_worked.all())
+            existing_task_ids = {et.task_id for et in existing_tasks}
+
+            new_task_ids = set()
+            for entry in task_entries:
+                task = entry.get("task")
+                if isinstance(task, JobTask):
+                    new_task_ids.add(task.id)
+
+                    if task.id in existing_task_ids:
+                        existing_entry = next(
+                            et for et in existing_tasks if et.task_id == task.id
+                        )
+                        if existing_entry.notes != entry.get(
+                            "notes", ""
+                        ) or existing_entry.marked_complete != entry.get(
+                            "marked_complete", False
+                        ):
+                            existing_entry.notes = entry.get("notes", "")
+                            existing_entry.marked_complete = entry.get(
+                                "marked_complete", False
+                            )
+                            existing_entry.save(
+                                update_fields=["notes", "marked_complete", "updated_at"]
+                            )
+                    else:
+                        DailyReportTask.objects.create(
+                            daily_report=report,
+                            task=task,
+                            notes=entry.get("notes", ""),
+                            marked_complete=entry.get("marked_complete", False),
+                        )
+
+                    if entry.get("marked_complete"):
+                        task.is_completed = True
+                        task.completed_by = handyman
+                        task.completed_at = timezone.now()
+                        task.save(
+                            update_fields=[
+                                "is_completed",
+                                "completed_by",
+                                "completed_at",
+                                "updated_at",
+                            ]
+                        )
+                    else:
+                        task.is_completed = False
+                        task.completed_by = None
+                        task.completed_at = None
+                        task.save(
+                            update_fields=[
+                                "is_completed",
+                                "completed_by",
+                                "completed_at",
+                                "updated_at",
+                            ]
+                        )
+
+            for existing_entry in existing_tasks:
+                if existing_entry.task_id not in new_task_ids:
+                    task = existing_entry.task
+                    task.is_completed = False
+                    task.completed_by = None
+                    task.completed_at = None
+                    task.save(
+                        update_fields=[
+                            "is_completed",
+                            "completed_by",
+                            "completed_at",
+                            "updated_at",
+                        ]
+                    )
+                    existing_entry.delete()
+
+        notification_service.create_and_send_notification(
+            user=report.job.homeowner,
+            notification_type="daily_report_updated",
+            title=f"Daily report updated for {report.job.title}",
+            body=f"The daily report for {report.report_date} has been updated.",
+            target_role="homeowner",
+            data={
+                "job_id": str(report.job.public_id),
+                "report_id": str(report.public_id),
+            },
+            triggered_by=handyman,
+        )
+
+        logger.info("Daily report %s updated", report.public_id)
+        return report
+
 
 class JobCompletionService:
     """Business logic for job completion flow."""

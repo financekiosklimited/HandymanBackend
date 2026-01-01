@@ -59,6 +59,7 @@ class Notification(BaseModel):
         ("daily_report_submitted", "Daily Report Submitted"),
         ("daily_report_approved", "Daily Report Approved"),
         ("daily_report_rejected", "Daily Report Rejected"),
+        ("daily_report_updated", "Daily Report Updated"),
         ("job_completion_requested", "Job Completion Requested"),
         ("job_completion_approved", "Job Completion Approved"),
         ("job_completion_rejected", "Job Completion Rejected"),

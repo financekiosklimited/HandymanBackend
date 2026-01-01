@@ -1474,6 +1474,29 @@ class DailyReportCreateSerializer(serializers.Serializer):
     )
 
 
+class DailyReportUpdateSerializer(serializers.Serializer):
+    """
+    Serializer for updating a daily report.
+    All fields are optional for partial updates.
+    """
+
+    summary = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        help_text="Summary of work done today",
+    )
+    total_work_duration_seconds = serializers.IntegerField(
+        min_value=0,
+        required=False,
+        help_text="Total work duration in seconds",
+    )
+    tasks = DailyReportTaskEntrySerializer(
+        many=True,
+        required=False,
+        help_text="List of tasks worked on today",
+    )
+
+
 class DailyReportReviewSerializer(serializers.Serializer):
     """
     Serializer for reviewing (accepting/rejecting) a daily report.

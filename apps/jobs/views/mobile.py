@@ -45,6 +45,7 @@ from apps.jobs.serializers import (
     DailyReportListResponseSerializer,
     DailyReportReviewSerializer,
     DailyReportSerializer,
+    DailyReportUpdateSerializer,
     DisputeCreateSerializer,
     ForYouJobListResponseSerializer,
     ForYouJobSerializer,
@@ -3081,6 +3082,132 @@ class HandymanDailyReportCreateView(BaseHandymanOngoingView):
             return created_response(
                 DailyReportSerializer(report).data,
                 message="Daily report submitted successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HandymanDailyReportEditView(BaseHandymanOngoingView):
+    """
+    View for handyman to edit an existing daily report.
+    Only pending or rejected reports can be edited.
+    """
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_reports_update",
+        request=DailyReportUpdateSerializer,
+        responses={
+            200: DailyReportDetailResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Edit an existing daily report for a job. "
+            "Only reports with 'pending' or 'rejected' status can be edited. "
+            "If a rejected report is edited, its status will be reset to 'pending' for re-review."
+        ),
+        summary="Edit daily report",
+        tags=["Mobile Handyman Ongoing Jobs"],
+        examples=[
+            OpenApiExample(
+                "Edit Report Request",
+                value={
+                    "summary": "Updated summary of work done today.",
+                    "total_work_duration_seconds": 32400,
+                    "tasks": [
+                        {
+                            "task_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "notes": "Finished remaining tiles",
+                            "marked_complete": True,
+                        }
+                    ],
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Daily report updated successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "report_date": "2024-01-15",
+                        "summary": "Updated summary of work done today.",
+                        "total_work_duration_seconds": 32400,
+                        "status": "pending",
+                        "homeowner_comment": "",
+                        "reviewed_at": None,
+                        "review_deadline": "2024-01-18T12:00:00Z",
+                        "tasks_worked": [
+                            {
+                                "public_id": "234e5678-e89b-12d3-a456-426614174001",
+                                "task": {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                                    "title": "Tile bathroom floor",
+                                    "description": "Install new tiles",
+                                    "is_completed": True,
+                                },
+                                "notes": "Finished remaining tiles",
+                                "marked_complete": True,
+                            }
+                        ],
+                        "created_at": "2024-01-15T10:00:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def put(self, request, public_id, report_id):
+        from datetime import timedelta
+
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id)
+        report = get_object_or_404(job.daily_reports.all(), public_id=report_id)
+
+        serializer = DailyReportUpdateSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        duration = None
+        if serializer.validated_data.get("total_work_duration_seconds") is not None:
+            duration = timedelta(
+                seconds=serializer.validated_data["total_work_duration_seconds"]
+            )
+
+        task_entries = None
+        if serializer.validated_data.get("tasks") is not None:
+            task_entries = []
+            for task_data in serializer.validated_data["tasks"]:
+                task_entries.append(
+                    {
+                        "task": task_data["task_id"],
+                        "notes": task_data.get("notes", ""),
+                        "marked_complete": task_data.get("marked_complete", False),
+                    }
+                )
+
+        try:
+            report = daily_report_service.update_report(
+                handyman=request.user,
+                report=report,
+                summary=serializer.validated_data.get("summary"),
+                total_work_duration=duration,
+                task_entries=task_entries,
+            )
+            return success_response(
+                DailyReportSerializer(report).data,
+                message="Daily report updated successfully",
             )
         except ValidationError as e:
             return validation_error_response({"detail": str(e.message)})

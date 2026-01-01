@@ -9,7 +9,14 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.accounts.models import User, UserRole
-from apps.jobs.models import City, Job, JobCategory, JobTask
+from apps.jobs.models import (
+    City,
+    DailyReport,
+    DailyReportTask,
+    Job,
+    JobCategory,
+    JobTask,
+)
 from apps.jobs.services import (
     JobApplicationService,
     daily_report_service,
@@ -872,3 +879,143 @@ class OngoingServicesTests(TestCase):
                 total_work_duration=timedelta(hours=2),
                 task_entries=[{"task": other_task, "marked_complete": True}],
             )
+
+
+class DailyReportServiceUpdateReportTests(TestCase):
+    """Test cases for DailyReportService.update_report method."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="owner@example.com", password="password123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handy@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        self.owner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner, display_name="Owner"
+        )
+        self.handy_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handy",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto", province="Ontario", province_code="ON", slug="toronto"
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Test Job",
+            description="Test description",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 St",
+            status="in_progress",
+        )
+        self.task = JobTask.objects.create(job=self.job, title="Test Task", order=0)
+
+        self.report = DailyReport.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            report_date=timezone.now().date(),
+            summary="Original summary",
+            total_work_duration=timedelta(hours=2),
+            status="pending",
+            review_deadline=timezone.now() + timedelta(days=3),
+        )
+        DailyReportTask.objects.create(
+            daily_report=self.report,
+            task=self.task,
+            notes="Original notes",
+            marked_complete=False,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_update_report_success(self, mock_notify):
+        """Test successfully updating a report."""
+        daily_report_service.update_report(
+            handyman=self.handyman,
+            report=self.report,
+            summary="Updated summary",
+        )
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.summary, "Updated summary")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_update_report_rejected_resets_status(self, mock_notify):
+        """Test that editing rejected report resets status to pending."""
+        self.report.status = "rejected"
+        self.report.homeowner_comment = "Needs more detail"
+        self.report.save()
+
+        daily_report_service.update_report(
+            handyman=self.handyman,
+            report=self.report,
+            summary="More detailed summary",
+        )
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.status, "pending")
+        self.assertIsNone(self.report.reviewed_by)
+        self.assertIsNone(self.report.reviewed_at)
+        self.assertEqual(self.report.homeowner_comment, "")
+
+    def test_update_report_wrong_handyman_fails(self):
+        """Test that editing another handyman's report fails."""
+        other_handyman = User.objects.create_user(
+            email="other@example.com", password="password123"
+        )
+        UserRole.objects.create(user=other_handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=other_handyman,
+            display_name="Other",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        with self.assertRaisesRegex(ValidationError, "only edit your own reports"):
+            daily_report_service.update_report(
+                handyman=other_handyman,
+                report=self.report,
+                summary="Hacked summary",
+            )
+
+    def test_update_report_approved_fails(self):
+        """Test that editing approved report fails."""
+        self.report.status = "approved"
+        self.report.save()
+
+        with self.assertRaisesRegex(ValidationError, "pending or rejected"):
+            daily_report_service.update_report(
+                handyman=self.handyman,
+                report=self.report,
+                summary="New summary",
+            )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_update_report_with_invalid_task(self, mock_notify):
+        """Test updating report with an invalid task entry (not a JobTask instance)."""
+        daily_report_service.update_report(
+            handyman=self.handyman,
+            report=self.report,
+            task_entries=[
+                {"task": "not-a-jobtask", "marked_complete": True},
+                {"task": self.task, "marked_complete": True},
+            ],
+        )
+        self.report.refresh_from_db()
+        self.task.refresh_from_db()
+        self.assertTrue(self.task.is_completed)

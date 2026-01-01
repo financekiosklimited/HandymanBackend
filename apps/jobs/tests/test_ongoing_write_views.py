@@ -15,6 +15,7 @@ from apps.accounts.models import User, UserRole
 from apps.jobs.models import (
     City,
     DailyReport,
+    DailyReportTask,
     Job,
     JobCategory,
     JobTask,
@@ -531,6 +532,241 @@ class HandymanDailyReportCreateViewTests(APITestCase):
         response = self.client.post(url, data, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("already exists", str(response.data))
+
+
+class HandymanDailyReportEditViewTests(APITestCase):
+    """Tests for editing daily reports."""
+
+    def setUp(self):
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Test Homeowner",
+            phone_verified_at=timezone.now(),
+        )
+
+        # Create handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="John Handyman",
+            phone_verified_at=timezone.now(),
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Setup Job
+        self.category = JobCategory.objects.create(name="Plumbing", slug="plumbing")
+        self.city = City.objects.create(
+            name="Toronto", province="Ontario", province_code="ON", slug="toronto"
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Test Job",
+            description="Test description",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Street",
+            status="in_progress",
+        )
+        self.task1 = JobTask.objects.create(job=self.job, title="Task 1", order=0)
+        self.task2 = JobTask.objects.create(job=self.job, title="Task 2", order=1)
+
+        # Create pending report
+        self.report = DailyReport.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            report_date=timezone.now().date(),
+            summary="Original summary",
+            total_work_duration=timedelta(hours=2),
+            status="pending",
+            review_deadline=timezone.now() + timedelta(days=3),
+        )
+        DailyReportTask.objects.create(
+            daily_report=self.report,
+            task=self.task1,
+            notes="Original notes",
+            marked_complete=False,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_edit_report_summary_success(self, mock_notify):
+        """Test successfully editing report summary."""
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"summary": "Updated summary"}
+        response = self.client.put(url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Daily report updated successfully")
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.summary, "Updated summary")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_edit_report_duration_success(self, mock_notify):
+        """Test successfully editing report duration."""
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"total_work_duration_seconds": 32400}
+        response = self.client.put(url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.total_work_duration, timedelta(seconds=32400))
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_edit_report_tasks_success(self, mock_notify):
+        """Test successfully editing report tasks."""
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {
+            "tasks": [
+                {
+                    "task_id": str(self.task1.public_id),
+                    "notes": "Updated task 1 notes",
+                    "marked_complete": True,
+                },
+                {
+                    "task_id": str(self.task2.public_id),
+                    "notes": "New task 2 notes",
+                    "marked_complete": False,
+                },
+            ]
+        }
+        response = self.client.put(url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.tasks_worked.count(), 2)
+        self.task1.refresh_from_db()
+        self.assertTrue(self.task1.is_completed)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_edit_rejected_report_resets_status(self, mock_notify):
+        """Test that editing rejected report resets status to pending."""
+        self.report.status = "rejected"
+        self.report.homeowner_comment = "Not detailed enough"
+        self.report.save()
+
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"summary": "More detailed summary"}
+        response = self.client.put(url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.status, "pending")
+        self.assertIsNone(self.report.reviewed_by)
+        self.assertIsNone(self.report.reviewed_at)
+        self.assertEqual(self.report.homeowner_comment, "")
+
+    def test_edit_approved_report_fails(self):
+        """Test that editing approved report fails."""
+        self.report.status = "approved"
+        self.report.save()
+
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"summary": "New summary"}
+        response = self.client.put(url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Only pending or rejected", str(response.data))
+
+    def test_edit_other_handyman_report_fails(self):
+        """Test that editing another handyman's report fails."""
+        other_handyman = User.objects.create_user(
+            email="other@example.com", password="password123"
+        )
+        UserRole.objects.create(user=other_handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=other_handyman,
+            display_name="Other Handyman",
+            phone_verified_at=timezone.now(),
+        )
+        other_handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        self.client.force_authenticate(user=other_handyman)
+
+        data = {"summary": "Hacked summary"}
+        response = self.client.put(url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_edit_report_remove_tasks(self, mock_notify):
+        """Test successfully removing tasks from a report."""
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"tasks": []}
+        response = self.client.put(url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.tasks_worked.count(), 0)
+        self.task1.refresh_from_db()
+        self.assertFalse(self.task1.is_completed)
+
+    def test_edit_report_validation_error(self):
+        """Test editing report with invalid data."""
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"total_work_duration_seconds": -100}
+        response = self.client.put(url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_edit_report_with_same_task_values(self, mock_notify):
+        """Test editing report with same task values doesn't recreate tasks."""
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        self.client.force_authenticate(user=self.handyman)
+
+        initial_task_count = DailyReportTask.objects.count()
+        data = {
+            "tasks": [
+                {
+                    "task_id": str(self.task1.public_id),
+                    "notes": "Original notes",
+                    "marked_complete": False,
+                }
+            ]
+        }
+        response = self.client.put(url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(DailyReportTask.objects.count(), initial_task_count)
 
 
 class HomeownerDailyReportReviewViewTests(APITestCase):

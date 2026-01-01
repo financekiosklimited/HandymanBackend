@@ -158,6 +158,11 @@ urlpatterns = [
         name="mobile_handyman_jobs_reports_detail",
     ),
     path(
+        "handyman/jobs/<uuid:public_id>/reports/<uuid:report_id>/edit/",
+        mobile_views.HandymanDailyReportEditView.as_view(),
+        name="mobile_handyman_jobs_reports_update",
+    ),
+    path(
         "handyman/jobs/<uuid:public_id>/disputes/",
         mobile_views.HandymanJobDisputeListView.as_view(),
         name="mobile_handyman_jobs_disputes_list",
