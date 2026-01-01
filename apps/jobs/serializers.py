@@ -47,6 +47,25 @@ class CitySerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+
+class JobTaskSerializer(serializers.ModelSerializer):
+    """
+    Serializer for job tasks (read-only).
+    """
+
+    class Meta:
+        model = JobTask
+        fields = [
+            "public_id",
+            "title",
+            "description",
+            "order",
+            "is_completed",
+            "completed_at",
+        ]
+        read_only_fields = fields
+
+
 class JobImageSerializer(serializers.ModelSerializer):
     """
     Serializer for job image (read-only).
@@ -120,7 +139,10 @@ class JobDetailSerializer(JobListSerializer):
     Same as JobListSerializer for now.
     """
 
-    pass
+    tasks = JobTaskSerializer(many=True, read_only=True)
+
+    class Meta(JobListSerializer.Meta):
+        fields = JobListSerializer.Meta.fields + ["tasks"]
 
 
 class ForYouJobSerializer(JobListSerializer):
@@ -777,7 +799,6 @@ class JobUpdateSerializer(serializers.Serializer):
                 for idx, task_data in enumerate(tasks):
                     public_id = task_data.get("public_id")
                     delete = task_data.get("_delete", False)
-
                     if public_id:
                         public_id_str = str(public_id)
                         task = existing_tasks.get(public_id_str)
@@ -1035,22 +1056,7 @@ HandymanForYouJobListResponseSerializer = create_list_response_serializer(
 # ========================
 
 
-class JobTaskSerializer(serializers.ModelSerializer):
-    """
-    Serializer for job tasks (read-only).
-    """
 
-    class Meta:
-        model = JobTask
-        fields = [
-            "public_id",
-            "title",
-            "description",
-            "order",
-            "is_completed",
-            "completed_at",
-        ]
-        read_only_fields = fields
 
 
 class WorkSessionMediaSerializer(serializers.ModelSerializer):
@@ -1523,3 +1529,19 @@ class CompletionRejectSerializer(serializers.Serializer):
         allow_blank=True,
         help_text="Reason for rejection",
     )
+
+
+class JobTaskStatusSerializer(serializers.ModelSerializer):
+    """
+    Serializer for updating job task status (handyman only).
+    """
+
+    is_completed = serializers.BooleanField(
+        required=True,
+        help_text="Set to true to mark task as completed, false to unmark."
+    )
+
+    class Meta:
+        model = JobTask
+        fields = ["is_completed"]
+
