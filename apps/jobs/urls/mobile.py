@@ -198,5 +198,4 @@ urlpatterns = [
         mobile_views.HandymanJobTaskStatusView.as_view(),
         name="mobile_handyman_jobs_tasks_status_update",
     ),
-
 ]

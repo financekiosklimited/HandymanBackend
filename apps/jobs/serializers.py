@@ -47,7 +47,6 @@ class CitySerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-
 class JobTaskSerializer(serializers.ModelSerializer):
     """
     Serializer for job tasks (read-only).
@@ -1056,9 +1055,6 @@ HandymanForYouJobListResponseSerializer = create_list_response_serializer(
 # ========================
 
 
-
-
-
 class WorkSessionMediaSerializer(serializers.ModelSerializer):
     """
     Serializer for work session media (read-only).
@@ -1538,10 +1534,9 @@ class JobTaskStatusSerializer(serializers.ModelSerializer):
 
     is_completed = serializers.BooleanField(
         required=True,
-        help_text="Set to true to mark task as completed, false to unmark."
+        help_text="Set to true to mark task as completed, false to unmark.",
     )
 
     class Meta:
         model = JobTask
         fields = ["is_completed"]
-

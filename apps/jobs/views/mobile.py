@@ -76,6 +76,8 @@ from apps.jobs.serializers import (
     JobDisputeSerializer,
     JobListResponseSerializer,
     JobListSerializer,
+    JobTaskSerializer,
+    JobTaskStatusSerializer,
     JobUpdateResponseSerializer,
     JobUpdateSerializer,
     WorkSessionDetailResponseSerializer,
@@ -84,10 +86,7 @@ from apps.jobs.serializers import (
     WorkSessionMediaSerializer,
     WorkSessionSerializer,
     WorkSessionStartSerializer,
-    WorkSessionStartSerializer,
     WorkSessionStopSerializer,
-    JobTaskStatusSerializer,
-    JobTaskSerializer,
 )
 from apps.jobs.services import (
     daily_report_service,
@@ -3616,15 +3615,16 @@ class HandymanJobTaskStatusView(APIView):
         if serializer.is_valid():
             # Update status
             is_completed = serializer.validated_data["is_completed"]
-            
+
             if is_completed and not task.is_completed:
                 task.is_completed = True
                 from django.utils import timezone
+
                 task.completed_at = timezone.now()
             elif not is_completed and task.is_completed:
                 task.is_completed = False
                 task.completed_at = None
-            
+
             task.save()
 
             response_serializer = JobTaskSerializer(task)
