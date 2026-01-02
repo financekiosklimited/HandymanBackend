@@ -4,6 +4,7 @@
 
 [run]
 source = apps,config
+concurrency = multiprocessing
 omit = 
     */migrations/*
     */tests/*
