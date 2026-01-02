@@ -8,10 +8,11 @@ import tempfile
 from .base import *  # noqa: F403
 
 # Override database to use SQLite for testing
+# Using file-based SQLite instead of :memory: to support parallel test execution
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": ":memory:",
+        "NAME": BASE_DIR / "test_db.sqlite3",  # noqa: F405
     }
 }
 

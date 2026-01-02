@@ -72,7 +72,8 @@ jobs:
       
       - name: Run tests with coverage
         run: |
-          uv run coverage run --source='apps,config' manage.py test
+          uv run coverage run --source='apps,config' --parallel-mode manage.py test --parallel
+          uv run coverage combine
           uv run coverage report
           uv run coverage xml
           uv run coverage json

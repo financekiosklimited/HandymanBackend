@@ -78,19 +78,23 @@ createsuperuser: ## Create superuser
 .PHONY: test
 test: ## Run tests
 	@echo "$(BLUE)Running tests...$(NC)"
-	DJANGO_SETTINGS_MODULE=config.settings.test $(MANAGE) test
+	DJANGO_SETTINGS_MODULE=config.settings.test $(MANAGE) test --parallel
 
 .PHONY: coverage
 coverage: ## Run tests with coverage report
 	@echo "$(BLUE)Running tests with coverage...$(NC)"
-	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run python -m coverage run --source='apps,config' manage.py test
+	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run python -m coverage run --source='apps,config' --parallel-mode manage.py test --parallel
+	@echo "$(GREEN)Combining coverage data...$(NC)"
+	$(UV) run python -m coverage combine
 	@echo "$(GREEN)Generating coverage report...$(NC)"
 	$(UV) run python -m coverage report
 
 .PHONY: coverage-html
 coverage-html: ## Generate HTML coverage report
 	@echo "$(BLUE)Running tests with coverage...$(NC)"
-	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run python -m coverage run --source='apps,config' manage.py test
+	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run python -m coverage run --source='apps,config' --parallel-mode manage.py test --parallel
+	@echo "$(GREEN)Combining coverage data...$(NC)"
+	$(UV) run python -m coverage combine
 	@echo "$(GREEN)Generating HTML coverage report...$(NC)"
 	$(UV) run python -m coverage html
 	@echo "$(GREEN)✅ Coverage report generated in htmlcov/index.html$(NC)"
@@ -98,7 +102,9 @@ coverage-html: ## Generate HTML coverage report
 .PHONY: coverage-xml
 coverage-xml: ## Generate XML coverage report (for CI)
 	@echo "$(BLUE)Running tests with coverage...$(NC)"
-	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run python -m coverage run --source='apps,config' manage.py test
+	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run python -m coverage run --source='apps,config' --parallel-mode manage.py test --parallel
+	@echo "$(GREEN)Combining coverage data...$(NC)"
+	$(UV) run python -m coverage combine
 	@echo "$(GREEN)Generating XML coverage report...$(NC)"
 	$(UV) run python -m coverage xml
 	@echo "$(GREEN)✅ Coverage report generated in coverage.xml$(NC)"
