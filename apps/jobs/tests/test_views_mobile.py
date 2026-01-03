@@ -3632,38 +3632,6 @@ class HandymanWorkSessionStartViewTests(APITestCase):
         response = self.client.post(url, data, format="multipart")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch(
-        "apps.notifications.services.NotificationService.create_and_send_notification"
-    )
-    def test_start_work_session_approved_application_no_assigned_handyman(
-        self, mock_notify
-    ):
-        """Test starting session when assigned_handyman is None but application is approved."""
-        # 1. Unassign the handyman from the job
-        self.job.assigned_handyman = None
-        self.job.save()
-
-        # 2. Create an approved application for this handyman
-        JobApplication.objects.create(
-            job=self.job,
-            handyman=self.handyman,
-            status="approved",
-            cover_letter="I am the best",
-        )
-
-        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/sessions/start/"
-        self.client.force_authenticate(user=self.handyman)
-
-        data = {
-            "started_at": timezone.now().isoformat(),
-            "start_latitude": "43.6532",
-            "start_longitude": "-79.3832",
-            "start_photo": create_test_image(),
-        }
-        response = self.client.post(url, data, format="multipart")
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["message"], "Work session started successfully")
-
 
 class HandymanWorkSessionStopViewTests(APITestCase):
     """Tests for stopping work sessions."""

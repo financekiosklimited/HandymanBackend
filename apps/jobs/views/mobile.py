@@ -2535,13 +2535,8 @@ class BaseHandymanOngoingView(APIView):
 
     def get_job(self, public_id):
         """Get job and validate handyman access."""
-        from django.db.models import Q
-
         job = get_object_or_404(
-            Job.objects.filter(
-                Q(assigned_handyman=self.request.user)
-                | Q(applications__handyman=self.request.user, applications__status="approved")
-            ).distinct(),
+            Job.objects.filter(assigned_handyman=self.request.user),
             public_id=public_id,
         )
         return job
@@ -3608,16 +3603,10 @@ class HandymanJobTaskStatusView(APIView):
     def patch(self, request, public_id, task_id):
         """Update task status."""
         # Verify job exists and user is the assigned handyman
-        from django.db.models import Q
-
         job = get_object_or_404(
-            Job.objects.filter(
-                Q(assigned_handyman=request.user)
-                | Q(applications__handyman=request.user, applications__status="approved")
-            )
-            .filter(status="in_progress")
-            .distinct(),
+            Job.objects.filter(status="in_progress"),
             public_id=public_id,
+            assigned_handyman=request.user,
         )
 
         task = get_object_or_404(job.tasks, public_id=task_id)
