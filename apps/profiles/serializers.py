@@ -309,3 +309,8 @@ GuestHandymanListResponseSerializer = create_list_response_serializer(
 GuestHandymanDetailResponseSerializer = create_response_serializer(
     GuestHandymanDetailSerializer, "GuestHandymanDetailResponse"
 )
+
+# Handyman Category List Response
+HandymanCategoryListResponseSerializer = create_list_response_serializer(
+    HandymanCategorySerializer, "HandymanCategoryListResponse"
+)

@@ -4,7 +4,62 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import User, UserRole
-from apps.profiles.models import HandymanProfile, HomeownerProfile
+from apps.profiles.models import HandymanCategory, HandymanProfile, HomeownerProfile
+
+
+class MobileHandymanCategoryListViewTests(APITestCase):
+    """Test cases for mobile HandymanCategoryListView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.url = "/api/v1/mobile/handyman-categories/"
+
+        # Create test categories
+        HandymanCategory.objects.create(name="Plumbing", is_active=True)
+        HandymanCategory.objects.create(name="Electrical", is_active=True)
+        HandymanCategory.objects.create(name="Inactive", is_active=False)
+
+    def test_list_categories_success_no_auth(self):
+        """Test successfully listing active categories without authentication."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Categories retrieved successfully")
+        self.assertEqual(len(response.data["data"]), 2)  # Only active categories
+
+    def test_list_categories_returns_only_active(self):
+        """Test only active categories are returned."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        category_names = [c["name"] for c in response.data["data"]]
+        self.assertIn("Plumbing", category_names)
+        self.assertIn("Electrical", category_names)
+        self.assertNotIn("Inactive", category_names)
+
+    def test_list_categories_returns_expected_fields(self):
+        """Test response contains expected fields."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        for category in response.data["data"]:
+            self.assertIn("public_id", category)
+            self.assertIn("name", category)
+
+    def test_list_categories_web_platform_blocked(self):
+        """Test web platform cannot access mobile endpoint."""
+        user = User.objects.create_user(
+            email="webuser@example.com",
+            password="testpass123",
+        )
+        user.token_payload = {
+            "plat": "web",
+            "active_role": None,
+            "roles": [],
+            "email_verified": False,
+        }
+        self.client.force_authenticate(user=user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class MobileHomeownerProfileViewTests(APITestCase):

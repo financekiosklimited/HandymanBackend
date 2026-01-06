@@ -27,12 +27,14 @@ from apps.common.responses import (
     validation_error_response,
 )
 
-from ..models import HandymanProfile, HomeownerProfile
+from ..models import HandymanCategory, HandymanProfile, HomeownerProfile
 from ..serializers import (
     GuestHandymanDetailResponseSerializer,
     GuestHandymanDetailSerializer,
     GuestHandymanListResponseSerializer,
     GuestHandymanListSerializer,
+    HandymanCategoryListResponseSerializer,
+    HandymanCategorySerializer,
     HandymanProfileResponseSerializer,
     HandymanProfileSerializer,
     HandymanProfileUpdateSerializer,
@@ -834,4 +836,53 @@ class GuestHandymanDetailView(APIView):
         serializer = GuestHandymanDetailSerializer(profile)
         return success_response(
             serializer.data, message="Handyman retrieved successfully"
+        )
+
+
+class HandymanCategoryListView(APIView):
+    """
+    View for listing all active handyman categories.
+    No authentication required - accessible by guests.
+    """
+
+    authentication_classes = []
+    permission_classes = [
+        GuestPlatformGuardPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_categories_list",
+        responses={200: HandymanCategoryListResponseSerializer},
+        description="List all active handyman categories for mobile app. No authentication required.",
+        summary="List handyman categories",
+        tags=["Mobile Handyman Categories"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Categories retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                            "name": "Plumbing",
+                        },
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                            "name": "Electrical",
+                        },
+                    ],
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    def get(self, request):
+        """List all active handyman categories."""
+        categories = HandymanCategory.objects.filter(is_active=True)
+        serializer = HandymanCategorySerializer(categories, many=True)
+        return success_response(
+            serializer.data, message="Categories retrieved successfully"
         )

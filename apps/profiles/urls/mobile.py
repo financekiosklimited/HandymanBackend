@@ -7,6 +7,12 @@ from django.urls import path
 from ..views import mobile as mobile_views
 
 urlpatterns = [
+    # Handyman Categories (public, no auth required)
+    path(
+        "handyman-categories/",
+        mobile_views.HandymanCategoryListView.as_view(),
+        name="mobile_handyman_categories",
+    ),
     # Role-specific profile endpoints
     path(
         "homeowner/profile",
