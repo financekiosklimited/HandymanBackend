@@ -151,16 +151,18 @@ class DisputeDeadlineFilter(admin.SimpleListFilter):
 
 class JobTaskInline(TabularInline):
     model = JobTask
-    extra = 0
-    fields = ("title", "order", "is_completed", "completed_by", "completed_at")
+    extra = 1
+    min_num = 0
+    fields = (
+        "title",
+        "description",
+        "order",
+        "is_completed",
+        "completed_by",
+        "completed_at",
+    )
     readonly_fields = ("completed_by", "completed_at")
     ordering = ("order", "created_at")
-
-    def has_add_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 
 class WorkSessionMediaInline(TabularInline):
@@ -178,12 +180,6 @@ class WorkSessionMediaInline(TabularInline):
     readonly_fields = ("file_size", "duration_seconds")
     ordering = ("-created_at",)
 
-    def has_add_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
-
 
 class WorkSessionInline(TabularInline):
     model = WorkSession
@@ -199,8 +195,6 @@ class WorkSessionInline(TabularInline):
         "end_longitude",
     )
     readonly_fields = (
-        "handyman",
-        "status",
         "started_at",
         "ended_at",
         "start_latitude",
@@ -210,25 +204,12 @@ class WorkSessionInline(TabularInline):
     )
     ordering = ("-started_at",)
 
-    def has_add_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
-
 
 class DailyReportTaskInline(TabularInline):
     model = DailyReportTask
     extra = 0
     fields = ("task", "marked_complete", "notes")
-    readonly_fields = ("task",)
     ordering = ("task__order",)
-
-    def has_add_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 
 class DailyReportInline(TabularInline):
@@ -243,20 +224,10 @@ class DailyReportInline(TabularInline):
         "reviewed_by",
     )
     readonly_fields = (
-        "handyman",
-        "report_date",
-        "status",
-        "review_deadline",
         "reviewed_at",
         "reviewed_by",
     )
     ordering = ("-report_date",)
-
-    def has_add_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 
 class JobDisputeInline(TabularInline):
@@ -267,22 +238,14 @@ class JobDisputeInline(TabularInline):
         "status",
         "resolution_deadline",
         "resolved_at",
+        "resolved_by",
         "refund_percentage",
     )
     readonly_fields = (
-        "initiated_by",
-        "status",
-        "resolution_deadline",
         "resolved_at",
-        "refund_percentage",
+        "resolved_by",
     )
     ordering = ("-created_at",)
-
-    def has_add_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 
 class JobImageInline(TabularInline):
@@ -304,14 +267,9 @@ class JobApplicationInline(TabularInline):
     model = JobApplication
     extra = 0
     fields = ("handyman", "status", "status_at", "created_at")
-    readonly_fields = ("handyman", "status_at", "created_at")
+    readonly_fields = ("status_at", "created_at")
     ordering = ("-created_at",)
-    can_delete = False
     show_change_link = True
-
-    def has_add_permission(self, request, obj=None):
-        """Disable adding applications from inline."""
-        return False
 
 
 @admin.register(JobCategory)
@@ -546,6 +504,48 @@ class JobAdmin(ModelAdmin):
     @display(description="Open Disputes")
     def open_disputes(self, obj):
         return obj.disputes.exclude(status__startswith="resolved").count()
+
+    def save_model(self, request, obj, form, change):
+        """
+        Override save_model to log sensitive changes for audit trail.
+        Logs status changes and handyman reassignments.
+        """
+        if change:
+            old_obj = Job.objects.get(pk=obj.pk)
+            changes = []
+
+            # Track status changes
+            if old_obj.status != obj.status:
+                changes.append(
+                    f"Status changed from '{old_obj.get_status_display()}' "
+                    f"to '{obj.get_status_display()}'"
+                )
+
+            # Track handyman reassignment
+            old_handyman = old_obj.assigned_handyman
+            new_handyman = obj.assigned_handyman
+            if old_handyman != new_handyman:
+                old_name = old_handyman.email if old_handyman else "None"
+                new_name = new_handyman.email if new_handyman else "None"
+                changes.append(
+                    f"Assigned handyman changed from '{old_name}' to '{new_name}'"
+                )
+
+            # Log changes using Django's built-in admin logging
+            if changes:
+                from django.contrib.admin.models import CHANGE, LogEntry
+                from django.contrib.contenttypes.models import ContentType
+
+                LogEntry.objects.create(
+                    user=request.user,
+                    content_type=ContentType.objects.get_for_model(obj),
+                    object_id=obj.pk,
+                    object_repr=str(obj),
+                    action_flag=CHANGE,
+                    change_message="; ".join(changes),
+                )
+
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(JobTask)
