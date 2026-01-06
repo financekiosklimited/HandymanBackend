@@ -6,7 +6,7 @@ from django.db import IntegrityError
 from django.test import TestCase
 from django.utils import timezone
 
-from apps.accounts.models import User
+from apps.accounts.models import User, UserRole
 from apps.jobs.models import (
     City,
     Job,
@@ -14,6 +14,7 @@ from apps.jobs.models import (
     JobCategory,
     JobImage,
     JobTask,
+    Review,
     WorkSession,
 )
 from apps.profiles.models import HandymanProfile, HomeownerProfile
@@ -824,3 +825,188 @@ class JobApplicationModelWithProfilesTest(TestCase):
 
         expected = f"{self.handyman_user.email} → {self.job.title} (pending)"
         self.assertEqual(str(application), expected)
+
+
+class ReviewModelTests(TestCase):
+    """Test cases for Review model."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com",
+            password="testpass123",
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Test Homeowner",
+        )
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix sink",
+            description="Leaky sink",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="completed",
+            completed_at=timezone.now(),
+        )
+
+    def test_create_review_success(self):
+        """Test creating a review successfully."""
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+            comment="Great work!",
+        )
+        self.assertEqual(review.rating, 5)
+        self.assertEqual(review.comment, "Great work!")
+        self.assertEqual(review.reviewer_type, "homeowner")
+        self.assertIsNotNone(review.public_id)
+
+    def test_review_string_representation(self):
+        """Test review string representation."""
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=4,
+        )
+        self.assertEqual(str(review), "homeowner review for Fix sink - 4 stars")
+
+    def test_review_rating_below_1_validation(self):
+        """Test that rating below 1 raises ValidationError."""
+        with self.assertRaises(ValidationError) as context:
+            Review.objects.create(
+                job=self.job,
+                reviewer=self.homeowner,
+                reviewee=self.handyman,
+                reviewer_type="homeowner",
+                rating=0,
+            )
+        self.assertIn("rating", context.exception.message_dict)
+
+    def test_review_rating_above_5_validation(self):
+        """Test that rating above 5 raises ValidationError."""
+        with self.assertRaises(ValidationError) as context:
+            Review.objects.create(
+                job=self.job,
+                reviewer=self.homeowner,
+                reviewee=self.handyman,
+                reviewer_type="homeowner",
+                rating=6,
+            )
+        self.assertIn("rating", context.exception.message_dict)
+
+    def test_review_unique_per_job_per_reviewer_type(self):
+        """Test that only one review per job per reviewer_type is allowed."""
+        Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+        )
+        with self.assertRaises(ValidationError):
+            Review.objects.create(
+                job=self.job,
+                reviewer=self.homeowner,
+                reviewee=self.handyman,
+                reviewer_type="homeowner",
+                rating=4,
+            )
+
+    def test_review_both_parties_can_review_same_job(self):
+        """Test that both homeowner and handyman can review the same job."""
+        homeowner_review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+        )
+        handyman_review = Review.objects.create(
+            job=self.job,
+            reviewer=self.handyman,
+            reviewee=self.homeowner,
+            reviewer_type="handyman",
+            rating=4,
+        )
+        self.assertEqual(self.job.reviews.count(), 2)
+        self.assertNotEqual(homeowner_review.id, handyman_review.id)
+
+    def test_review_cascade_delete_with_job(self):
+        """Test that review is deleted when job is deleted."""
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+        )
+        review_id = review.id
+        self.job.delete()
+        self.assertFalse(Review.objects.filter(id=review_id).exists())
+
+    def test_review_ordering(self):
+        """Test reviews are ordered by created_at descending."""
+        # Create a second job for another review
+        job2 = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix door",
+            description="Broken door",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="456 Main St",
+            status="completed",
+            completed_at=timezone.now(),
+        )
+
+        review1 = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+        )
+        review2 = Review.objects.create(
+            job=job2,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=4,
+        )
+
+        reviews = list(Review.objects.all())
+        self.assertEqual(reviews[0].id, review2.id)  # Most recent first
+        self.assertEqual(reviews[1].id, review1.id)

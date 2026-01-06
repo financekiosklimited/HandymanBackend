@@ -198,4 +198,21 @@ urlpatterns = [
         mobile_views.HandymanJobTaskStatusView.as_view(),
         name="mobile_handyman_jobs_tasks_status_update",
     ),
+    # Homeowner Review Endpoints
+    path(
+        "homeowner/jobs/<uuid:public_id>/review/",
+        mobile_views.HomeownerReviewView.as_view(),
+        name="mobile_homeowner_job_review",
+    ),
+    # Handyman Review Endpoints
+    path(
+        "handyman/jobs/<uuid:public_id>/review/",
+        mobile_views.HandymanReviewView.as_view(),
+        name="mobile_handyman_job_review",
+    ),
+    path(
+        "handyman/reviews/",
+        mobile_views.HandymanReceivedReviewsView.as_view(),
+        name="mobile_handyman_reviews_received",
+    ),
 ]

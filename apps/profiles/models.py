@@ -44,6 +44,7 @@ class HandymanProfile(BaseModel):
         help_text="Profile avatar image",
     )
     rating = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True)
+    review_count = models.PositiveIntegerField(default=0)
 
     # Professional details
     job_title = models.CharField(max_length=100, blank=True)
@@ -133,6 +134,8 @@ class HomeownerProfile(BaseModel):
         null=True,
         help_text="Profile avatar image",
     )
+    rating = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True)
+    review_count = models.PositiveIntegerField(default=0)
     phone_number = models.CharField(max_length=20, blank=True)
     phone_verified_at = models.DateTimeField(null=True, blank=True)
     address = models.TextField(blank=True)

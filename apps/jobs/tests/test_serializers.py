@@ -2337,3 +2337,428 @@ class OngoingSerializerTests(TestCase):
         self.assertTrue(serializer.is_valid(), serializer.errors)
         self.assertEqual(len(serializer.validated_data["disputed_report_ids"]), 1)
         self.assertEqual(serializer.validated_data["disputed_report_ids"][0], report)
+
+
+class ReviewSerializerTests(TestCase):
+    """Test cases for Review serializers."""
+
+    def setUp(self):
+        """Set up test data."""
+        from django.utils import timezone
+
+        from apps.accounts.models import UserRole
+        from apps.profiles.models import HandymanProfile, HomeownerProfile
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Test Homeowner",
+        )
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix sink",
+            description="Leaky sink",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="completed",
+            completed_at=timezone.now(),
+        )
+
+    def test_review_create_serializer_valid(self):
+        """Test ReviewCreateSerializer with valid data."""
+        from apps.jobs.serializers import ReviewCreateSerializer
+
+        data = {"rating": 5, "comment": "Great work!"}
+        serializer = ReviewCreateSerializer(data=data)
+        self.assertTrue(serializer.is_valid())
+        self.assertEqual(serializer.validated_data["rating"], 5)
+        self.assertEqual(serializer.validated_data["comment"], "Great work!")
+
+    def test_review_create_serializer_rating_required(self):
+        """Test ReviewCreateSerializer requires rating."""
+        from apps.jobs.serializers import ReviewCreateSerializer
+
+        data = {"comment": "Great work!"}
+        serializer = ReviewCreateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("rating", serializer.errors)
+
+    def test_review_create_serializer_rating_range(self):
+        """Test ReviewCreateSerializer validates rating range."""
+        from apps.jobs.serializers import ReviewCreateSerializer
+
+        # Rating below 1
+        data = {"rating": 0}
+        serializer = ReviewCreateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("rating", serializer.errors)
+
+        # Rating above 5
+        data = {"rating": 6}
+        serializer = ReviewCreateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("rating", serializer.errors)
+
+    def test_review_create_serializer_comment_optional(self):
+        """Test ReviewCreateSerializer comment is optional."""
+        from apps.jobs.serializers import ReviewCreateSerializer
+
+        data = {"rating": 4}
+        serializer = ReviewCreateSerializer(data=data)
+        self.assertTrue(serializer.is_valid())
+
+    def test_review_update_serializer_valid(self):
+        """Test ReviewUpdateSerializer with valid data."""
+        from apps.jobs.serializers import ReviewUpdateSerializer
+
+        data = {"rating": 4, "comment": "Updated comment"}
+        serializer = ReviewUpdateSerializer(data=data)
+        self.assertTrue(serializer.is_valid())
+
+    def test_review_serializer_can_edit(self):
+        """Test ReviewSerializer includes can_edit field."""
+        from django.utils import timezone
+
+        from apps.jobs.models import Review
+        from apps.jobs.serializers import ReviewSerializer
+
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+            comment="Great!",
+        )
+
+        serializer = ReviewSerializer(review)
+        data = serializer.data
+
+        self.assertIn("can_edit", data)
+        self.assertTrue(data["can_edit"])  # Within 14 days
+
+    def test_review_serializer_can_edit_false_after_window(self):
+        """Test ReviewSerializer can_edit is False after 14 days."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from apps.jobs.models import Review
+        from apps.jobs.serializers import ReviewSerializer
+
+        # Set job completed_at to 15 days ago
+        self.job.completed_at = timezone.now() - timedelta(days=15)
+        self.job.save()
+
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+        )
+
+        serializer = ReviewSerializer(review)
+        data = serializer.data
+
+        self.assertFalse(data["can_edit"])
+
+    def test_review_serializer_can_edit_false_no_completed_at(self):
+        """Test ReviewSerializer can_edit is False when job has no completed_at."""
+        from apps.jobs.models import Review
+        from apps.jobs.serializers import ReviewSerializer
+
+        self.job.completed_at = None
+        self.job.save()
+
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+        )
+
+        serializer = ReviewSerializer(review)
+        data = serializer.data
+
+        self.assertFalse(data["can_edit"])
+
+    def test_review_detail_serializer_homeowner_reviewer(self):
+        """Test ReviewDetailSerializer with homeowner as reviewer."""
+        from apps.jobs.models import Review
+        from apps.jobs.serializers import ReviewDetailSerializer
+
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+            comment="Excellent work!",
+        )
+
+        serializer = ReviewDetailSerializer(review)
+        data = serializer.data
+
+        self.assertEqual(data["reviewer_display_name"], "Test Homeowner")
+        # avatar_url is None when no avatar is set
+        self.assertIsNone(data["reviewer_avatar_url"])
+        self.assertEqual(data["job_title"], "Fix sink")
+        self.assertEqual(data["rating"], 5)
+
+    def test_review_detail_serializer_handyman_reviewer(self):
+        """Test ReviewDetailSerializer with handyman as reviewer."""
+        from apps.jobs.models import Review
+        from apps.jobs.serializers import ReviewDetailSerializer
+
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.handyman,
+            reviewee=self.homeowner,
+            reviewer_type="handyman",
+            rating=4,
+            comment="Good homeowner!",
+        )
+
+        serializer = ReviewDetailSerializer(review)
+        data = serializer.data
+
+        self.assertEqual(data["reviewer_display_name"], "Test Handyman")
+        # avatar_url is None when no avatar is set
+        self.assertIsNone(data["reviewer_avatar_url"])
+
+    def test_review_detail_serializer_no_profile(self):
+        """Test ReviewDetailSerializer when reviewer has no profile."""
+        from apps.jobs.models import Review
+        from apps.jobs.serializers import ReviewDetailSerializer
+
+        # Create user without profile
+        user_no_profile = User.objects.create_user(
+            email="noprofile@example.com", password="password123"
+        )
+
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=user_no_profile,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=3,
+        )
+
+        serializer = ReviewDetailSerializer(review)
+        data = serializer.data
+
+        self.assertIsNone(data["reviewer_display_name"])
+        self.assertIsNone(data["reviewer_avatar_url"])
+
+    def test_review_detail_serializer_handyman_no_profile(self):
+        """Test ReviewDetailSerializer when handyman reviewer has no profile."""
+        from apps.jobs.models import Review
+        from apps.jobs.serializers import ReviewDetailSerializer
+
+        # Create handyman user without profile
+        handyman_no_profile = User.objects.create_user(
+            email="handyman_noprofile@example.com", password="password123"
+        )
+
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=handyman_no_profile,
+            reviewee=self.homeowner,
+            reviewer_type="handyman",
+            rating=4,
+        )
+
+        serializer = ReviewDetailSerializer(review)
+        data = serializer.data
+
+        self.assertIsNone(data["reviewer_display_name"])
+        self.assertIsNone(data["reviewer_avatar_url"])
+
+    def test_review_detail_serializer_unknown_reviewer_type(self):
+        """Test ReviewDetailSerializer with unknown reviewer_type returns None."""
+        from unittest.mock import MagicMock
+
+        from apps.jobs.serializers import ReviewDetailSerializer
+
+        # Create a mock review object with an unknown reviewer_type
+        mock_review = MagicMock()
+        mock_review.reviewer_type = "unknown"
+        mock_review.public_id = "test-uuid"
+        mock_review.rating = 5
+        mock_review.comment = "Test"
+        mock_review.created_at = None
+        mock_review.updated_at = None
+        mock_review.job.title = "Test Job"
+        mock_review.job.public_id = "job-uuid"
+
+        serializer = ReviewDetailSerializer()
+
+        # Test get_reviewer_display_name returns None for unknown type
+        result = serializer.get_reviewer_display_name(mock_review)
+        self.assertIsNone(result)
+
+        # Test get_reviewer_avatar_url returns None for unknown type
+        result = serializer.get_reviewer_avatar_url(mock_review)
+        self.assertIsNone(result)
+
+
+class HandymanForYouJobSerializerTests(TestCase):
+    """Test cases for HandymanForYouJobSerializer."""
+
+    def setUp(self):
+        """Set up test data."""
+        from django.utils import timezone
+
+        from apps.accounts.models import UserRole
+        from apps.profiles.models import HandymanProfile, HomeownerProfile
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Test Homeowner",
+            rating=Decimal("4.5"),
+            review_count=10,
+        )
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix sink",
+            description="Leaky sink",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+
+    def test_handyman_for_you_job_serializer_includes_homeowner_rating(self):
+        """Test HandymanForYouJobSerializer includes homeowner rating."""
+        from apps.jobs.serializers import HandymanForYouJobSerializer
+
+        serializer = HandymanForYouJobSerializer(self.job)
+        data = serializer.data
+
+        self.assertIn("homeowner_rating", data)
+        self.assertEqual(Decimal(str(data["homeowner_rating"])), Decimal("4.5"))
+        self.assertIn("homeowner_review_count", data)
+        self.assertEqual(data["homeowner_review_count"], 10)
+
+    def test_handyman_for_you_job_serializer_no_profile(self):
+        """Test HandymanForYouJobSerializer when homeowner has no profile."""
+        from apps.jobs.serializers import HandymanForYouJobSerializer
+
+        # Create homeowner without profile
+        other_homeowner = User.objects.create_user(
+            email="noprofile@example.com", password="password123"
+        )
+        job = Job.objects.create(
+            homeowner=other_homeowner,
+            title="Another job",
+            description="Description",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="456 Main St",
+            status="open",
+        )
+
+        serializer = HandymanForYouJobSerializer(job)
+        data = serializer.data
+
+        self.assertIsNone(data["homeowner_rating"])
+        self.assertEqual(data["homeowner_review_count"], 0)
+
+    def test_handyman_job_detail_serializer_includes_homeowner_rating(self):
+        """Test HandymanJobDetailSerializer includes homeowner rating."""
+        from apps.jobs.serializers import HandymanJobDetailSerializer
+
+        request = APIRequestFactory().get("/")
+        request.user = self.handyman
+
+        serializer = HandymanJobDetailSerializer(self.job, context={"request": request})
+        data = serializer.data
+
+        self.assertIn("homeowner_rating", data)
+        self.assertEqual(Decimal(str(data["homeowner_rating"])), Decimal("4.5"))
+        self.assertIn("homeowner_review_count", data)
+        self.assertEqual(data["homeowner_review_count"], 10)
+
+    def test_handyman_job_detail_serializer_no_profile(self):
+        """Test HandymanJobDetailSerializer when homeowner has no profile."""
+        from apps.jobs.serializers import HandymanJobDetailSerializer
+
+        # Create homeowner without profile
+        other_homeowner = User.objects.create_user(
+            email="noprofile@example.com", password="password123"
+        )
+        job = Job.objects.create(
+            homeowner=other_homeowner,
+            title="Another job",
+            description="Description",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="456 Main St",
+            status="open",
+        )
+
+        request = APIRequestFactory().get("/")
+        request.user = self.handyman
+
+        serializer = HandymanJobDetailSerializer(job, context={"request": request})
+        data = serializer.data
+
+        self.assertIsNone(data["homeowner_rating"])
+        self.assertEqual(data["homeowner_review_count"], 0)

@@ -34,6 +34,7 @@ from apps.jobs.models import (
     Job,
     JobApplication,
     JobCategory,
+    Review,
     WorkSession,
 )
 from apps.jobs.serializers import (
@@ -54,6 +55,7 @@ from apps.jobs.serializers import (
     GuestJobListResponseSerializer,
     GuestJobListSerializer,
     HandymanForYouJobListResponseSerializer,
+    HandymanForYouJobSerializer,
     HandymanJobDetailResponseSerializer,
     HandymanJobDetailSerializer,
     HomeownerJobApplicationDetailResponseSerializer,
@@ -80,6 +82,12 @@ from apps.jobs.serializers import (
     JobTaskStatusSerializer,
     JobUpdateResponseSerializer,
     JobUpdateSerializer,
+    ReviewCreateSerializer,
+    ReviewDetailSerializer,
+    ReviewListResponseSerializer,
+    ReviewResponseSerializer,
+    ReviewSerializer,
+    ReviewUpdateSerializer,
     WorkSessionDetailResponseSerializer,
     WorkSessionListResponseSerializer,
     WorkSessionMediaCreateSerializer,
@@ -92,6 +100,7 @@ from apps.jobs.services import (
     daily_report_service,
     dispute_service,
     job_completion_service,
+    review_service,
     work_session_service,
 )
 
@@ -1701,7 +1710,7 @@ class HandymanForYouJobListView(APIView):
         end = start + page_size
         jobs = jobs[start:end]
 
-        serializer = ForYouJobSerializer(jobs, many=True)
+        serializer = HandymanForYouJobSerializer(jobs, many=True)
 
         meta = {
             "pagination": {
@@ -3632,3 +3641,545 @@ class HandymanJobTaskStatusView(APIView):
                 response_serializer.data, message="Task status updated successfully"
             )
         return validation_error_response(serializer.errors)
+
+
+# ========================
+# Review Views
+# ========================
+
+
+class HomeownerReviewView(APIView):
+    """
+    View for homeowners to create, view, and update their review for a completed job.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    def get_job(self, public_id, user):
+        """Get job and verify ownership."""
+        return get_object_or_404(
+            Job.objects.select_related("assigned_handyman"),
+            public_id=public_id,
+            homeowner=user,
+        )
+
+    @extend_schema(
+        operation_id="mobile_homeowner_job_review_get",
+        responses={
+            200: ReviewResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Get the homeowner's review for a completed job. Returns 404 if no review exists.",
+        summary="Get my review for job",
+        tags=["Mobile Homeowner Reviews"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Review retrieved successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "rating": 5,
+                        "comment": "Great work, very professional!",
+                        "reviewer_type": "homeowner",
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-15T10:30:00Z",
+                        "can_edit": True,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def get(self, request, public_id):
+        """Get homeowner's review for a job."""
+        job = self.get_job(public_id, request.user)
+
+        review = review_service.get_review_for_job(job, "homeowner")
+        if not review:
+            return not_found_response("Review not found")
+
+        serializer = ReviewSerializer(review)
+        return success_response(
+            serializer.data, message="Review retrieved successfully"
+        )
+
+    @extend_schema(
+        operation_id="mobile_homeowner_job_review_create",
+        request=ReviewCreateSerializer,
+        responses={
+            201: ReviewResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Create a review for the handyman after job completion. "
+            "Reviews can only be submitted within 14 days of job completion. "
+            "Rating is required (1-5 stars), comment is optional."
+        ),
+        summary="Create review for handyman",
+        tags=["Mobile Homeowner Reviews"],
+        examples=[
+            OpenApiExample(
+                "Review Request",
+                value={"rating": 5, "comment": "Great work, very professional!"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Review submitted successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "rating": 5,
+                        "comment": "Great work, very professional!",
+                        "reviewer_type": "homeowner",
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-15T10:30:00Z",
+                        "can_edit": True,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["201"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id):
+        """Create review for handyman."""
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id, request.user)
+
+        serializer = ReviewCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            review = review_service.create_review(
+                user=request.user,
+                job=job,
+                reviewer_type="homeowner",
+                rating=serializer.validated_data["rating"],
+                comment=serializer.validated_data.get("comment", ""),
+            )
+            return created_response(
+                ReviewSerializer(review).data,
+                message="Review submitted successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+    @extend_schema(
+        operation_id="mobile_homeowner_job_review_update",
+        request=ReviewUpdateSerializer,
+        responses={
+            200: ReviewResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Update the homeowner's review for a completed job. "
+            "Reviews can only be edited within 14 days of job completion."
+        ),
+        summary="Update my review",
+        tags=["Mobile Homeowner Reviews"],
+        examples=[
+            OpenApiExample(
+                "Update Request",
+                value={"rating": 4, "comment": "Updated review comment"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Review updated successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "rating": 4,
+                        "comment": "Updated review comment",
+                        "reviewer_type": "homeowner",
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-16T10:30:00Z",
+                        "can_edit": True,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def put(self, request, public_id):
+        """Update homeowner's review."""
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id, request.user)
+
+        review = review_service.get_review_for_job(job, "homeowner")
+        if not review:
+            return not_found_response("Review not found")
+
+        serializer = ReviewUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            review = review_service.update_review(
+                user=request.user,
+                review=review,
+                rating=serializer.validated_data["rating"],
+                comment=serializer.validated_data.get("comment", ""),
+            )
+            return success_response(
+                ReviewSerializer(review).data,
+                message="Review updated successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HandymanReviewView(APIView):
+    """
+    View for handymen to create, view, and update their review for a completed job.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    def get_job(self, public_id, user):
+        """Get job and verify handyman assignment."""
+        return get_object_or_404(
+            Job.objects.select_related("homeowner"),
+            public_id=public_id,
+            assigned_handyman=user,
+        )
+
+    @extend_schema(
+        operation_id="mobile_handyman_job_review_get",
+        responses={
+            200: ReviewResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description="Get the handyman's review for a completed job. Returns 404 if no review exists.",
+        summary="Get my review for job",
+        tags=["Mobile Handyman Reviews"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Review retrieved successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "rating": 4,
+                        "comment": "Good homeowner, clear communication.",
+                        "reviewer_type": "handyman",
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-15T10:30:00Z",
+                        "can_edit": True,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def get(self, request, public_id):
+        """Get handyman's review for a job."""
+        job = self.get_job(public_id, request.user)
+
+        review = review_service.get_review_for_job(job, "handyman")
+        if not review:
+            return not_found_response("Review not found")
+
+        serializer = ReviewSerializer(review)
+        return success_response(
+            serializer.data, message="Review retrieved successfully"
+        )
+
+    @extend_schema(
+        operation_id="mobile_handyman_job_review_create",
+        request=ReviewCreateSerializer,
+        responses={
+            201: ReviewResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Create a review for the homeowner after job completion. "
+            "Reviews can only be submitted within 14 days of job completion. "
+            "Rating is required (1-5 stars), comment is optional. "
+            "Note: Homeowner reviews are only visible to other handymen."
+        ),
+        summary="Create review for homeowner",
+        tags=["Mobile Handyman Reviews"],
+        examples=[
+            OpenApiExample(
+                "Review Request",
+                value={"rating": 4, "comment": "Good homeowner, clear communication."},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Review submitted successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "rating": 4,
+                        "comment": "Good homeowner, clear communication.",
+                        "reviewer_type": "handyman",
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-15T10:30:00Z",
+                        "can_edit": True,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["201"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id):
+        """Create review for homeowner."""
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id, request.user)
+
+        serializer = ReviewCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            review = review_service.create_review(
+                user=request.user,
+                job=job,
+                reviewer_type="handyman",
+                rating=serializer.validated_data["rating"],
+                comment=serializer.validated_data.get("comment", ""),
+            )
+            return created_response(
+                ReviewSerializer(review).data,
+                message="Review submitted successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+    @extend_schema(
+        operation_id="mobile_handyman_job_review_update",
+        request=ReviewUpdateSerializer,
+        responses={
+            200: ReviewResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Update the handyman's review for a completed job. "
+            "Reviews can only be edited within 14 days of job completion."
+        ),
+        summary="Update my review",
+        tags=["Mobile Handyman Reviews"],
+        examples=[
+            OpenApiExample(
+                "Update Request",
+                value={"rating": 5, "comment": "Updated: Excellent homeowner!"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Review updated successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "rating": 5,
+                        "comment": "Updated: Excellent homeowner!",
+                        "reviewer_type": "handyman",
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-16T10:30:00Z",
+                        "can_edit": True,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def put(self, request, public_id):
+        """Update handyman's review."""
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id, request.user)
+
+        review = review_service.get_review_for_job(job, "handyman")
+        if not review:
+            return not_found_response("Review not found")
+
+        serializer = ReviewUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            review = review_service.update_review(
+                user=request.user,
+                review=review,
+                rating=serializer.validated_data["rating"],
+                comment=serializer.validated_data.get("comment", ""),
+            )
+            return success_response(
+                ReviewSerializer(review).data,
+                message="Review updated successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HandymanReceivedReviewsView(APIView):
+    """
+    View for handymen to list all reviews they have received from homeowners.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_reviews_received",
+        responses={
+            200: ReviewListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+        },
+        parameters=[
+            OpenApiParameter(
+                name="page",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Page number",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="page_size",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Items per page (max 100)",
+                required=False,
+            ),
+        ],
+        description="List all reviews received by the handyman from homeowners. Reviews are sorted by most recent first.",
+        summary="List my received reviews",
+        tags=["Mobile Handyman Reviews"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Reviews retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "rating": 5,
+                            "comment": "Great work, very professional!",
+                            "reviewer_display_name": "John D.",
+                            "reviewer_avatar_url": "https://cdn.example.com/avatars/...",
+                            "job_title": "Fix kitchen sink",
+                            "job_public_id": "123e4567-e89b-12d3-a456-426614174001",
+                            "created_at": "2024-01-15T10:30:00Z",
+                            "updated_at": "2024-01-15T10:30:00Z",
+                        }
+                    ],
+                    "errors": None,
+                    "meta": pagination_meta_example(total_count=1),
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            UNAUTHORIZED_EXAMPLE,
+        ],
+    )
+    def get(self, request):
+        """List received reviews."""
+        reviews = review_service.get_reviews_received(request.user, "homeowner")
+
+        # Pagination
+        page = int(request.query_params.get("page", 1))
+        page_size = min(int(request.query_params.get("page_size", 20)), 100)
+        total_count = reviews.count()
+        total_pages = (
+            (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        )
+
+        start = (page - 1) * page_size
+        end = start + page_size
+        reviews = reviews[start:end]
+
+        serializer = ReviewDetailSerializer(reviews, many=True)
+
+        meta = {
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "total_count": total_count,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+            }
+        }
+
+        return success_response(
+            serializer.data,
+            message="Reviews retrieved successfully",
+            meta=meta,
+        )

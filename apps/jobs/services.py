@@ -16,6 +16,7 @@ from apps.jobs.models import (
     JobApplication,
     JobDispute,
     JobTask,
+    Review,
     WorkSession,
     WorkSessionMedia,
 )
@@ -883,7 +884,241 @@ class DisputeService:
         return dispute
 
 
+class ReviewService:
+    """Business logic for job reviews."""
+
+    REVIEW_WINDOW_DAYS = 14
+
+    def can_review(self, user, job, reviewer_type) -> tuple[bool, str]:
+        """
+        Check if user can review this job.
+
+        Args:
+            user: User attempting to review
+            job: Job to review
+            reviewer_type: "homeowner" or "handyman"
+
+        Returns:
+            tuple[bool, str]: (can_review, error_message)
+        """
+        # Check job is completed
+        if job.status != "completed":
+            return False, "Reviews can only be submitted for completed jobs."
+
+        # Check reviewer is the correct party
+        if reviewer_type == "homeowner":
+            if job.homeowner != user:
+                return False, "You can only review jobs you posted."
+        elif reviewer_type == "handyman":
+            if job.assigned_handyman != user:
+                return False, "You can only review jobs you were assigned to."
+        else:
+            return False, "Invalid reviewer type."
+
+        # Check within review window
+        if not self.is_within_review_window(job):
+            return False, "The 14-day review window has expired."
+
+        # Check if already reviewed
+        existing_review = Review.objects.filter(
+            job=job, reviewer_type=reviewer_type
+        ).first()
+        if existing_review:
+            return False, "You have already reviewed this job."
+
+        return True, ""
+
+    def is_within_review_window(self, job) -> bool:
+        """Check if job is still within the 14-day review window."""
+        if job.completed_at is None:
+            return False
+        review_deadline = job.completed_at + timedelta(days=self.REVIEW_WINDOW_DAYS)
+        return timezone.now() <= review_deadline
+
+    def can_edit_review(self, user, review) -> tuple[bool, str]:
+        """
+        Check if user can edit this review.
+
+        Args:
+            user: User attempting to edit
+            review: Review to edit
+
+        Returns:
+            tuple[bool, str]: (can_edit, error_message)
+        """
+        # Check user owns the review
+        if review.reviewer != user:
+            return False, "You can only edit your own reviews."
+
+        # Check within review window
+        if not self.is_within_review_window(review.job):
+            return False, "The 14-day edit window has expired."
+
+        return True, ""
+
+    @transaction.atomic
+    def create_review(
+        self, user, job, reviewer_type: str, rating: int, comment: str = ""
+    ) -> Review:
+        """
+        Create a review and update profile rating.
+
+        Args:
+            user: User creating the review
+            job: Job to review
+            reviewer_type: "homeowner" or "handyman"
+            rating: Rating from 1 to 5
+            comment: Optional comment
+
+        Returns:
+            Review: Created review
+
+        Raises:
+            ValidationError: If review is invalid
+        """
+        can_review, error = self.can_review(user, job, reviewer_type)
+        if not can_review:
+            raise ValidationError(error)
+
+        # Determine reviewer and reviewee
+        if reviewer_type == "homeowner":
+            reviewer = job.homeowner
+            reviewee = job.assigned_handyman
+        else:
+            reviewer = job.assigned_handyman
+            reviewee = job.homeowner
+
+        review = Review.objects.create(
+            job=job,
+            reviewer=reviewer,
+            reviewee=reviewee,
+            reviewer_type=reviewer_type,
+            rating=rating,
+            comment=comment,
+        )
+
+        # Update profile rating
+        self.update_profile_rating(reviewee, reviewer_type)
+
+        # Send notification (only when homeowner reviews handyman)
+        if reviewer_type == "homeowner":
+            homeowner_profile = reviewer.homeowner_profile
+            notification_service.create_and_send_notification(
+                user=reviewee,
+                notification_type="review_received",
+                title="New review received",
+                body=f"{homeowner_profile.display_name} left you a {rating}-star review for {job.title}",
+                target_role="handyman",
+                data={
+                    "job_id": str(job.public_id),
+                    "review_id": str(review.public_id),
+                },
+                triggered_by=reviewer,
+            )
+
+        logger.info(
+            "Review %s created by %s for job %s",
+            review.public_id,
+            reviewer_type,
+            job.public_id,
+        )
+        return review
+
+    @transaction.atomic
+    def update_review(self, user, review, rating: int, comment: str = "") -> Review:
+        """
+        Update an existing review.
+
+        Args:
+            user: User updating the review
+            review: Review to update
+            rating: New rating from 1 to 5
+            comment: New comment
+
+        Returns:
+            Review: Updated review
+
+        Raises:
+            ValidationError: If update is invalid
+        """
+        can_edit, error = self.can_edit_review(user, review)
+        if not can_edit:
+            raise ValidationError(error)
+
+        review.rating = rating
+        review.comment = comment
+        review.save(update_fields=["rating", "comment", "updated_at"])
+
+        # Update profile rating
+        self.update_profile_rating(review.reviewee, review.reviewer_type)
+
+        logger.info("Review %s updated", review.public_id)
+        return review
+
+    def update_profile_rating(self, reviewee, reviewer_type: str):
+        """
+        Recalculate and update profile average rating and review_count.
+
+        Args:
+            reviewee: User who received the review
+            reviewer_type: "homeowner" or "handyman" (who gave the review)
+        """
+        from django.db.models import Avg, Count
+
+        # Get all reviews received by this user from the specified reviewer type
+        reviews = Review.objects.filter(reviewee=reviewee, reviewer_type=reviewer_type)
+        stats = reviews.aggregate(avg_rating=Avg("rating"), count=Count("id"))
+
+        avg_rating = stats["avg_rating"]
+        review_count = stats["count"]
+
+        # Update the appropriate profile
+        if reviewer_type == "homeowner":
+            # Homeowners review handymen -> update handyman profile
+            if hasattr(reviewee, "handyman_profile"):
+                profile = reviewee.handyman_profile
+                profile.rating = avg_rating
+                profile.review_count = review_count
+                profile.save(update_fields=["rating", "review_count", "updated_at"])
+        else:
+            # Handymen review homeowners -> update homeowner profile
+            if hasattr(reviewee, "homeowner_profile"):
+                profile = reviewee.homeowner_profile
+                profile.rating = avg_rating
+                profile.review_count = review_count
+                profile.save(update_fields=["rating", "review_count", "updated_at"])
+
+    def get_review_for_job(self, job, reviewer_type: str):
+        """
+        Get review for a job by reviewer type.
+
+        Args:
+            job: Job to get review for
+            reviewer_type: "homeowner" or "handyman"
+
+        Returns:
+            Review or None
+        """
+        return Review.objects.filter(job=job, reviewer_type=reviewer_type).first()
+
+    def get_reviews_received(self, user, reviewer_type: str):
+        """
+        Get all reviews received by a user from a specific reviewer type.
+
+        Args:
+            user: User to get reviews for
+            reviewer_type: "homeowner" or "handyman" (who gave the reviews)
+
+        Returns:
+            QuerySet of reviews
+        """
+        return Review.objects.filter(
+            reviewee=user, reviewer_type=reviewer_type
+        ).select_related("job", "reviewer")
+
+
 work_session_service = WorkSessionService()
 daily_report_service = DailyReportService()
 job_completion_service = JobCompletionService()
 dispute_service = DisputeService()
+review_service = ReviewService()

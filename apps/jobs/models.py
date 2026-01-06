@@ -587,3 +587,57 @@ class JobApplication(BaseModel):
             self.status_at = timezone.now()
 
         super().save(*args, **kwargs)
+
+
+class Review(BaseModel):
+    """
+    Review model for homeowner <-> handyman reviews after job completion.
+    Each party can leave one review per completed job.
+    """
+
+    REVIEWER_TYPE_CHOICES = [
+        ("homeowner", "Homeowner"),
+        ("handyman", "Handyman"),
+    ]
+
+    job = models.ForeignKey("Job", on_delete=models.CASCADE, related_name="reviews")
+    reviewer = models.ForeignKey(
+        "accounts.User", on_delete=models.CASCADE, related_name="reviews_given"
+    )
+    reviewee = models.ForeignKey(
+        "accounts.User", on_delete=models.CASCADE, related_name="reviews_received"
+    )
+    reviewer_type = models.CharField(max_length=20, choices=REVIEWER_TYPE_CHOICES)
+    rating = models.PositiveSmallIntegerField(help_text="Rating from 1 to 5 stars")
+    comment = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "reviews"
+        ordering = ["-created_at"]
+        unique_together = [["job", "reviewer_type"]]
+        verbose_name = "Review"
+        verbose_name_plural = "Reviews"
+        indexes = [
+            models.Index(fields=["job"]),
+            models.Index(fields=["reviewer"]),
+            models.Index(fields=["reviewee"]),
+            models.Index(fields=["reviewer_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.reviewer_type} review for {self.job.title} - {self.rating} stars"
+
+    def clean(self):
+        """Validate the review data."""
+        from django.core.exceptions import ValidationError
+
+        super().clean()
+
+        # Validate rating is between 1 and 5
+        if self.rating is not None and not (1 <= self.rating <= 5):
+            raise ValidationError({"rating": "Rating must be between 1 and 5."})
+
+    def save(self, *args, **kwargs):
+        """Override save to run validation."""
+        self.full_clean()
+        super().save(*args, **kwargs)

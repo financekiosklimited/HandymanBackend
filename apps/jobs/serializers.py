@@ -20,6 +20,7 @@ from apps.jobs.models import (
     JobDispute,
     JobImage,
     JobTask,
+    Review,
     WorkSession,
     WorkSessionMedia,
 )
@@ -160,16 +161,51 @@ class ForYouJobSerializer(JobListSerializer):
         fields = JobListSerializer.Meta.fields + ["distance_km"]
 
 
+class HandymanForYouJobSerializer(ForYouJobSerializer):
+    """
+    Serializer for handyman job browsing - includes homeowner rating.
+    Handymen can see the homeowner's rating before applying.
+    """
+
+    homeowner_rating = serializers.SerializerMethodField()
+    homeowner_review_count = serializers.SerializerMethodField()
+
+    class Meta(ForYouJobSerializer.Meta):
+        fields = ForYouJobSerializer.Meta.fields + [
+            "homeowner_rating",
+            "homeowner_review_count",
+        ]
+
+    def get_homeowner_rating(self, obj):
+        """Get homeowner's rating (visible only to handymen)."""
+        if hasattr(obj.homeowner, "homeowner_profile"):
+            return obj.homeowner.homeowner_profile.rating
+        return None
+
+    def get_homeowner_review_count(self, obj):
+        """Get homeowner's review count (visible only to handymen)."""
+        if hasattr(obj.homeowner, "homeowner_profile"):
+            return obj.homeowner.homeowner_profile.review_count
+        return 0
+
+
 class HandymanJobDetailSerializer(JobDetailSerializer):
     """
-    Job detail serializer for handyman - includes application status.
+    Job detail serializer for handyman - includes application status and homeowner rating.
     """
 
     has_applied = serializers.SerializerMethodField()
     my_application = serializers.SerializerMethodField()
+    homeowner_rating = serializers.SerializerMethodField()
+    homeowner_review_count = serializers.SerializerMethodField()
 
     class Meta(JobDetailSerializer.Meta):
-        fields = JobDetailSerializer.Meta.fields + ["has_applied", "my_application"]
+        fields = JobDetailSerializer.Meta.fields + [
+            "has_applied",
+            "my_application",
+            "homeowner_rating",
+            "homeowner_review_count",
+        ]
 
     def get_has_applied(self, obj):
         """Check if the current user (handyman) has applied to this job."""
@@ -191,6 +227,18 @@ class HandymanJobDetailSerializer(JobDetailSerializer):
                     "status_at": application.status_at,
                 }
         return None
+
+    def get_homeowner_rating(self, obj):
+        """Get homeowner's rating (visible only to handymen)."""
+        if hasattr(obj.homeowner, "homeowner_profile"):
+            return obj.homeowner.homeowner_profile.rating
+        return None
+
+    def get_homeowner_review_count(self, obj):
+        """Get homeowner's review count (visible only to handymen)."""
+        if hasattr(obj.homeowner, "homeowner_profile"):
+            return obj.homeowner.homeowner_profile.review_count
+        return 0
 
 
 class JobTaskInputSerializer(serializers.Serializer):
@@ -1046,7 +1094,7 @@ HandymanJobDetailResponseSerializer = create_response_serializer(
 )
 
 HandymanForYouJobListResponseSerializer = create_list_response_serializer(
-    ForYouJobSerializer, "HandymanForYouJobListResponse"
+    HandymanForYouJobSerializer, "HandymanForYouJobListResponse"
 )
 
 
@@ -1540,3 +1588,150 @@ class JobTaskStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = JobTask
         fields = ["is_completed"]
+
+
+# ========================
+# Review Serializers
+# ========================
+
+
+class ReviewCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating a review.
+    """
+
+    rating = serializers.IntegerField(
+        min_value=1,
+        max_value=5,
+        help_text="Rating from 1 to 5 stars",
+    )
+    comment = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=2000,
+        default="",
+        help_text="Optional review comment",
+    )
+
+
+class ReviewUpdateSerializer(serializers.Serializer):
+    """
+    Serializer for updating a review.
+    """
+
+    rating = serializers.IntegerField(
+        min_value=1,
+        max_value=5,
+        help_text="Rating from 1 to 5 stars",
+    )
+    comment = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=2000,
+        default="",
+        help_text="Optional review comment",
+    )
+
+
+class ReviewSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the reviewer's own review.
+    """
+
+    can_edit = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Review
+        fields = [
+            "public_id",
+            "rating",
+            "comment",
+            "reviewer_type",
+            "created_at",
+            "updated_at",
+            "can_edit",
+        ]
+        read_only_fields = fields
+
+    def get_can_edit(self, obj):
+        """Check if the review can still be edited (within 14-day window)."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        if obj.job.completed_at is None:
+            return False
+        review_deadline = obj.job.completed_at + timedelta(days=14)
+        return timezone.now() <= review_deadline
+
+
+class ReviewDetailSerializer(serializers.ModelSerializer):
+    """
+    Review with reviewer info (for handyman viewing their received reviews).
+    """
+
+    reviewer_display_name = serializers.SerializerMethodField()
+    reviewer_avatar_url = serializers.SerializerMethodField()
+    job_title = serializers.CharField(source="job.title", read_only=True)
+    job_public_id = serializers.UUIDField(source="job.public_id", read_only=True)
+
+    class Meta:
+        model = Review
+        fields = [
+            "public_id",
+            "rating",
+            "comment",
+            "reviewer_display_name",
+            "reviewer_avatar_url",
+            "job_title",
+            "job_public_id",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_reviewer_display_name(self, obj):
+        """Get reviewer's display name."""
+        if obj.reviewer_type == "homeowner":
+            if hasattr(obj.reviewer, "homeowner_profile"):
+                return obj.reviewer.homeowner_profile.display_name
+        elif obj.reviewer_type == "handyman":
+            if hasattr(obj.reviewer, "handyman_profile"):
+                return obj.reviewer.handyman_profile.display_name
+        return None
+
+    def get_reviewer_avatar_url(self, obj):
+        """Get reviewer's avatar URL."""
+        if obj.reviewer_type == "homeowner":
+            if hasattr(obj.reviewer, "homeowner_profile"):
+                return obj.reviewer.homeowner_profile.avatar_url
+        elif obj.reviewer_type == "handyman":
+            if hasattr(obj.reviewer, "handyman_profile"):
+                return obj.reviewer.handyman_profile.avatar_url
+        return None
+
+
+class HomeownerRatingSummarySerializer(serializers.Serializer):
+    """
+    For handyman to see homeowner's rating summary.
+    """
+
+    rating = serializers.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        allow_null=True,
+        read_only=True,
+    )
+    review_count = serializers.IntegerField(read_only=True)
+
+
+# Response serializers for reviews
+ReviewResponseSerializer = create_response_serializer(
+    ReviewSerializer, "ReviewResponse"
+)
+ReviewDetailResponseSerializer = create_response_serializer(
+    ReviewDetailSerializer, "ReviewDetailResponse"
+)
+ReviewListResponseSerializer = create_list_response_serializer(
+    ReviewDetailSerializer, "ReviewListResponse"
+)

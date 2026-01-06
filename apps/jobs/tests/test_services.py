@@ -16,12 +16,14 @@ from apps.jobs.models import (
     Job,
     JobCategory,
     JobTask,
+    Review,
 )
 from apps.jobs.services import (
     JobApplicationService,
     daily_report_service,
     dispute_service,
     job_completion_service,
+    review_service,
     work_session_service,
 )
 from apps.profiles.models import HandymanProfile, HomeownerProfile
@@ -1019,3 +1021,408 @@ class DailyReportServiceUpdateReportTests(TestCase):
         self.report.refresh_from_db()
         self.task.refresh_from_db()
         self.assertTrue(self.task.is_completed)
+
+
+class ReviewServiceTests(TestCase):
+    """Test cases for ReviewService."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner, display_name="Test Owner"
+        )
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix sink",
+            description="Leaky sink",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="completed",
+            completed_at=timezone.now(),
+        )
+
+    def test_can_review_success(self):
+        """Test can_review returns True for valid review."""
+        can_review, error = review_service.can_review(
+            self.homeowner, self.job, "homeowner"
+        )
+        self.assertTrue(can_review)
+        self.assertEqual(error, "")
+
+    def test_can_review_job_not_completed(self):
+        """Test can_review fails if job is not completed."""
+        self.job.status = "in_progress"
+        self.job.save()
+
+        can_review, error = review_service.can_review(
+            self.homeowner, self.job, "homeowner"
+        )
+        self.assertFalse(can_review)
+        self.assertIn("completed jobs", error)
+
+    def test_can_review_wrong_homeowner(self):
+        """Test can_review fails if wrong homeowner."""
+        other_user = User.objects.create_user(
+            email="other@example.com", password="password123"
+        )
+        can_review, error = review_service.can_review(other_user, self.job, "homeowner")
+        self.assertFalse(can_review)
+        self.assertIn("only review jobs you posted", error)
+
+    def test_can_review_wrong_handyman(self):
+        """Test can_review fails if wrong handyman."""
+        other_user = User.objects.create_user(
+            email="other@example.com", password="password123"
+        )
+        can_review, error = review_service.can_review(other_user, self.job, "handyman")
+        self.assertFalse(can_review)
+        self.assertIn("only review jobs you were assigned to", error)
+
+    def test_can_review_invalid_reviewer_type(self):
+        """Test can_review fails for invalid reviewer type."""
+        can_review, error = review_service.can_review(
+            self.homeowner, self.job, "invalid"
+        )
+        self.assertFalse(can_review)
+        self.assertIn("Invalid reviewer type", error)
+
+    def test_can_review_outside_review_window(self):
+        """Test can_review fails if outside 14-day window."""
+        self.job.completed_at = timezone.now() - timedelta(days=15)
+        self.job.save()
+
+        can_review, error = review_service.can_review(
+            self.homeowner, self.job, "homeowner"
+        )
+        self.assertFalse(can_review)
+        self.assertIn("review window has expired", error)
+
+    def test_can_review_already_reviewed(self):
+        """Test can_review fails if already reviewed."""
+        Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+        )
+
+        can_review, error = review_service.can_review(
+            self.homeowner, self.job, "homeowner"
+        )
+        self.assertFalse(can_review)
+        self.assertIn("already reviewed", error)
+
+    def test_is_within_review_window_no_completed_at(self):
+        """Test is_within_review_window returns False if completed_at is None."""
+        self.job.completed_at = None
+        self.job.save()
+
+        result = review_service.is_within_review_window(self.job)
+        self.assertFalse(result)
+
+    def test_is_within_review_window_within_window(self):
+        """Test is_within_review_window returns True if within 14 days."""
+        self.job.completed_at = timezone.now() - timedelta(days=10)
+        self.job.save()
+
+        result = review_service.is_within_review_window(self.job)
+        self.assertTrue(result)
+
+    def test_is_within_review_window_exactly_at_deadline(self):
+        """Test is_within_review_window just before 14 days."""
+        # Set to just under 14 days to ensure we're within the window
+        self.job.completed_at = timezone.now() - timedelta(
+            days=13, hours=23, minutes=59
+        )
+        self.job.save()
+
+        result = review_service.is_within_review_window(self.job)
+        self.assertTrue(result)
+
+    def test_can_edit_review_success(self):
+        """Test can_edit_review returns True for valid edit."""
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+        )
+
+        can_edit, error = review_service.can_edit_review(self.homeowner, review)
+        self.assertTrue(can_edit)
+        self.assertEqual(error, "")
+
+    def test_can_edit_review_wrong_user(self):
+        """Test can_edit_review fails for wrong user."""
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+        )
+
+        can_edit, error = review_service.can_edit_review(self.handyman, review)
+        self.assertFalse(can_edit)
+        self.assertIn("only edit your own reviews", error)
+
+    def test_can_edit_review_outside_window(self):
+        """Test can_edit_review fails outside review window."""
+        self.job.completed_at = timezone.now() - timedelta(days=15)
+        self.job.save()
+
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+        )
+
+        can_edit, error = review_service.can_edit_review(self.homeowner, review)
+        self.assertFalse(can_edit)
+        self.assertIn("edit window has expired", error)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_review_homeowner_success(self, mock_notify):
+        """Test homeowner creating a review for handyman."""
+        review = review_service.create_review(
+            user=self.homeowner,
+            job=self.job,
+            reviewer_type="homeowner",
+            rating=5,
+            comment="Great work!",
+        )
+
+        self.assertEqual(review.rating, 5)
+        self.assertEqual(review.comment, "Great work!")
+        self.assertEqual(review.reviewer, self.homeowner)
+        self.assertEqual(review.reviewee, self.handyman)
+
+        # Check profile rating updated
+        self.handyman_profile.refresh_from_db()
+        self.assertEqual(self.handyman_profile.rating, 5)
+        self.assertEqual(self.handyman_profile.review_count, 1)
+
+        # Check notification sent
+        mock_notify.assert_called_once()
+        call_kwargs = mock_notify.call_args.kwargs
+        self.assertEqual(call_kwargs["user"], self.handyman)
+        self.assertEqual(call_kwargs["notification_type"], "review_received")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_review_handyman_success(self, mock_notify):
+        """Test handyman creating a review for homeowner (no notification)."""
+        review = review_service.create_review(
+            user=self.handyman,
+            job=self.job,
+            reviewer_type="handyman",
+            rating=4,
+            comment="Good homeowner!",
+        )
+
+        self.assertEqual(review.rating, 4)
+        self.assertEqual(review.reviewer, self.handyman)
+        self.assertEqual(review.reviewee, self.homeowner)
+
+        # Check profile rating updated
+        self.homeowner_profile.refresh_from_db()
+        self.assertEqual(self.homeowner_profile.rating, 4)
+        self.assertEqual(self.homeowner_profile.review_count, 1)
+
+        # Check NO notification sent for handyman reviewing homeowner
+        mock_notify.assert_not_called()
+
+    def test_create_review_validation_error(self):
+        """Test create_review raises ValidationError for invalid review."""
+        self.job.status = "in_progress"
+        self.job.save()
+
+        with self.assertRaises(ValidationError):
+            review_service.create_review(
+                user=self.homeowner,
+                job=self.job,
+                reviewer_type="homeowner",
+                rating=5,
+            )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_update_review_success(self, mock_notify):
+        """Test updating an existing review."""
+        review = review_service.create_review(
+            user=self.homeowner,
+            job=self.job,
+            reviewer_type="homeowner",
+            rating=3,
+        )
+        mock_notify.reset_mock()
+
+        updated_review = review_service.update_review(
+            user=self.homeowner,
+            review=review,
+            rating=5,
+            comment="Updated comment",
+        )
+
+        self.assertEqual(updated_review.rating, 5)
+        self.assertEqual(updated_review.comment, "Updated comment")
+
+        # Check profile rating updated
+        self.handyman_profile.refresh_from_db()
+        self.assertEqual(self.handyman_profile.rating, 5)
+
+    def test_update_review_validation_error(self):
+        """Test update_review raises ValidationError for invalid edit."""
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+        )
+
+        # Try to edit as wrong user
+        with self.assertRaises(ValidationError):
+            review_service.update_review(
+                user=self.handyman,
+                review=review,
+                rating=4,
+            )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_update_profile_rating_multiple_reviews(self, mock_notify):
+        """Test profile rating is average of all reviews."""
+        # Create first job with review
+        review_service.create_review(
+            user=self.homeowner,
+            job=self.job,
+            reviewer_type="homeowner",
+            rating=4,
+        )
+
+        # Create second job with review
+        job2 = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix door",
+            description="Broken door",
+            estimated_budget=50,
+            category=self.category,
+            city=self.city,
+            address="456 Main St",
+            status="completed",
+            completed_at=timezone.now(),
+        )
+        review_service.create_review(
+            user=self.homeowner,
+            job=job2,
+            reviewer_type="homeowner",
+            rating=2,
+        )
+
+        # Average should be 3.0
+        self.handyman_profile.refresh_from_db()
+        self.assertEqual(self.handyman_profile.rating, 3)
+        self.assertEqual(self.handyman_profile.review_count, 2)
+
+    def test_update_profile_rating_no_profile(self):
+        """Test update_profile_rating handles missing profile gracefully."""
+        # Create user without profile
+        user_no_profile = User.objects.create_user(
+            email="noprofile@example.com", password="password123"
+        )
+
+        # Should not raise error
+        review_service.update_profile_rating(user_no_profile, "homeowner")
+        review_service.update_profile_rating(user_no_profile, "handyman")
+
+    def test_get_review_for_job_exists(self):
+        """Test get_review_for_job returns review when it exists."""
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+        )
+
+        result = review_service.get_review_for_job(self.job, "homeowner")
+        self.assertEqual(result, review)
+
+    def test_get_review_for_job_not_exists(self):
+        """Test get_review_for_job returns None when no review exists."""
+        result = review_service.get_review_for_job(self.job, "homeowner")
+        self.assertIsNone(result)
+
+    def test_get_reviews_received(self):
+        """Test get_reviews_received returns all reviews for a user."""
+        # Create multiple jobs with reviews
+        Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+        )
+
+        job2 = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix door",
+            description="Broken door",
+            estimated_budget=50,
+            category=self.category,
+            city=self.city,
+            address="456 Main St",
+            status="completed",
+            completed_at=timezone.now(),
+        )
+        Review.objects.create(
+            job=job2,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=4,
+        )
+
+        reviews = review_service.get_reviews_received(self.handyman, "homeowner")
+        self.assertEqual(reviews.count(), 2)

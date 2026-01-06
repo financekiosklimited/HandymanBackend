@@ -21,6 +21,7 @@ from apps.jobs.models import (
     JobCategory,
     JobDispute,
     JobTask,
+    Review,
     WorkSession,
 )
 from apps.profiles.models import HandymanProfile, HomeownerProfile
@@ -4924,3 +4925,738 @@ class HandymanJobTaskStatusViewTests(APITestCase):
         # Verify the completed_at was not changed
         self.task.refresh_from_db()
         self.assertTrue(self.task.is_completed)
+
+
+# ========================
+# Review View Tests
+# ========================
+
+
+class HomeownerReviewViewTests(APITestCase):
+    """Test cases for HomeownerReviewView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        self.homeowner.email_verified_at = timezone.now()
+        self.homeowner.save()
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=self.homeowner, display_name="Test Homeowner"
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        self.handyman.email_verified_at = timezone.now()
+        self.handyman.save()
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix sink",
+            description="Leaky sink",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="completed",
+            completed_at=timezone.now(),
+        )
+
+        self.url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/review/"
+
+    def test_get_review_success(self):
+        """Test getting an existing review."""
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+            comment="Great work!",
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["rating"], 5)
+        self.assertEqual(response.data["data"]["comment"], "Great work!")
+
+    def test_get_review_not_found(self):
+        """Test getting a review that doesn't exist."""
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_review_wrong_job(self):
+        """Test getting review for job owned by another homeowner."""
+        other_homeowner = User.objects.create_user(
+            email="other@example.com", password="password123"
+        )
+        other_homeowner.email_verified_at = timezone.now()
+        other_homeowner.save()
+        UserRole.objects.create(user=other_homeowner, role="homeowner")
+        HomeownerProfile.objects.create(user=other_homeowner, display_name="Other")
+        other_homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.client.force_authenticate(user=other_homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_review_success(self, mock_notify):
+        """Test creating a review successfully."""
+        self.client.force_authenticate(user=self.homeowner)
+
+        data = {"rating": 5, "comment": "Excellent work!"}
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["data"]["rating"], 5)
+        self.assertEqual(response.data["data"]["comment"], "Excellent work!")
+
+        # Verify review was created
+        self.assertTrue(
+            Review.objects.filter(job=self.job, reviewer_type="homeowner").exists()
+        )
+
+    def test_create_review_invalid_data(self):
+        """Test creating a review with invalid data."""
+        self.client.force_authenticate(user=self.homeowner)
+
+        data = {"rating": 6}  # Invalid rating
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_review_missing_rating(self):
+        """Test creating a review without rating."""
+        self.client.force_authenticate(user=self.homeowner)
+
+        data = {"comment": "Great!"}
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_review_job_not_completed(self, mock_notify):
+        """Test creating a review for a non-completed job."""
+        self.job.status = "in_progress"
+        self.job.completed_at = None
+        self.job.save()
+
+        self.client.force_authenticate(user=self.homeowner)
+
+        data = {"rating": 5}
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_review_outside_window(self, mock_notify):
+        """Test creating a review outside the 14-day window."""
+        self.job.completed_at = timezone.now() - timedelta(days=15)
+        self.job.save()
+
+        self.client.force_authenticate(user=self.homeowner)
+
+        data = {"rating": 5}
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_review_already_reviewed(self, mock_notify):
+        """Test creating a duplicate review."""
+        Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+
+        data = {"rating": 4}
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_review_success(self):
+        """Test updating a review successfully."""
+        Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=4,
+            comment="Good work",
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+
+        data = {"rating": 5, "comment": "Excellent work!"}
+        response = self.client.put(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["rating"], 5)
+        self.assertEqual(response.data["data"]["comment"], "Excellent work!")
+
+    def test_update_review_not_found(self):
+        """Test updating a review that doesn't exist."""
+        self.client.force_authenticate(user=self.homeowner)
+
+        data = {"rating": 5}
+        response = self.client.put(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_update_review_invalid_data(self):
+        """Test updating a review with invalid data."""
+        Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=4,
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+
+        data = {"rating": 0}  # Invalid rating
+        response = self.client.put(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_review_outside_window(self):
+        """Test updating a review outside the 14-day window."""
+        self.job.completed_at = timezone.now() - timedelta(days=15)
+        self.job.save()
+
+        Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=4,
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+
+        data = {"rating": 5}
+        response = self.client.put(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_unauthenticated_access(self):
+        """Test that unauthenticated users cannot access review endpoints."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        response = self.client.post(self.url, {"rating": 5}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        response = self.client.put(self.url, {"rating": 5}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class HandymanReviewViewTests(APITestCase):
+    """Test cases for HandymanReviewView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        self.homeowner.email_verified_at = timezone.now()
+        self.homeowner.save()
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=self.homeowner, display_name="Test Homeowner"
+        )
+
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        self.handyman.email_verified_at = timezone.now()
+        self.handyman.save()
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix sink",
+            description="Leaky sink",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="completed",
+            completed_at=timezone.now(),
+        )
+
+        self.url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/review/"
+
+    def test_get_review_success(self):
+        """Test getting an existing review."""
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.handyman,
+            reviewee=self.homeowner,
+            reviewer_type="handyman",
+            rating=4,
+            comment="Good homeowner!",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["rating"], 4)
+        self.assertEqual(response.data["data"]["comment"], "Good homeowner!")
+
+    def test_get_review_not_found(self):
+        """Test getting a review that doesn't exist."""
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_review_wrong_job(self):
+        """Test getting review for job assigned to another handyman."""
+        other_handyman = User.objects.create_user(
+            email="other@example.com", password="password123"
+        )
+        other_handyman.email_verified_at = timezone.now()
+        other_handyman.save()
+        UserRole.objects.create(user=other_handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=other_handyman,
+            display_name="Other Handyman",
+            phone_verified_at=timezone.now(),
+        )
+        other_handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.client.force_authenticate(user=other_handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_review_success(self, mock_notify):
+        """Test creating a review successfully."""
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"rating": 4, "comment": "Good communication!"}
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["data"]["rating"], 4)
+        self.assertEqual(response.data["data"]["comment"], "Good communication!")
+
+        # Verify review was created
+        self.assertTrue(
+            Review.objects.filter(job=self.job, reviewer_type="handyman").exists()
+        )
+
+    def test_create_review_invalid_data(self):
+        """Test creating a review with invalid data."""
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"rating": 0}  # Invalid rating
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_review_job_not_completed(self, mock_notify):
+        """Test creating a review for a non-completed job."""
+        self.job.status = "in_progress"
+        self.job.completed_at = None
+        self.job.save()
+
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"rating": 4}
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_review_already_reviewed(self, mock_notify):
+        """Test creating a duplicate review."""
+        Review.objects.create(
+            job=self.job,
+            reviewer=self.handyman,
+            reviewee=self.homeowner,
+            reviewer_type="handyman",
+            rating=4,
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"rating": 5}
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_review_success(self):
+        """Test updating a review successfully."""
+        Review.objects.create(
+            job=self.job,
+            reviewer=self.handyman,
+            reviewee=self.homeowner,
+            reviewer_type="handyman",
+            rating=3,
+            comment="Okay",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"rating": 4, "comment": "Good homeowner!"}
+        response = self.client.put(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["rating"], 4)
+        self.assertEqual(response.data["data"]["comment"], "Good homeowner!")
+
+    def test_update_review_not_found(self):
+        """Test updating a review that doesn't exist."""
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"rating": 4}
+        response = self.client.put(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_update_review_invalid_data(self):
+        """Test updating a review with invalid data."""
+        Review.objects.create(
+            job=self.job,
+            reviewer=self.handyman,
+            reviewee=self.homeowner,
+            reviewer_type="handyman",
+            rating=4,
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"rating": 6}  # Invalid rating
+        response = self.client.put(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_review_outside_window(self):
+        """Test updating a review outside the 14-day window."""
+        self.job.completed_at = timezone.now() - timedelta(days=15)
+        self.job.save()
+
+        Review.objects.create(
+            job=self.job,
+            reviewer=self.handyman,
+            reviewee=self.homeowner,
+            reviewer_type="handyman",
+            rating=4,
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"rating": 5}
+        response = self.client.put(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_unauthenticated_access(self):
+        """Test that unauthenticated users cannot access review endpoints."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        response = self.client.post(self.url, {"rating": 4}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        response = self.client.put(self.url, {"rating": 4}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class HandymanReceivedReviewsViewTests(APITestCase):
+    """Test cases for HandymanReceivedReviewsView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        self.homeowner.email_verified_at = timezone.now()
+        self.homeowner.save()
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=self.homeowner, display_name="Test Homeowner"
+        )
+
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        self.handyman.email_verified_at = timezone.now()
+        self.handyman.save()
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+        self.url = "/api/v1/mobile/handyman/reviews/"
+
+    def test_get_received_reviews_empty(self):
+        """Test getting reviews when there are none."""
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"], [])
+        self.assertEqual(response.data["meta"]["pagination"]["total_count"], 0)
+
+    def test_get_received_reviews_success(self):
+        """Test getting received reviews successfully."""
+        # Create a job and review
+        job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix sink",
+            description="Leaky sink",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="completed",
+            completed_at=timezone.now(),
+        )
+        Review.objects.create(
+            job=job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+            comment="Great work!",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["rating"], 5)
+        self.assertEqual(response.data["meta"]["pagination"]["total_count"], 1)
+
+    def test_get_received_reviews_pagination(self):
+        """Test pagination of received reviews."""
+        # Create multiple jobs and reviews
+        for i in range(25):
+            job = Job.objects.create(
+                homeowner=self.homeowner,
+                assigned_handyman=self.handyman,
+                title=f"Job {i}",
+                description="Description",
+                estimated_budget=Decimal("100.00"),
+                category=self.category,
+                city=self.city,
+                address="123 Main St",
+                status="completed",
+                completed_at=timezone.now(),
+            )
+            Review.objects.create(
+                job=job,
+                reviewer=self.homeowner,
+                reviewee=self.handyman,
+                reviewer_type="homeowner",
+                rating=4,
+            )
+
+        self.client.force_authenticate(user=self.handyman)
+
+        # First page (default page_size=20)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 20)
+        self.assertEqual(response.data["meta"]["pagination"]["total_count"], 25)
+        self.assertEqual(response.data["meta"]["pagination"]["total_pages"], 2)
+        self.assertTrue(response.data["meta"]["pagination"]["has_next"])
+        self.assertFalse(response.data["meta"]["pagination"]["has_previous"])
+
+        # Second page
+        response = self.client.get(self.url + "?page=2")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 5)
+        self.assertFalse(response.data["meta"]["pagination"]["has_next"])
+        self.assertTrue(response.data["meta"]["pagination"]["has_previous"])
+
+    def test_get_received_reviews_custom_page_size(self):
+        """Test custom page size for received reviews."""
+        # Create 5 jobs and reviews
+        for i in range(5):
+            job = Job.objects.create(
+                homeowner=self.homeowner,
+                assigned_handyman=self.handyman,
+                title=f"Job {i}",
+                description="Description",
+                estimated_budget=Decimal("100.00"),
+                category=self.category,
+                city=self.city,
+                address="123 Main St",
+                status="completed",
+                completed_at=timezone.now(),
+            )
+            Review.objects.create(
+                job=job,
+                reviewer=self.homeowner,
+                reviewee=self.handyman,
+                reviewer_type="homeowner",
+                rating=4,
+            )
+
+        self.client.force_authenticate(user=self.handyman)
+
+        response = self.client.get(self.url + "?page_size=2")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+        self.assertEqual(response.data["meta"]["pagination"]["page_size"], 2)
+        self.assertEqual(response.data["meta"]["pagination"]["total_pages"], 3)
+
+    def test_get_received_reviews_max_page_size(self):
+        """Test that page size is capped at 100."""
+        self.client.force_authenticate(user=self.handyman)
+
+        response = self.client.get(self.url + "?page_size=200")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["meta"]["pagination"]["page_size"], 100)
+
+    def test_does_not_include_handyman_reviews(self):
+        """Test that reviews written by handymen are not included."""
+        # Create a job where handyman reviews the homeowner
+        job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix sink",
+            description="Leaky sink",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="completed",
+            completed_at=timezone.now(),
+        )
+        # This is a review BY the handyman (not received)
+        Review.objects.create(
+            job=job,
+            reviewer=self.handyman,
+            reviewee=self.homeowner,
+            reviewer_type="handyman",
+            rating=4,
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+
+    def test_unauthenticated_access(self):
+        """Test that unauthenticated users cannot access received reviews."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
