@@ -216,7 +216,9 @@ class LoginView(APIView):
 
                 return success_response(data=tokens, message="Login successful")
             else:
-                return unauthorized_response("Invalid credentials")
+                return unauthorized_response(
+                    "The email or password you entered is incorrect. Please try again."
+                )
 
         return validation_error_response(serializer.errors)
 

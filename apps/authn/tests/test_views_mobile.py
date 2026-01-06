@@ -191,7 +191,10 @@ class MobileLoginViewTests(TestCase):
             response = self.view(request)
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertEqual(response.data["message"], "Invalid credentials")
+        self.assertEqual(
+            response.data["message"],
+            "The email or password you entered is incorrect. Please try again.",
+        )
 
     def test_login_success_user_lookup_missing(self):
         data = {"email": "user@example.com", "password": "pass"}
