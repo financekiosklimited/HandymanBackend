@@ -4993,7 +4993,7 @@ class HomeownerReviewViewTests(APITestCase):
 
     def test_get_review_success(self):
         """Test getting an existing review."""
-        review = Review.objects.create(
+        Review.objects.create(
             job=self.job,
             reviewer=self.homeowner,
             reviewee=self.handyman,
@@ -5265,7 +5265,7 @@ class HandymanReviewViewTests(APITestCase):
 
     def test_get_review_success(self):
         """Test getting an existing review."""
-        review = Review.objects.create(
+        Review.objects.create(
             job=self.job,
             reviewer=self.handyman,
             reviewee=self.homeowner,
@@ -6146,8 +6146,8 @@ class HandymanJobDashboardSerializerTests(APITestCase):
 
     def test_dashboard_serializer_with_all_fields(self):
         """Test serializer with all fields populated."""
+
         from apps.jobs.serializers import HandymanJobDashboardSerializer
-        from datetime import date
 
         data = {
             "job": {

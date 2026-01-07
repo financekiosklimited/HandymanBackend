@@ -2444,7 +2444,6 @@ class ReviewSerializerTests(TestCase):
 
     def test_review_serializer_can_edit(self):
         """Test ReviewSerializer includes can_edit field."""
-        from django.utils import timezone
 
         from apps.jobs.models import Review
         from apps.jobs.serializers import ReviewSerializer

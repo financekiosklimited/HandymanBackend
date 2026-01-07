@@ -34,7 +34,6 @@ from apps.jobs.models import (
     Job,
     JobApplication,
     JobCategory,
-    Review,
     WorkSession,
 )
 from apps.jobs.serializers import (
@@ -57,7 +56,6 @@ from apps.jobs.serializers import (
     HandymanForYouJobListResponseSerializer,
     HandymanForYouJobSerializer,
     HandymanJobDashboardResponseSerializer,
-    HandymanJobDashboardSerializer,
     HandymanJobDetailResponseSerializer,
     HandymanJobDetailSerializer,
     HomeownerJobApplicationDetailResponseSerializer,
