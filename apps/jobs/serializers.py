@@ -1939,6 +1939,21 @@ class JobDashboardJobInfoSerializer(serializers.ModelSerializer):
         return None
 
 
+class JobDashboardReviewSerializer(serializers.Serializer):
+    """
+    Serializer for review data in job dashboard.
+    Shows the review left by the homeowner for this job.
+    """
+
+    public_id = serializers.UUIDField(help_text="Public ID of the review")
+    rating = serializers.IntegerField(help_text="Rating from 1 to 5 stars")
+    comment = serializers.CharField(
+        allow_blank=True, help_text="Review comment from homeowner"
+    )
+    created_at = serializers.DateTimeField(help_text="When the review was created")
+    updated_at = serializers.DateTimeField(help_text="When the review was last updated")
+
+
 class HandymanJobDashboardSerializer(serializers.Serializer):
     """
     Comprehensive serializer for handyman job dashboard.
@@ -1958,6 +1973,12 @@ class HandymanJobDashboardSerializer(serializers.Serializer):
     )
     report_stats = JobDashboardReportStatsSerializer(
         help_text="Daily report statistics"
+    )
+    is_reviewed = serializers.BooleanField(
+        help_text="Whether the homeowner has left a review for this job"
+    )
+    review = JobDashboardReviewSerializer(
+        allow_null=True, help_text="Review details if homeowner has reviewed the job"
     )
 
 

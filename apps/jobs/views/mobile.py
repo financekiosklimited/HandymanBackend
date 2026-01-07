@@ -2817,7 +2817,7 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
         tags=["Mobile Handyman Ongoing Jobs"],
         examples=[
             OpenApiExample(
-                "Success Response - No Active Session",
+                "Success Response - No Active Session, Not Reviewed",
                 value={
                     "message": "Dashboard data retrieved successfully",
                     "data": {
@@ -2898,6 +2898,90 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                             "approved_reports": 2,
                             "rejected_reports": 0,
                             "latest_report_date": "2024-01-16",
+                        },
+                        "is_reviewed": False,
+                        "review": None,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Success Response - Completed Job With Review",
+                value={
+                    "message": "Dashboard data retrieved successfully",
+                    "data": {
+                        "job": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "title": "Fix leaking kitchen faucet",
+                            "description": "Kitchen faucet has been leaking for a few days.",
+                            "status": "completed",
+                            "estimated_budget": 150.00,
+                            "category": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                                "name": "Plumbing",
+                                "slug": "plumbing",
+                            },
+                            "city": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                                "name": "Toronto",
+                                "province": "Ontario",
+                                "province_code": "ON",
+                            },
+                            "address": "123 Main St, Toronto",
+                            "postal_code": "M5H 2N2",
+                            "homeowner_display_name": "John Homeowner",
+                            "homeowner_avatar_url": None,
+                            "created_at": "2024-01-15T10:30:00Z",
+                        },
+                        "tasks_progress": {
+                            "total_tasks": 3,
+                            "completed_tasks": 3,
+                            "pending_tasks": 0,
+                            "completion_percentage": 100.0,
+                            "tasks": [
+                                {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174010",
+                                    "title": "Inspect faucet and pipes",
+                                    "description": "",
+                                    "order": 0,
+                                    "is_completed": True,
+                                    "completed_at": "2024-01-16T10:00:00Z",
+                                },
+                            ],
+                        },
+                        "time_stats": {
+                            "total_time_seconds": 14400,
+                            "total_time_formatted": "04:00:00",
+                            "average_session_duration_seconds": 7200,
+                            "average_session_duration_formatted": "02:00:00",
+                            "longest_session_seconds": 10800,
+                            "longest_session_formatted": "03:00:00",
+                        },
+                        "session_stats": {
+                            "total_sessions": 2,
+                            "completed_sessions": 2,
+                            "in_progress_sessions": 0,
+                            "has_active_session": False,
+                            "active_session_id": None,
+                        },
+                        "active_session": None,
+                        "report_stats": {
+                            "total_reports": 2,
+                            "pending_reports": 0,
+                            "approved_reports": 2,
+                            "rejected_reports": 0,
+                            "latest_report_date": "2024-01-16",
+                        },
+                        "is_reviewed": True,
+                        "review": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174099",
+                            "rating": 5,
+                            "comment": "Excellent work! Fixed the leak quickly and professionally.",
+                            "created_at": "2024-01-20T14:30:00Z",
+                            "updated_at": "2024-01-20T14:30:00Z",
                         },
                     },
                     "errors": None,
@@ -2995,6 +3079,19 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
             secs = seconds % 60
             return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
+        # Get review from homeowner for this job
+        homeowner_review = job.reviews.filter(reviewer_type="homeowner").first()
+        is_reviewed = homeowner_review is not None
+        review_data = None
+        if homeowner_review:
+            review_data = {
+                "public_id": str(homeowner_review.public_id),
+                "rating": homeowner_review.rating,
+                "comment": homeowner_review.comment,
+                "created_at": homeowner_review.created_at,
+                "updated_at": homeowner_review.updated_at,
+            }
+
         dashboard_data = {
             "job": {
                 "public_id": str(job.public_id),
@@ -3081,6 +3178,8 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                 "rejected_reports": rejected_reports,
                 "latest_report_date": latest_report_date,
             },
+            "is_reviewed": is_reviewed,
+            "review": review_data,
         }
 
         return success_response(

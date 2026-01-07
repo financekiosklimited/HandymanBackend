@@ -6201,6 +6201,128 @@ class HandymanJobDashboardViewTests(APITestCase):
         self.assertLessEqual(active_session_data["current_duration_seconds"], 7260)
         self.assertEqual(active_session_data["current_duration_formatted"], "02:00:00")
 
+    def test_get_dashboard_without_review(self):
+        """Test dashboard when homeowner has not reviewed the job."""
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        # Check is_reviewed and review fields
+        self.assertIn("is_reviewed", data)
+        self.assertIn("review", data)
+        self.assertFalse(data["is_reviewed"])
+        self.assertIsNone(data["review"])
+
+    def test_get_dashboard_with_homeowner_review(self):
+        """Test dashboard when homeowner has left a review."""
+        # Create a review from homeowner
+        review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+            comment="Excellent work! Very professional.",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        # Check is_reviewed is True
+        self.assertTrue(data["is_reviewed"])
+
+        # Check review object
+        self.assertIsNotNone(data["review"])
+        self.assertEqual(str(review.public_id), data["review"]["public_id"])
+        self.assertEqual(5, data["review"]["rating"])
+        self.assertEqual(
+            "Excellent work! Very professional.", data["review"]["comment"]
+        )
+        self.assertIn("created_at", data["review"])
+        self.assertIn("updated_at", data["review"])
+
+    def test_get_dashboard_ignores_handyman_review(self):
+        """Test that dashboard only shows homeowner review, not handyman's review."""
+        # Create a review from handyman (should be ignored)
+        Review.objects.create(
+            job=self.job,
+            reviewer=self.handyman,
+            reviewee=self.homeowner,
+            reviewer_type="handyman",
+            rating=4,
+            comment="Good homeowner.",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        # Should show not reviewed since there's no homeowner review
+        self.assertFalse(data["is_reviewed"])
+        self.assertIsNone(data["review"])
+
+    def test_get_dashboard_with_both_reviews(self):
+        """Test dashboard shows homeowner review when both parties have reviewed."""
+        # Create homeowner review
+        homeowner_review = Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=5,
+            comment="Great handyman!",
+        )
+        # Create handyman review
+        Review.objects.create(
+            job=self.job,
+            reviewer=self.handyman,
+            reviewee=self.homeowner,
+            reviewer_type="handyman",
+            rating=4,
+            comment="Good homeowner.",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        # Should show homeowner review
+        self.assertTrue(data["is_reviewed"])
+        self.assertIsNotNone(data["review"])
+        self.assertEqual(str(homeowner_review.public_id), data["review"]["public_id"])
+        self.assertEqual(5, data["review"]["rating"])
+        self.assertEqual("Great handyman!", data["review"]["comment"])
+
+    def test_get_dashboard_review_with_empty_comment(self):
+        """Test dashboard with review that has no comment."""
+        Review.objects.create(
+            job=self.job,
+            reviewer=self.homeowner,
+            reviewee=self.handyman,
+            reviewer_type="homeowner",
+            rating=3,
+            comment="",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        self.assertTrue(data["is_reviewed"])
+        self.assertEqual(3, data["review"]["rating"])
+        self.assertEqual("", data["review"]["comment"])
+
 
 class HandymanJobDashboardSerializerTests(APITestCase):
     """Test cases for HandymanJobDashboardSerializer."""
@@ -6270,6 +6392,8 @@ class HandymanJobDashboardSerializerTests(APITestCase):
                 "rejected_reports": 0,
                 "latest_report_date": None,
             },
+            "is_reviewed": False,
+            "review": None,
         }
 
         serializer = HandymanJobDashboardSerializer(data=data)
@@ -6350,6 +6474,14 @@ class HandymanJobDashboardSerializerTests(APITestCase):
                 "approved_reports": 2,
                 "rejected_reports": 0,
                 "latest_report_date": "2024-01-16",
+            },
+            "is_reviewed": True,
+            "review": {
+                "public_id": "123e4567-e89b-12d3-a456-426614174099",
+                "rating": 5,
+                "comment": "Excellent work!",
+                "created_at": "2024-01-20T14:30:00Z",
+                "updated_at": "2024-01-20T14:30:00Z",
             },
         }
 
@@ -6439,6 +6571,8 @@ class HandymanJobDashboardSerializerTests(APITestCase):
                 "rejected_reports": 0,
                 "latest_report_date": None,
             },
+            "is_reviewed": False,
+            "review": None,
         }
 
         serializer = HandymanJobDashboardSerializer(data=data)
