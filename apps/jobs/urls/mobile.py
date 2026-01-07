@@ -138,6 +138,11 @@ urlpatterns = [
     ),
     # Handyman Ongoing Job Endpoints (Read)
     path(
+        "handyman/jobs/<uuid:public_id>/dashboard/",
+        mobile_views.HandymanJobDashboardView.as_view(),
+        name="mobile_handyman_jobs_dashboard",
+    ),
+    path(
         "handyman/jobs/<uuid:public_id>/sessions/",
         mobile_views.HandymanWorkSessionListView.as_view(),
         name="mobile_handyman_jobs_sessions_list",

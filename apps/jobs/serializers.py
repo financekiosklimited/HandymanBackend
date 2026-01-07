@@ -1747,3 +1747,185 @@ ReviewDetailResponseSerializer = create_response_serializer(
 ReviewListResponseSerializer = create_list_response_serializer(
     ReviewDetailSerializer, "ReviewListResponse"
 )
+
+
+# ============================================================================
+# Handyman Job Dashboard Serializers
+# ============================================================================
+
+
+class JobDashboardTaskSerializer(serializers.ModelSerializer):
+    """
+    Serializer for job task in dashboard with completion status.
+    """
+
+    class Meta:
+        model = JobTask
+        fields = [
+            "public_id",
+            "title",
+            "description",
+            "order",
+            "is_completed",
+            "completed_at",
+        ]
+        read_only_fields = fields
+
+
+class JobDashboardTasksProgressSerializer(serializers.Serializer):
+    """
+    Serializer for task completion progress in job dashboard.
+    """
+
+    total_tasks = serializers.IntegerField(help_text="Total number of tasks in the job")
+    completed_tasks = serializers.IntegerField(help_text="Number of completed tasks")
+    pending_tasks = serializers.IntegerField(help_text="Number of pending tasks")
+    completion_percentage = serializers.FloatField(
+        help_text="Percentage of tasks completed (0-100)"
+    )
+    tasks = JobDashboardTaskSerializer(
+        many=True, help_text="List of all tasks with their status"
+    )
+
+
+class JobDashboardTimeStatsSerializer(serializers.Serializer):
+    """
+    Serializer for time-related statistics in job dashboard.
+    """
+
+    total_time_seconds = serializers.IntegerField(
+        help_text="Total time worked in seconds across all sessions"
+    )
+    total_time_formatted = serializers.CharField(
+        help_text="Total time worked formatted as HH:MM:SS"
+    )
+    average_session_duration_seconds = serializers.IntegerField(
+        allow_null=True,
+        help_text="Average duration of work sessions in seconds",
+    )
+    average_session_duration_formatted = serializers.CharField(
+        allow_null=True,
+        help_text="Average session duration formatted as HH:MM:SS",
+    )
+    longest_session_seconds = serializers.IntegerField(
+        allow_null=True,
+        help_text="Duration of the longest session in seconds",
+    )
+    longest_session_formatted = serializers.CharField(
+        allow_null=True,
+        help_text="Longest session duration formatted as HH:MM:SS",
+    )
+
+
+class JobDashboardSessionStatsSerializer(serializers.Serializer):
+    """
+    Serializer for work session statistics in job dashboard.
+    """
+
+    total_sessions = serializers.IntegerField(help_text="Total number of work sessions")
+    completed_sessions = serializers.IntegerField(
+        help_text="Number of completed sessions"
+    )
+    in_progress_sessions = serializers.IntegerField(
+        help_text="Number of sessions currently in progress (should be 0 or 1)"
+    )
+    has_active_session = serializers.BooleanField(
+        help_text="Whether there is an active work session"
+    )
+    active_session_id = serializers.UUIDField(
+        allow_null=True,
+        help_text="Public ID of the active session if any",
+    )
+
+
+class JobDashboardReportStatsSerializer(serializers.Serializer):
+    """
+    Serializer for daily report statistics in job dashboard.
+    """
+
+    total_reports = serializers.IntegerField(
+        help_text="Total number of daily reports submitted"
+    )
+    pending_reports = serializers.IntegerField(
+        help_text="Number of reports pending review"
+    )
+    approved_reports = serializers.IntegerField(help_text="Number of approved reports")
+    rejected_reports = serializers.IntegerField(help_text="Number of rejected reports")
+    latest_report_date = serializers.DateField(
+        allow_null=True,
+        help_text="Date of the most recent report",
+    )
+
+
+class JobDashboardJobInfoSerializer(serializers.ModelSerializer):
+    """
+    Serializer for basic job info in dashboard.
+    """
+
+    category = JobCategorySerializer(read_only=True)
+    city = CitySerializer(read_only=True)
+    estimated_budget = serializers.DecimalField(
+        max_digits=10, decimal_places=2, coerce_to_string=False
+    )
+    homeowner_display_name = serializers.SerializerMethodField()
+    homeowner_avatar_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Job
+        fields = [
+            "public_id",
+            "title",
+            "description",
+            "status",
+            "status_at",
+            "estimated_budget",
+            "category",
+            "city",
+            "address",
+            "postal_code",
+            "latitude",
+            "longitude",
+            "completion_requested_at",
+            "completed_at",
+            "homeowner_display_name",
+            "homeowner_avatar_url",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_homeowner_display_name(self, obj):
+        """Get homeowner's display name."""
+        if hasattr(obj.homeowner, "homeowner_profile"):
+            return obj.homeowner.homeowner_profile.display_name
+        return None
+
+    def get_homeowner_avatar_url(self, obj):
+        """Get homeowner's avatar URL."""
+        if hasattr(obj.homeowner, "homeowner_profile"):
+            return obj.homeowner.homeowner_profile.avatar_url
+        return None
+
+
+class HandymanJobDashboardSerializer(serializers.Serializer):
+    """
+    Comprehensive serializer for handyman job dashboard.
+    Aggregates job details, task progress, time stats, session info, and report stats.
+    """
+
+    job = JobDashboardJobInfoSerializer(help_text="Basic job information")
+    tasks_progress = JobDashboardTasksProgressSerializer(
+        help_text="Task completion progress"
+    )
+    time_stats = JobDashboardTimeStatsSerializer(help_text="Time-related statistics")
+    session_stats = JobDashboardSessionStatsSerializer(
+        help_text="Work session statistics"
+    )
+    report_stats = JobDashboardReportStatsSerializer(
+        help_text="Daily report statistics"
+    )
+
+
+# Response serializer for handyman job dashboard
+HandymanJobDashboardResponseSerializer = create_response_serializer(
+    HandymanJobDashboardSerializer, "HandymanJobDashboardResponse"
+)

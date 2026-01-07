@@ -5660,3 +5660,629 @@ class HandymanReceivedReviewsViewTests(APITestCase):
         """Test that unauthenticated users cannot access received reviews."""
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class HandymanJobDashboardViewTests(APITestCase):
+    """Test cases for HandymanJobDashboardView."""
+
+    def setUp(self):
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Test Homeowner",
+            phone_verified_at=timezone.now(),
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="John Handyman",
+            phone_verified_at=timezone.now(),
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create other handyman (for forbidden tests)
+        self.other_handyman = User.objects.create_user(
+            email="other@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.other_handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.other_handyman,
+            display_name="Other Handyman",
+            phone_verified_at=timezone.now(),
+        )
+        self.other_handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Setup Job
+        self.category = JobCategory.objects.create(name="Plumbing", slug="plumbing")
+        self.city = City.objects.create(
+            name="Toronto", province="Ontario", province_code="ON", slug="toronto"
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Test Job",
+            description="Test description",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Street",
+            status="in_progress",
+        )
+
+        # Create tasks
+        self.task1 = JobTask.objects.create(
+            job=self.job, title="Task 1", order=0, is_completed=True
+        )
+        self.task2 = JobTask.objects.create(
+            job=self.job, title="Task 2", order=1, is_completed=False
+        )
+        self.task3 = JobTask.objects.create(
+            job=self.job, title="Task 3", order=2, is_completed=False
+        )
+
+        # Create work sessions
+        self.session1 = WorkSession.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            started_at=timezone.now() - timedelta(hours=4),
+            ended_at=timezone.now() - timedelta(hours=2),
+            start_latitude=Decimal("43.0"),
+            start_longitude=Decimal("-79.0"),
+            end_latitude=Decimal("43.1"),
+            end_longitude=Decimal("-79.1"),
+            start_photo="path/to/photo1.jpg",
+            status="completed",
+        )
+        self.session2 = WorkSession.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            started_at=timezone.now() - timedelta(hours=2),
+            ended_at=timezone.now() - timedelta(hours=1),
+            start_latitude=Decimal("43.0"),
+            start_longitude=Decimal("-79.0"),
+            end_latitude=Decimal("43.1"),
+            end_longitude=Decimal("-79.1"),
+            start_photo="path/to/photo2.jpg",
+            status="completed",
+        )
+
+        # Create active session
+        self.active_session = WorkSession.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            started_at=timezone.now(),
+            start_latitude=Decimal("43.0"),
+            start_longitude=Decimal("-79.0"),
+            start_photo="path/to/active_photo.jpg",
+            status="in_progress",
+        )
+
+        # Create daily reports
+        self.report1 = DailyReport.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            report_date=(timezone.now() - timedelta(days=1)).date(),
+            summary="Work done yesterday",
+            total_work_duration=timedelta(hours=4),
+            status="approved",
+            review_deadline=timezone.now() + timedelta(days=2),
+        )
+        self.report2 = DailyReport.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            report_date=timezone.now().date(),
+            summary="Work done today",
+            total_work_duration=timedelta(hours=2),
+            status="pending",
+            review_deadline=timezone.now() + timedelta(days=3),
+        )
+
+        self.url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/dashboard/"
+
+    def test_get_dashboard_success(self):
+        """Test successfully getting dashboard data."""
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"], "Dashboard data retrieved successfully"
+        )
+        data = response.data["data"]
+
+        # Check job info
+        self.assertIn("job", data)
+        self.assertEqual(data["job"]["title"], "Test Job")
+        self.assertEqual(data["job"]["status"], "in_progress")
+
+        # Check tasks progress
+        self.assertIn("tasks_progress", data)
+        self.assertEqual(data["tasks_progress"]["total_tasks"], 3)
+        self.assertEqual(data["tasks_progress"]["completed_tasks"], 1)
+        self.assertEqual(data["tasks_progress"]["pending_tasks"], 2)
+        self.assertEqual(data["tasks_progress"]["completion_percentage"], (1 / 3 * 100))
+
+        # Check time stats (total should be 3 hours = 10800 seconds)
+        self.assertIn("time_stats", data)
+        self.assertEqual(data["time_stats"]["total_time_seconds"], 10800)
+        self.assertEqual(data["time_stats"]["total_time_formatted"], "03:00:00")
+
+        # Check session stats
+        self.assertIn("session_stats", data)
+        self.assertEqual(data["session_stats"]["total_sessions"], 3)
+        self.assertEqual(data["session_stats"]["completed_sessions"], 2)
+        self.assertEqual(data["session_stats"]["in_progress_sessions"], 1)
+        self.assertTrue(data["session_stats"]["has_active_session"])
+        self.assertIsNotNone(data["session_stats"]["active_session_id"])
+
+        # Check report stats
+        self.assertIn("report_stats", data)
+        self.assertEqual(data["report_stats"]["total_reports"], 2)
+        self.assertEqual(data["report_stats"]["pending_reports"], 1)
+        self.assertEqual(data["report_stats"]["approved_reports"], 1)
+        self.assertEqual(data["report_stats"]["rejected_reports"], 0)
+        self.assertEqual(
+            data["report_stats"]["latest_report_date"], timezone.now().date()
+        )
+
+    def test_get_dashboard_unauthenticated(self):
+        """Test that unauthenticated users cannot access dashboard."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_get_dashboard_not_found(self):
+        """Test getting dashboard for non-existent job."""
+        self.client.force_authenticate(user=self.handyman)
+        url = "/api/v1/mobile/handyman/jobs/00000000-0000-0000-0000-000000000000/dashboard/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_dashboard_forbidden_other_handyman(self):
+        """Test that another handyman cannot access dashboard."""
+        self.client.force_authenticate(user=self.other_handyman)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_dashboard_includes_homeowner_info(self):
+        """Test that dashboard includes homeowner display name and avatar."""
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertEqual(data["job"]["homeowner_display_name"], "Test Homeowner")
+        self.assertIsNone(data["job"]["homeowner_avatar_url"])
+
+    def test_get_dashboard_with_only_completed_tasks(self):
+        """Test dashboard when all tasks are completed."""
+        self.task2.is_completed = True
+        self.task2.save()
+        self.task3.is_completed = True
+        self.task3.save()
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertEqual(data["tasks_progress"]["completed_tasks"], 3)
+        self.assertEqual(data["tasks_progress"]["completion_percentage"], 100.0)
+
+    def test_get_dashboard_with_no_sessions(self):
+        """Test dashboard when there are no work sessions."""
+        WorkSession.objects.all().delete()
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertEqual(data["time_stats"]["total_time_seconds"], 0)
+        self.assertEqual(data["time_stats"]["total_time_formatted"], "00:00:00")
+        self.assertIsNone(data["time_stats"]["average_session_duration_seconds"])
+        self.assertIsNone(data["time_stats"]["longest_session_seconds"])
+
+    def test_get_dashboard_with_only_active_session(self):
+        """Test dashboard when there's only an active session (no end time)."""
+        WorkSession.objects.filter(status="completed").delete()
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertEqual(data["time_stats"]["total_time_seconds"], 0)
+        self.assertEqual(data["session_stats"]["total_sessions"], 1)
+        self.assertEqual(data["session_stats"]["completed_sessions"], 0)
+        self.assertEqual(data["session_stats"]["in_progress_sessions"], 1)
+
+    def test_get_dashboard_with_no_reports(self):
+        """Test dashboard when there are no daily reports."""
+        DailyReport.objects.all().delete()
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertEqual(data["report_stats"]["total_reports"], 0)
+        self.assertEqual(data["report_stats"]["latest_report_date"], None)
+
+    def test_get_dashboard_with_rejected_reports(self):
+        """Test dashboard with rejected daily reports."""
+        self.report1.status = "rejected"
+        self.report1.homeowner_comment = "Not detailed enough"
+        self.report1.save()
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertEqual(data["report_stats"]["rejected_reports"], 1)
+
+    def test_get_dashboard_task_order(self):
+        """Test that tasks are returned in order."""
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        tasks = data["tasks_progress"]["tasks"]
+
+        self.assertEqual(len(tasks), 3)
+        self.assertEqual(tasks[0]["title"], "Task 1")
+        self.assertEqual(tasks[1]["title"], "Task 2")
+        self.assertEqual(tasks[2]["title"], "Task 3")
+
+    def test_get_dashboard_includes_category_info(self):
+        """Test that dashboard includes full category info."""
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        category = data["job"]["category"]
+
+        self.assertEqual(category["name"], "Plumbing")
+        self.assertEqual(category["slug"], "plumbing")
+
+    def test_get_dashboard_includes_city_info(self):
+        """Test that dashboard includes full city info."""
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        city = data["job"]["city"]
+
+        self.assertEqual(city["name"], "Toronto")
+        self.assertEqual(city["province"], "Ontario")
+        self.assertEqual(city["province_code"], "ON")
+
+    def test_get_dashboard_average_session_calculation(self):
+        """Test that average session duration is calculated correctly."""
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        # Two sessions: 2 hours and 1 hour = average 1.5 hours = 5400 seconds
+        self.assertEqual(data["time_stats"]["average_session_duration_seconds"], 5400)
+        self.assertEqual(
+            data["time_stats"]["average_session_duration_formatted"], "01:30:00"
+        )
+        # Longest session: 2 hours = 7200 seconds
+        self.assertEqual(data["time_stats"]["longest_session_seconds"], 7200)
+        self.assertEqual(data["time_stats"]["longest_session_formatted"], "02:00:00")
+
+    def test_get_dashboard_with_completed_job_status(self):
+        """Test dashboard for a completed job."""
+        self.job.status = "completed"
+        self.job.completed_at = timezone.now()
+        self.job.save()
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertEqual(data["job"]["status"], "completed")
+        self.assertIsNotNone(data["job"]["completed_at"])
+
+    def test_get_dashboard_with_pending_completion_status(self):
+        """Test dashboard for a job pending completion."""
+        self.job.status = "pending_completion"
+        self.job.completion_requested_at = timezone.now()
+        self.job.save()
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertEqual(data["job"]["status"], "pending_completion")
+
+    def test_get_dashboard_no_active_session(self):
+        """Test dashboard when no active session exists."""
+        self.active_session.status = "completed"
+        self.active_session.ended_at = timezone.now()
+        self.active_session.save()
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertFalse(data["session_stats"]["has_active_session"])
+        self.assertIsNone(data["session_stats"]["active_session_id"])
+
+    def test_get_dashboard_sessions_with_null_duration(self):
+        """Test dashboard when sessions exist but have no duration_seconds."""
+        # Clear existing sessions and create sessions with no duration
+        WorkSession.objects.all().delete()
+
+        # Create session without duration (no ended_at)
+        WorkSession.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            started_at=timezone.now() - timedelta(hours=1),
+            start_latitude=Decimal("43.0"),
+            start_longitude=Decimal("-79.0"),
+            start_photo="path/to/photo.jpg",
+            status="completed",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        # Sessions exist but no duration_seconds, so averages should be None
+        self.assertEqual(data["time_stats"]["total_time_seconds"], 0)
+        self.assertIsNone(data["time_stats"]["average_session_duration_seconds"])
+        self.assertIsNone(data["time_stats"]["longest_session_seconds"])
+
+
+class HandymanJobDashboardSerializerTests(APITestCase):
+    """Test cases for HandymanJobDashboardSerializer."""
+
+    def test_dashboard_serializer_with_empty_data(self):
+        """Test serializer with minimal valid data."""
+        from apps.jobs.serializers import HandymanJobDashboardSerializer
+
+        data = {
+            "job": {
+                "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                "title": "Test Job",
+                "description": "Description",
+                "status": "in_progress",
+                "estimated_budget": "100.00",
+                "category": {
+                    "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                    "name": "Plumbing",
+                    "slug": "plumbing",
+                    "description": "",
+                    "icon": "",
+                },
+                "city": {
+                    "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                    "name": "Toronto",
+                    "province": "Ontario",
+                    "province_code": "ON",
+                    "slug": "toronto-on",
+                },
+                "address": "123 Street",
+                "postal_code": "",
+                "latitude": None,
+                "longitude": None,
+                "completion_requested_at": None,
+                "completed_at": None,
+                "homeowner_display_name": None,
+                "homeowner_avatar_url": None,
+                "created_at": "2024-01-15T10:30:00Z",
+            },
+            "tasks_progress": {
+                "total_tasks": 0,
+                "completed_tasks": 0,
+                "pending_tasks": 0,
+                "completion_percentage": 0.0,
+                "tasks": [],
+            },
+            "time_stats": {
+                "total_time_seconds": 0,
+                "total_time_formatted": "00:00:00",
+                "average_session_duration_seconds": None,
+                "average_session_duration_formatted": None,
+                "longest_session_seconds": None,
+                "longest_session_formatted": None,
+            },
+            "session_stats": {
+                "total_sessions": 0,
+                "completed_sessions": 0,
+                "in_progress_sessions": 0,
+                "has_active_session": False,
+                "active_session_id": None,
+            },
+            "report_stats": {
+                "total_reports": 0,
+                "pending_reports": 0,
+                "approved_reports": 0,
+                "rejected_reports": 0,
+                "latest_report_date": None,
+            },
+        }
+
+        serializer = HandymanJobDashboardSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_dashboard_serializer_with_all_fields(self):
+        """Test serializer with all fields populated."""
+        from apps.jobs.serializers import HandymanJobDashboardSerializer
+        from datetime import date
+
+        data = {
+            "job": {
+                "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                "title": "Test Job",
+                "description": "Description",
+                "status": "in_progress",
+                "status_at": "2024-01-15T10:30:00Z",
+                "estimated_budget": "150.50",
+                "category": {
+                    "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                    "name": "Plumbing",
+                    "slug": "plumbing",
+                    "description": "Plumbing services",
+                    "icon": "plumbing-icon",
+                },
+                "city": {
+                    "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                    "name": "Toronto",
+                    "province": "Ontario",
+                    "province_code": "ON",
+                    "slug": "toronto-on",
+                },
+                "address": "123 Main St",
+                "postal_code": "M5H 2N2",
+                "latitude": "43.651070",
+                "longitude": "-79.347015",
+                "completion_requested_at": None,
+                "completed_at": None,
+                "homeowner_display_name": "John Homeowner",
+                "homeowner_avatar_url": "https://example.com/avatar.jpg",
+                "created_at": "2024-01-15T10:30:00Z",
+            },
+            "tasks_progress": {
+                "total_tasks": 5,
+                "completed_tasks": 3,
+                "pending_tasks": 2,
+                "completion_percentage": 60.0,
+                "tasks": [
+                    {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174010",
+                        "title": "Task 1",
+                        "description": "",
+                        "order": 0,
+                        "is_completed": True,
+                        "completed_at": "2024-01-16T10:00:00Z",
+                    },
+                ],
+            },
+            "time_stats": {
+                "total_time_seconds": 14400,
+                "total_time_formatted": "04:00:00",
+                "average_session_duration_seconds": 7200,
+                "average_session_duration_formatted": "02:00:00",
+                "longest_session_seconds": 10800,
+                "longest_session_formatted": "03:00:00",
+            },
+            "session_stats": {
+                "total_sessions": 2,
+                "completed_sessions": 2,
+                "in_progress_sessions": 0,
+                "has_active_session": False,
+                "active_session_id": None,
+            },
+            "report_stats": {
+                "total_reports": 3,
+                "pending_reports": 1,
+                "approved_reports": 2,
+                "rejected_reports": 0,
+                "latest_report_date": "2024-01-16",
+            },
+        }
+
+        serializer = HandymanJobDashboardSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+
+class JobDashboardJobInfoSerializerTests(APITestCase):
+    """Test cases for JobDashboardJobInfoSerializer."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com",
+            password="testpass123",
+        )
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="John Homeowner",
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing",
+            slug="plumbing",
+            is_active=True,
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            category=self.category,
+            city=self.city,
+            title="Test Job",
+            description="Test description",
+            address="123 Main St",
+            postal_code="M5H 2N2",
+            estimated_budget=Decimal("100.00"),
+        )
+
+    def test_serializer_with_homeowner_profile(self):
+        """Test serializer returns homeowner display name and avatar URL."""
+        from apps.jobs.serializers import JobDashboardJobInfoSerializer
+
+        serializer = JobDashboardJobInfoSerializer(self.job)
+        data = serializer.data
+
+        self.assertEqual(data["homeowner_display_name"], "John Homeowner")
+        self.assertIsNone(data["homeowner_avatar_url"])
+
+    def test_serializer_without_homeowner_profile(self):
+        """Test serializer returns None when homeowner has no profile."""
+        from apps.jobs.serializers import JobDashboardJobInfoSerializer
+
+        user_without_profile = User.objects.create_user(
+            email="other@example.com",
+            password="testpass123",
+        )
+        self.job.homeowner = user_without_profile
+        self.job.save()
+
+        serializer = JobDashboardJobInfoSerializer(self.job)
+        data = serializer.data
+
+        self.assertIsNone(data["homeowner_display_name"])
+        self.assertIsNone(data["homeowner_avatar_url"])
