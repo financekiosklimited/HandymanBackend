@@ -62,6 +62,7 @@ from apps.jobs.serializers import (
     HomeownerJobApplicationDetailSerializer,
     HomeownerJobApplicationListResponseSerializer,
     HomeownerJobApplicationListSerializer,
+    HomeownerJobDashboardResponseSerializer,
     JobApplicationCreateSerializer,
     JobApplicationDetailResponseSerializer,
     JobApplicationDetailSerializer,
@@ -2123,7 +2124,7 @@ class HandymanJobApplicationWithdrawView(APIView):
                 status_codes=["200"],
             ),
             OpenApiExample(
-                "Success Response - With Active Session",
+                "Success Response - No Active Session, No Reviews",
                 value={
                     "message": "Dashboard data retrieved successfully",
                     "data": {
@@ -2660,6 +2661,398 @@ class BaseHandymanOngoingView(APIView):
 # Homeowner Ongoing Job Views
 
 
+class HomeownerJobDashboardView(BaseHomeownerOngoingView):
+    """
+    View for homeowner to get comprehensive job dashboard data.
+    Returns job details, task progress, time stats, session count, and daily report count.
+    """
+
+    @extend_schema(
+        operation_id="mobile_homeowner_jobs_dashboard",
+        responses={
+            200: HomeownerJobDashboardResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Get comprehensive dashboard data for a specific job. "
+            "Includes job details, task completion progress, time statistics, "
+            "work session information, and daily report statistics. "
+            "Only accessible by the homeowner who owns the job."
+        ),
+        summary="Get job dashboard",
+        tags=["Mobile Homeowner Ongoing Jobs"],
+        examples=[
+            OpenApiExample(
+                "Success Response - No Active Session, Not Reviewed",
+                value={
+                    "message": "Dashboard data retrieved successfully",
+                    "data": {
+                        "job": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "title": "Fix leaking kitchen faucet",
+                            "description": "Kitchen faucet has been leaking for a few days.",
+                            "status": "in_progress",
+                            "estimated_budget": 150.00,
+                            "category": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                                "name": "Plumbing",
+                                "slug": "plumbing",
+                            },
+                            "city": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                                "name": "Toronto",
+                                "province": "Ontario",
+                                "province_code": "ON",
+                            },
+                            "address": "123 Main St, Toronto",
+                            "postal_code": "M5H 2N2",
+                            "handyman_display_name": "John Handyman",
+                            "handyman_avatar_url": None,
+                            "created_at": "2024-01-15T10:30:00Z",
+                        },
+                        "tasks_progress": {
+                            "total_tasks": 5,
+                            "completed_tasks": 2,
+                            "pending_tasks": 3,
+                            "completion_percentage": 40.0,
+                            "tasks": [
+                                {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174010",
+                                    "title": "Inspect faucet and pipes",
+                                    "description": "",
+                                    "order": 0,
+                                    "is_completed": True,
+                                    "completed_at": "2024-01-16T10:00:00Z",
+                                },
+                                {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174011",
+                                    "title": "Replace worn washers",
+                                    "description": "",
+                                    "order": 1,
+                                    "is_completed": True,
+                                    "completed_at": "2024-01-16T11:00:00Z",
+                                },
+                                {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174012",
+                                    "title": "Test for leaks",
+                                    "description": "",
+                                    "order": 2,
+                                    "is_completed": False,
+                                    "completed_at": None,
+                                },
+                            ],
+                        },
+                        "time_stats": {
+                            "total_time_seconds": 14400,
+                            "total_time_formatted": "04:00:00",
+                            "average_session_duration_seconds": 7200,
+                            "average_session_duration_formatted": "02:00:00",
+                            "longest_session_seconds": 10800,
+                            "longest_session_formatted": "03:00:00",
+                        },
+                        "session_stats": {
+                            "total_sessions": 2,
+                            "completed_sessions": 2,
+                            "in_progress_sessions": 0,
+                            "has_active_session": False,
+                            "active_session_id": None,
+                        },
+                        "active_session": None,
+                        "report_stats": {
+                            "total_reports": 2,
+                            "pending_reports": 0,
+                            "approved_reports": 2,
+                            "rejected_reports": 0,
+                            "latest_report_date": "2024-01-16",
+                        },
+                        "my_review": None,
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Success Response - Completed Job With Review",
+                value={
+                    "message": "Dashboard data retrieved successfully",
+                    "data": {
+                        "job": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "title": "Fix leaking kitchen faucet",
+                            "description": "Kitchen faucet has been leaking for a few days.",
+                            "status": "completed",
+                            "estimated_budget": 150.00,
+                            "category": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                                "name": "Plumbing",
+                                "slug": "plumbing",
+                            },
+                            "city": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                                "name": "Toronto",
+                                "province": "Ontario",
+                                "province_code": "ON",
+                            },
+                            "address": "123 Main St, Toronto",
+                            "postal_code": "M5H 2N2",
+                            "handyman_display_name": "John Handyman",
+                            "handyman_avatar_url": None,
+                            "created_at": "2024-01-15T10:30:00Z",
+                        },
+                        "tasks_progress": {
+                            "total_tasks": 3,
+                            "completed_tasks": 3,
+                            "pending_tasks": 0,
+                            "completion_percentage": 100.0,
+                            "tasks": [
+                                {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174010",
+                                    "title": "Inspect faucet and pipes",
+                                    "description": "",
+                                    "order": 0,
+                                    "is_completed": True,
+                                    "completed_at": "2024-01-16T10:00:00Z",
+                                },
+                            ],
+                        },
+                        "time_stats": {
+                            "total_time_seconds": 14400,
+                            "total_time_formatted": "04:00:00",
+                            "average_session_duration_seconds": 7200,
+                            "average_session_duration_formatted": "02:00:00",
+                            "longest_session_seconds": 10800,
+                            "longest_session_formatted": "03:00:00",
+                        },
+                        "session_stats": {
+                            "total_sessions": 2,
+                            "completed_sessions": 2,
+                            "in_progress_sessions": 0,
+                            "has_active_session": False,
+                            "active_session_id": None,
+                        },
+                        "active_session": None,
+                        "report_stats": {
+                            "total_reports": 2,
+                            "pending_reports": 0,
+                            "approved_reports": 2,
+                            "rejected_reports": 0,
+                            "latest_report_date": "2024-01-16",
+                        },
+                        "my_review": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174099",
+                            "rating": 5,
+                            "comment": "Excellent work! Very professional and cleaned up after.",
+                            "created_at": "2024-01-20T14:30:00Z",
+                            "updated_at": "2024-01-20T14:30:00Z",
+                        },
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def get(self, request, public_id):
+        """Get comprehensive job dashboard data for homeowner."""
+        job = self.get_job(public_id)
+
+        tasks = job.tasks.all().order_by("order", "created_at")
+        total_tasks = tasks.count()
+        completed_tasks = tasks.filter(is_completed=True).count()
+
+        total_time_seconds = 0
+        sessions = job.work_sessions.all()
+        for session in sessions:
+            if session.duration_seconds:
+                total_time_seconds += session.duration_seconds
+
+        active_session = sessions.filter(status="in_progress").first()
+
+        # Prepare active session data
+        active_session_data = None
+        if active_session:
+            from django.utils import timezone
+
+            current_duration = int(
+                (timezone.now() - active_session.started_at).total_seconds()
+            )
+
+            hours = current_duration // 3600
+            minutes = (current_duration % 3600) // 60
+            secs = current_duration % 60
+            current_duration_formatted = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+            media_count = active_session.media.count()
+
+            active_session_data = {
+                "public_id": str(active_session.public_id),
+                "started_at": active_session.started_at,
+                "start_latitude": float(active_session.start_latitude),
+                "start_longitude": float(active_session.start_longitude),
+                "start_photo": active_session.start_photo.url
+                if active_session.start_photo
+                else None,
+                "start_accuracy": active_session.start_accuracy,
+                "current_duration_seconds": current_duration,
+                "current_duration_formatted": current_duration_formatted,
+                "media_count": media_count,
+                "media": [
+                    {
+                        "public_id": str(m.public_id),
+                        "media_type": m.media_type,
+                        "file": m.file.url if m.file else None,
+                        "thumbnail": m.thumbnail.url if m.thumbnail else None,
+                        "description": m.description,
+                        "created_at": m.created_at,
+                    }
+                    for m in active_session.media.all()
+                ],
+            }
+
+        reports = job.daily_reports.all()
+        total_reports = reports.count()
+        pending_reports = reports.filter(status="pending").count()
+        approved_reports = reports.filter(status="approved").count()
+        rejected_reports = reports.filter(status="rejected").count()
+        latest_report = reports.order_by("-report_date").first()
+        latest_report_date = latest_report.report_date if latest_report else None
+
+        avg_session_duration = None
+        longest_session_duration = None
+        completed_sessions_qs = sessions.filter(status="completed")
+        if completed_sessions_qs.exists():
+            durations = [
+                s.duration_seconds for s in completed_sessions_qs if s.duration_seconds
+            ]
+            if durations:
+                avg_session_duration = sum(durations) // len(durations)
+                longest_session_duration = max(durations)
+
+        def format_duration(seconds):
+            if seconds is None:
+                return None
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            secs = seconds % 60
+            return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+        # Get homeowner's own review for this job
+        my_review = job.reviews.filter(reviewer_type="homeowner").first()
+        my_review_data = None
+        if my_review:
+            my_review_data = {
+                "public_id": str(my_review.public_id),
+                "rating": my_review.rating,
+                "comment": my_review.comment,
+                "created_at": my_review.created_at,
+                "updated_at": my_review.updated_at,
+            }
+
+        dashboard_data = {
+            "job": {
+                "public_id": str(job.public_id),
+                "title": job.title,
+                "description": job.description,
+                "status": job.status,
+                "status_at": job.status_at,
+                "estimated_budget": job.estimated_budget,
+                "category": {
+                    "public_id": str(job.category.public_id),
+                    "name": job.category.name,
+                    "slug": job.category.slug,
+                    "description": job.category.description,
+                    "icon": job.category.icon,
+                },
+                "city": {
+                    "public_id": str(job.city.public_id),
+                    "name": job.city.name,
+                    "province": job.city.province,
+                    "province_code": job.city.province_code,
+                    "slug": job.city.slug,
+                },
+                "address": job.address,
+                "postal_code": job.postal_code,
+                "latitude": job.latitude,
+                "longitude": job.longitude,
+                "completion_requested_at": job.completion_requested_at,
+                "completed_at": job.completed_at,
+                "handyman_display_name": (
+                    job.assigned_handyman.handyman_profile.display_name
+                    if job.assigned_handyman
+                    and hasattr(job.assigned_handyman, "handyman_profile")
+                    else None
+                ),
+                "handyman_avatar_url": (
+                    job.assigned_handyman.handyman_profile.avatar_url
+                    if job.assigned_handyman
+                    and hasattr(job.assigned_handyman, "handyman_profile")
+                    else None
+                ),
+                "created_at": job.created_at,
+            },
+            "tasks_progress": {
+                "total_tasks": total_tasks,
+                "completed_tasks": completed_tasks,
+                "pending_tasks": total_tasks - completed_tasks,
+                "completion_percentage": (
+                    (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0.0
+                ),
+                "tasks": [
+                    {
+                        "public_id": str(task.public_id),
+                        "title": task.title,
+                        "description": task.description,
+                        "order": task.order,
+                        "is_completed": task.is_completed,
+                        "completed_at": task.completed_at,
+                    }
+                    for task in tasks
+                ],
+            },
+            "time_stats": {
+                "total_time_seconds": total_time_seconds,
+                "total_time_formatted": format_duration(total_time_seconds),
+                "average_session_duration_seconds": avg_session_duration,
+                "average_session_duration_formatted": format_duration(
+                    avg_session_duration
+                ),
+                "longest_session_seconds": longest_session_duration,
+                "longest_session_formatted": format_duration(longest_session_duration),
+            },
+            "session_stats": {
+                "total_sessions": sessions.count(),
+                "completed_sessions": sessions.filter(status="completed").count(),
+                "in_progress_sessions": sessions.filter(status="in_progress").count(),
+                "has_active_session": active_session is not None,
+                "active_session_id": (
+                    str(active_session.public_id) if active_session else None
+                ),
+            },
+            "active_session": active_session_data,
+            "report_stats": {
+                "total_reports": total_reports,
+                "pending_reports": pending_reports,
+                "approved_reports": approved_reports,
+                "rejected_reports": rejected_reports,
+                "latest_report_date": latest_report_date,
+            },
+            "my_review": my_review_data,
+        }
+
+        return success_response(
+            dashboard_data, message="Dashboard data retrieved successfully"
+        )
+
+
 class HomeownerWorkSessionListView(BaseHomeownerOngoingView):
     """
     View for homeowner to list work sessions for a specific job.
@@ -2899,8 +3292,8 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                             "rejected_reports": 0,
                             "latest_report_date": "2024-01-16",
                         },
-                        "is_reviewed": False,
-                        "review": None,
+                        "homeowner_review": None,
+                        "my_review": None,
                     },
                     "errors": None,
                     "meta": None,
@@ -2909,7 +3302,7 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                 status_codes=["200"],
             ),
             OpenApiExample(
-                "Success Response - Completed Job With Review",
+                "Success Response - Completed Job With Reviews",
                 value={
                     "message": "Dashboard data retrieved successfully",
                     "data": {
@@ -2975,13 +3368,19 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                             "rejected_reports": 0,
                             "latest_report_date": "2024-01-16",
                         },
-                        "is_reviewed": True,
-                        "review": {
+                        "homeowner_review": {
                             "public_id": "123e4567-e89b-12d3-a456-426614174099",
                             "rating": 5,
                             "comment": "Excellent work! Fixed the leak quickly and professionally.",
                             "created_at": "2024-01-20T14:30:00Z",
                             "updated_at": "2024-01-20T14:30:00Z",
+                        },
+                        "my_review": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174098",
+                            "rating": 5,
+                            "comment": "Great homeowner! Clear communication and prompt payment.",
+                            "created_at": "2024-01-20T15:00:00Z",
+                            "updated_at": "2024-01-20T15:00:00Z",
                         },
                     },
                     "errors": None,
@@ -3081,15 +3480,26 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
 
         # Get review from homeowner for this job
         homeowner_review = job.reviews.filter(reviewer_type="homeowner").first()
-        is_reviewed = homeowner_review is not None
-        review_data = None
+        homeowner_review_data = None
         if homeowner_review:
-            review_data = {
+            homeowner_review_data = {
                 "public_id": str(homeowner_review.public_id),
                 "rating": homeowner_review.rating,
                 "comment": homeowner_review.comment,
                 "created_at": homeowner_review.created_at,
                 "updated_at": homeowner_review.updated_at,
+            }
+
+        # Get handyman's own review for this job
+        my_review = job.reviews.filter(reviewer_type="handyman").first()
+        my_review_data = None
+        if my_review:
+            my_review_data = {
+                "public_id": str(my_review.public_id),
+                "rating": my_review.rating,
+                "comment": my_review.comment,
+                "created_at": my_review.created_at,
+                "updated_at": my_review.updated_at,
             }
 
         dashboard_data = {
@@ -3178,8 +3588,8 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                 "rejected_reports": rejected_reports,
                 "latest_report_date": latest_report_date,
             },
-            "is_reviewed": is_reviewed,
-            "review": review_data,
+            "homeowner_review": homeowner_review_data,
+            "my_review": my_review_data,
         }
 
         return success_response(

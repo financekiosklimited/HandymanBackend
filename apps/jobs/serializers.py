@@ -1947,14 +1947,12 @@ class JobDashboardJobInfoSerializer(serializers.ModelSerializer):
 class JobDashboardReviewSerializer(serializers.Serializer):
     """
     Serializer for review data in job dashboard.
-    Shows the review left by the homeowner for this job.
+    Generic review serializer used for both homeowner and handyman reviews.
     """
 
     public_id = serializers.UUIDField(help_text="Public ID of the review")
     rating = serializers.IntegerField(help_text="Rating from 1 to 5 stars")
-    comment = serializers.CharField(
-        allow_blank=True, help_text="Review comment from homeowner"
-    )
+    comment = serializers.CharField(allow_blank=True, help_text="Review comment")
     created_at = serializers.DateTimeField(help_text="When the review was created")
     updated_at = serializers.DateTimeField(help_text="When the review was last updated")
 
@@ -1979,15 +1977,101 @@ class HandymanJobDashboardSerializer(serializers.Serializer):
     report_stats = JobDashboardReportStatsSerializer(
         help_text="Daily report statistics"
     )
-    is_reviewed = serializers.BooleanField(
-        help_text="Whether the homeowner has left a review for this job"
+    homeowner_review = JobDashboardReviewSerializer(
+        allow_null=True, help_text="Review from homeowner for handyman's work"
     )
-    review = JobDashboardReviewSerializer(
-        allow_null=True, help_text="Review details if homeowner has reviewed the job"
+    my_review = JobDashboardReviewSerializer(
+        allow_null=True, help_text="Handyman's own review for the homeowner"
     )
 
 
 # Response serializer for handyman job dashboard
 HandymanJobDashboardResponseSerializer = create_response_serializer(
     HandymanJobDashboardSerializer, "HandymanJobDashboardResponse"
+)
+
+
+# ============================================================================
+# Homeowner Job Dashboard Serializers
+# ============================================================================
+
+
+class HomeownerJobDashboardJobInfoSerializer(serializers.ModelSerializer):
+    """
+    Serializer for basic job info in homeowner dashboard.
+    Shows assigned handyman info instead of homeowner info.
+    """
+
+    category = JobCategorySerializer(read_only=True)
+    city = CitySerializer(read_only=True)
+    estimated_budget = serializers.DecimalField(
+        max_digits=10, decimal_places=2, coerce_to_string=False
+    )
+    handyman_display_name = serializers.SerializerMethodField()
+    handyman_avatar_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Job
+        fields = [
+            "public_id",
+            "title",
+            "description",
+            "status",
+            "status_at",
+            "estimated_budget",
+            "category",
+            "city",
+            "address",
+            "postal_code",
+            "latitude",
+            "longitude",
+            "completion_requested_at",
+            "completed_at",
+            "handyman_display_name",
+            "handyman_avatar_url",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_handyman_display_name(self, obj):
+        """Get assigned handyman's display name."""
+        if obj.assigned_handyman and hasattr(obj.assigned_handyman, "handyman_profile"):
+            return obj.assigned_handyman.handyman_profile.display_name
+        return None
+
+    def get_handyman_avatar_url(self, obj):
+        """Get assigned handyman's avatar URL."""
+        if obj.assigned_handyman and hasattr(obj.assigned_handyman, "handyman_profile"):
+            return obj.assigned_handyman.handyman_profile.avatar_url
+        return None
+
+
+class HomeownerJobDashboardSerializer(serializers.Serializer):
+    """
+    Comprehensive serializer for homeowner job dashboard.
+    Aggregates job details, task progress, time stats, session info, and report stats.
+    """
+
+    job = HomeownerJobDashboardJobInfoSerializer(help_text="Basic job information")
+    tasks_progress = JobDashboardTasksProgressSerializer(
+        help_text="Task completion progress"
+    )
+    time_stats = JobDashboardTimeStatsSerializer(help_text="Time-related statistics")
+    session_stats = JobDashboardSessionStatsSerializer(
+        help_text="Work session statistics"
+    )
+    active_session = JobDashboardActiveSessionSerializer(
+        allow_null=True, help_text="Current active work session data"
+    )
+    report_stats = JobDashboardReportStatsSerializer(
+        help_text="Daily report statistics"
+    )
+    my_review = JobDashboardReviewSerializer(
+        allow_null=True, help_text="Homeowner's own review for the handyman"
+    )
+
+
+# Response serializer for homeowner job dashboard
+HomeownerJobDashboardResponseSerializer = create_response_serializer(
+    HomeownerJobDashboardSerializer, "HomeownerJobDashboardResponse"
 )

@@ -91,6 +91,11 @@ urlpatterns = [
     ),
     # Homeowner Ongoing Job Endpoints (Read)
     path(
+        "homeowner/jobs/<uuid:public_id>/dashboard/",
+        mobile_views.HomeownerJobDashboardView.as_view(),
+        name="mobile_homeowner_jobs_dashboard",
+    ),
+    path(
         "homeowner/jobs/<uuid:public_id>/sessions/",
         mobile_views.HomeownerWorkSessionListView.as_view(),
         name="mobile_homeowner_jobs_sessions_list",
