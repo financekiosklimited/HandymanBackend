@@ -2182,6 +2182,32 @@ class HandymanJobApplicationWithdrawView(APIView):
                             "current_duration_seconds": 3600,
                             "current_duration_formatted": "01:00:00",
                             "media_count": 3,
+                            "media": [
+                                {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174060",
+                                    "media_type": "photo",
+                                    "file": "https://example.com/media/work-sessions/media/2024/01/16/photo1.jpg",
+                                    "thumbnail": "https://example.com/media/work-sessions/thumbnails/2024/01/16/photo1_thumb.jpg",
+                                    "description": "Progress photo 1",
+                                    "created_at": "2024-01-16T14:30:00Z",
+                                },
+                                {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174061",
+                                    "media_type": "photo",
+                                    "file": "https://example.com/media/work-sessions/media/2024/01/16/photo2.jpg",
+                                    "thumbnail": "https://example.com/media/work-sessions/thumbnails/2024/01/16/photo2_thumb.jpg",
+                                    "description": "Progress photo 2",
+                                    "created_at": "2024-01-16T14:45:00Z",
+                                },
+                                {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174062",
+                                    "media_type": "video",
+                                    "file": "https://example.com/media/work-sessions/media/2024/01/16/video1.mp4",
+                                    "thumbnail": "https://example.com/media/work-sessions/thumbnails/2024/01/16/video1_thumb.jpg",
+                                    "description": "Work progress video",
+                                    "created_at": "2024-01-16T15:00:00Z",
+                                },
+                            ],
                         },
                         "report_stats": {
                             "total_reports": 1,
@@ -2929,6 +2955,17 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                 "current_duration_seconds": current_duration,
                 "current_duration_formatted": current_duration_formatted,
                 "media_count": media_count,
+                "media": [
+                    {
+                        "public_id": str(m.public_id),
+                        "media_type": m.media_type,
+                        "file": m.file.url if m.file else None,
+                        "thumbnail": m.thumbnail.url if m.thumbnail else None,
+                        "description": m.description,
+                        "created_at": m.created_at,
+                    }
+                    for m in active_session.media.all()
+                ],
             }
 
         reports = job.daily_reports.filter(handyman=request.user)

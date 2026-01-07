@@ -6098,6 +6098,10 @@ class HandymanJobDashboardViewTests(APITestCase):
         self.assertIn("current_duration_seconds", active_session)
         self.assertIn("current_duration_formatted", active_session)
         self.assertIn("media_count", active_session)
+        self.assertIn("media", active_session)
+
+        # Check media is a list
+        self.assertIsInstance(active_session["media"], list)
 
         # Check duration formatting
         self.assertGreater(active_session["current_duration_seconds"], 0)
@@ -6125,19 +6129,19 @@ class HandymanJobDashboardViewTests(APITestCase):
         self.assertIsNone(data["active_session"])
 
     def test_get_dashboard_active_session_with_media(self):
-        """Test active session includes media count."""
+        """Test active session includes media count and media array."""
         # First, get the current count of media for the active session
         initial_count = self.active_session.media.count()
 
         # Add some media files
-        WorkSessionMedia.objects.create(
+        media1 = WorkSessionMedia.objects.create(
             work_session=self.active_session,
             media_type="photo",
             file="test/image1.jpg",
             file_size=1024,
             description="Test image 1",
         )
-        WorkSessionMedia.objects.create(
+        media2 = WorkSessionMedia.objects.create(
             work_session=self.active_session,
             media_type="photo",
             file="test/image2.jpg",
@@ -6153,6 +6157,25 @@ class HandymanJobDashboardViewTests(APITestCase):
 
         active_session_data = data["active_session"]
         self.assertEqual(active_session_data["media_count"], initial_count + 2)
+
+        # Check media array
+        self.assertIn("media", active_session_data)
+        self.assertIsInstance(active_session_data["media"], list)
+        self.assertEqual(len(active_session_data["media"]), initial_count + 2)
+
+        # Check media item structure
+        media_public_ids = [m["public_id"] for m in active_session_data["media"]]
+        self.assertIn(str(media1.public_id), media_public_ids)
+        self.assertIn(str(media2.public_id), media_public_ids)
+
+        # Check media item fields
+        for media_item in active_session_data["media"]:
+            self.assertIn("public_id", media_item)
+            self.assertIn("media_type", media_item)
+            self.assertIn("file", media_item)
+            self.assertIn("thumbnail", media_item)
+            self.assertIn("description", media_item)
+            self.assertIn("created_at", media_item)
 
     def test_get_dashboard_active_session_duration_calculation(self):
         """Test that active session duration is calculated correctly."""
@@ -6407,6 +6430,7 @@ class HandymanJobDashboardSerializerTests(APITestCase):
                 "current_duration_seconds": 3600,
                 "current_duration_formatted": "01:00:00",
                 "media_count": 0,
+                "media": [],
             },
             "report_stats": {
                 "total_reports": 0,

@@ -1191,6 +1191,9 @@ class JobDashboardActiveSessionSerializer(serializers.Serializer):
     media_count = serializers.IntegerField(
         help_text="Number of media files uploaded for this session"
     )
+    media = WorkSessionMediaSerializer(
+        many=True, help_text="List of media files uploaded for this session"
+    )
 
 
 class DailyReportTaskSerializer(serializers.ModelSerializer):
