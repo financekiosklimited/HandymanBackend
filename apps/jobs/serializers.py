@@ -1163,6 +1163,36 @@ class WorkSessionSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class JobDashboardActiveSessionSerializer(serializers.Serializer):
+    """
+    Serializer for active work session data in job dashboard.
+    """
+
+    public_id = serializers.UUIDField(help_text="Public ID of the active work session")
+    started_at = serializers.DateTimeField(help_text="When the session was started")
+    start_latitude = serializers.DecimalField(
+        max_digits=12, decimal_places=9, help_text="Starting latitude"
+    )
+    start_longitude = serializers.DecimalField(
+        max_digits=12, decimal_places=9, help_text="Starting longitude"
+    )
+    start_photo = serializers.ImageField(
+        use_url=True, allow_null=True, help_text="Starting location photo URL"
+    )
+    start_accuracy = serializers.FloatField(
+        allow_null=True, help_text="GPS accuracy at start location in meters"
+    )
+    current_duration_seconds = serializers.IntegerField(
+        help_text="Current session duration in seconds"
+    )
+    current_duration_formatted = serializers.CharField(
+        help_text="Current session duration formatted as HH:MM:SS"
+    )
+    media_count = serializers.IntegerField(
+        help_text="Number of media files uploaded for this session"
+    )
+
+
 class DailyReportTaskSerializer(serializers.ModelSerializer):
     """
     Serializer for tasks in a daily report (read-only).
@@ -1919,6 +1949,9 @@ class HandymanJobDashboardSerializer(serializers.Serializer):
     time_stats = JobDashboardTimeStatsSerializer(help_text="Time-related statistics")
     session_stats = JobDashboardSessionStatsSerializer(
         help_text="Work session statistics"
+    )
+    active_session = JobDashboardActiveSessionSerializer(
+        allow_null=True, help_text="Current active work session data"
     )
     report_stats = JobDashboardReportStatsSerializer(
         help_text="Daily report statistics"

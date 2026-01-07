@@ -2122,8 +2122,83 @@ class HandymanJobApplicationWithdrawView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
-            VALIDATION_ERROR_EXAMPLE,
+            OpenApiExample(
+                "Success Response - With Active Session",
+                value={
+                    "message": "Dashboard data retrieved successfully",
+                    "data": {
+                        "job": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "title": "Fix leaking kitchen faucet",
+                            "description": "Kitchen faucet has been leaking for a few days.",
+                            "status": "in_progress",
+                            "estimated_budget": 150.00,
+                            "category": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                                "name": "Plumbing",
+                                "slug": "plumbing",
+                            },
+                            "city": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                                "name": "Toronto",
+                                "province": "Ontario",
+                                "province_code": "ON",
+                            },
+                            "address": "123 Main St, Toronto",
+                            "postal_code": "M5H 2N2",
+                            "homeowner_display_name": "John Homeowner",
+                            "homeowner_avatar_url": None,
+                            "created_at": "2024-01-15T10:30:00Z",
+                        },
+                        "tasks_progress": {
+                            "total_tasks": 5,
+                            "completed_tasks": 2,
+                            "pending_tasks": 3,
+                            "completion_percentage": 40.0,
+                            "tasks": [],
+                        },
+                        "time_stats": {
+                            "total_time_seconds": 7200,
+                            "total_time_formatted": "02:00:00",
+                            "average_session_duration_seconds": 3600,
+                            "average_session_duration_formatted": "01:00:00",
+                            "longest_session_seconds": 3600,
+                            "longest_session_formatted": "01:00:00",
+                        },
+                        "session_stats": {
+                            "total_sessions": 3,
+                            "completed_sessions": 2,
+                            "in_progress_sessions": 1,
+                            "has_active_session": True,
+                            "active_session_id": "123e4567-e89b-12d3-a456-426614174050",
+                        },
+                        "active_session": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174050",
+                            "started_at": "2024-01-16T14:00:00Z",
+                            "start_latitude": 43.651070,
+                            "start_longitude": -79.347015,
+                            "start_photo": "https://example.com/media/work-sessions/start-photos/2024/01/16/photo.jpg",
+                            "start_accuracy": 10.5,
+                            "current_duration_seconds": 3600,
+                            "current_duration_formatted": "01:00:00",
+                            "media_count": 3,
+                        },
+                        "report_stats": {
+                            "total_reports": 1,
+                            "pending_reports": 1,
+                            "approved_reports": 0,
+                            "rejected_reports": 0,
+                            "latest_report_date": "2024-01-16",
+                        },
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
             UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
             NOT_FOUND_EXAMPLE,
         ],
     )
@@ -2716,7 +2791,7 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
         tags=["Mobile Handyman Ongoing Jobs"],
         examples=[
             OpenApiExample(
-                "Success Response",
+                "Success Response - No Active Session",
                 value={
                     "message": "Dashboard data retrieved successfully",
                     "data": {
@@ -2790,6 +2865,7 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                             "has_active_session": False,
                             "active_session_id": None,
                         },
+                        "active_session": None,
                         "report_stats": {
                             "total_reports": 2,
                             "pending_reports": 0,
@@ -2824,6 +2900,36 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                 total_time_seconds += session.duration_seconds
 
         active_session = sessions.filter(status="in_progress").first()
+
+        # Prepare active session data
+        active_session_data = None
+        if active_session:
+            from django.utils import timezone
+
+            current_duration = int(
+                (timezone.now() - active_session.started_at).total_seconds()
+            )
+
+            hours = current_duration // 3600
+            minutes = (current_duration % 3600) // 60
+            secs = current_duration % 60
+            current_duration_formatted = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+            media_count = active_session.media.count()
+
+            active_session_data = {
+                "public_id": str(active_session.public_id),
+                "started_at": active_session.started_at,
+                "start_latitude": float(active_session.start_latitude),
+                "start_longitude": float(active_session.start_longitude),
+                "start_photo": active_session.start_photo.url
+                if active_session.start_photo
+                else None,
+                "start_accuracy": active_session.start_accuracy,
+                "current_duration_seconds": current_duration,
+                "current_duration_formatted": current_duration_formatted,
+                "media_count": media_count,
+            }
 
         reports = job.daily_reports.filter(handyman=request.user)
         total_reports = reports.count()
@@ -2930,6 +3036,7 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                     str(active_session.public_id) if active_session else None
                 ),
             },
+            "active_session": active_session_data,
             "report_stats": {
                 "total_reports": total_reports,
                 "pending_reports": pending_reports,

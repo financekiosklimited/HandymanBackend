@@ -23,6 +23,7 @@ from apps.jobs.models import (
     JobTask,
     Review,
     WorkSession,
+    WorkSessionMedia,
 )
 from apps.profiles.models import HandymanProfile, HomeownerProfile
 
@@ -6071,6 +6072,112 @@ class HandymanJobDashboardViewTests(APITestCase):
         self.assertIsNone(data["time_stats"]["average_session_duration_seconds"])
         self.assertIsNone(data["time_stats"]["longest_session_seconds"])
 
+    def test_get_dashboard_with_active_session(self):
+        """Test dashboard includes active session data."""
+        # Set the active session to start 30 minutes ago
+        self.active_session.started_at = timezone.now() - timedelta(minutes=30)
+        self.active_session.save()
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        # Check active session is included
+        self.assertIn("active_session", data)
+        self.assertIsNotNone(data["active_session"])
+
+        active_session = data["active_session"]
+        self.assertIn("public_id", active_session)
+        self.assertIn("started_at", active_session)
+        self.assertIn("start_latitude", active_session)
+        self.assertIn("start_longitude", active_session)
+        self.assertIn("start_photo", active_session)
+        self.assertIn("start_accuracy", active_session)
+        self.assertIn("current_duration_seconds", active_session)
+        self.assertIn("current_duration_formatted", active_session)
+        self.assertIn("media_count", active_session)
+
+        # Check duration formatting
+        self.assertGreater(active_session["current_duration_seconds"], 0)
+        self.assertRegex(
+            active_session["current_duration_formatted"], r"^\d{2}:\d{2}:\d{2}$"
+        )
+
+    def test_get_dashboard_without_active_session(self):
+        """Test dashboard when there is no active session."""
+        # Complete the active session
+        active_session = WorkSession.objects.filter(status="in_progress").first()
+        if active_session:
+            active_session.status = "completed"
+            active_session.ended_at = timezone.now()
+            active_session.save()
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        # Check active session is null
+        self.assertIn("active_session", data)
+        self.assertIsNone(data["active_session"])
+
+    def test_get_dashboard_active_session_with_media(self):
+        """Test active session includes media count."""
+        # First, get the current count of media for the active session
+        initial_count = self.active_session.media.count()
+
+        # Add some media files
+        WorkSessionMedia.objects.create(
+            work_session=self.active_session,
+            media_type="photo",
+            file="test/image1.jpg",
+            file_size=1024,
+            description="Test image 1",
+        )
+        WorkSessionMedia.objects.create(
+            work_session=self.active_session,
+            media_type="photo",
+            file="test/image2.jpg",
+            file_size=2048,
+            description="Test image 2",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        active_session_data = data["active_session"]
+        self.assertEqual(active_session_data["media_count"], initial_count + 2)
+
+    def test_get_dashboard_active_session_duration_calculation(self):
+        """Test that active session duration is calculated correctly."""
+        active_session = WorkSession.objects.filter(status="in_progress").first()
+
+        # Manually set the start time to 2 hours ago
+        from django.utils import timezone
+
+        active_session.started_at = timezone.now() - timedelta(hours=2)
+        active_session.save()
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        active_session_data = data["active_session"]
+        # Should be approximately 2 hours (7200 seconds)
+        self.assertGreaterEqual(
+            active_session_data["current_duration_seconds"], 7140
+        )  # Allow 1 minute variance
+        self.assertLessEqual(active_session_data["current_duration_seconds"], 7260)
+        self.assertEqual(active_session_data["current_duration_formatted"], "02:00:00")
+
 
 class HandymanJobDashboardSerializerTests(APITestCase):
     """Test cases for HandymanJobDashboardSerializer."""
@@ -6132,6 +6239,7 @@ class HandymanJobDashboardSerializerTests(APITestCase):
                 "has_active_session": False,
                 "active_session_id": None,
             },
+            "active_session": None,
             "report_stats": {
                 "total_reports": 0,
                 "pending_reports": 0,
@@ -6212,12 +6320,100 @@ class HandymanJobDashboardSerializerTests(APITestCase):
                 "has_active_session": False,
                 "active_session_id": None,
             },
+            "active_session": None,
             "report_stats": {
                 "total_reports": 3,
                 "pending_reports": 1,
                 "approved_reports": 2,
                 "rejected_reports": 0,
                 "latest_report_date": "2024-01-16",
+            },
+        }
+
+        serializer = HandymanJobDashboardSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_dashboard_serializer_with_active_session(self):
+        """Test serializer with active session populated."""
+        from apps.jobs.serializers import HandymanJobDashboardSerializer
+
+        data = {
+            "job": {
+                "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                "title": "Test Job",
+                "description": "Description",
+                "status": "in_progress",
+                "estimated_budget": "100.00",
+                "category": {
+                    "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                    "name": "Plumbing",
+                    "slug": "plumbing",
+                    "description": "",
+                    "icon": "",
+                },
+                "city": {
+                    "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                    "name": "Toronto",
+                    "province": "Ontario",
+                    "province_code": "ON",
+                    "slug": "toronto-on",
+                },
+                "address": "123 Main St",
+                "postal_code": "M5H 2N2",
+                "latitude": "43.651070",
+                "longitude": "-79.347015",
+                "homeowner_display_name": "John Homeowner",
+                "homeowner_avatar_url": None,
+                "created_at": "2024-01-15T10:30:00Z",
+            },
+            "tasks_progress": {
+                "total_tasks": 1,
+                "completed_tasks": 0,
+                "pending_tasks": 1,
+                "completion_percentage": 0.0,
+                "tasks": [
+                    {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174010",
+                        "title": "Task 1",
+                        "description": "",
+                        "order": 0,
+                        "is_completed": False,
+                        "completed_at": None,
+                    },
+                ],
+            },
+            "time_stats": {
+                "total_time_seconds": 0,
+                "total_time_formatted": "00:00:00",
+                "average_session_duration_seconds": None,
+                "average_session_duration_formatted": None,
+                "longest_session_seconds": None,
+                "longest_session_formatted": None,
+            },
+            "session_stats": {
+                "total_sessions": 1,
+                "completed_sessions": 0,
+                "in_progress_sessions": 1,
+                "has_active_session": True,
+                "active_session_id": "123e4567-e89b-12d3-a456-426614174020",
+            },
+            "active_session": {
+                "public_id": "123e4567-e89b-12d3-a456-426614174020",
+                "started_at": "2024-01-16T10:00:00Z",
+                "start_latitude": "43.651070",
+                "start_longitude": "-79.347015",
+                "start_photo": None,
+                "start_accuracy": 10.5,
+                "current_duration_seconds": 3600,
+                "current_duration_formatted": "01:00:00",
+                "media_count": 0,
+            },
+            "report_stats": {
+                "total_reports": 0,
+                "pending_reports": 0,
+                "approved_reports": 0,
+                "rejected_reports": 0,
+                "latest_report_date": None,
             },
         }
 
