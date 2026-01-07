@@ -1142,6 +1142,7 @@ class WorkSessionSerializer(serializers.ModelSerializer):
     """
 
     start_photo = serializers.ImageField(use_url=True)
+    end_photo = serializers.ImageField(use_url=True, allow_null=True)
     media = WorkSessionMediaSerializer(many=True, read_only=True)
     duration_seconds = serializers.IntegerField(read_only=True)
 
@@ -1158,6 +1159,7 @@ class WorkSessionSerializer(serializers.ModelSerializer):
             "start_photo",
             "end_latitude",
             "end_longitude",
+            "end_photo",
             "media",
         ]
         read_only_fields = fields
@@ -1505,6 +1507,9 @@ class WorkSessionStopSerializer(serializers.Serializer):
         allow_null=True,
         coerce_to_string=False,
         help_text="GPS accuracy in meters (optional)",
+    )
+    end_photo = serializers.ImageField(
+        help_text="Photo taken at end of work",
     )
 
     def validate_end_latitude(self, value):

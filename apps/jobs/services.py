@@ -357,6 +357,7 @@ class WorkSessionService:
         ended_at,
         end_latitude,
         end_longitude,
+        end_photo,
         end_accuracy=None,
     ):
         if session.status != "in_progress":
@@ -369,6 +370,7 @@ class WorkSessionService:
         session.end_latitude = end_latitude
         session.end_longitude = end_longitude
         session.end_accuracy = end_accuracy
+        session.end_photo = end_photo
         session.status = "completed"
         session.save(
             update_fields=[
@@ -376,6 +378,7 @@ class WorkSessionService:
                 "end_latitude",
                 "end_longitude",
                 "end_accuracy",
+                "end_photo",
                 "status",
                 "updated_at",
             ]

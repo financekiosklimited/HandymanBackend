@@ -3414,6 +3414,7 @@ class HandymanWorkSessionStopView(BaseHandymanOngoingView):
                     "end_latitude": 43.6532,
                     "end_longitude": -79.3832,
                     "end_accuracy": 8.0,
+                    "end_photo": "(binary image data)",
                 },
                 request_only=True,
             ),
@@ -3442,6 +3443,7 @@ class HandymanWorkSessionStopView(BaseHandymanOngoingView):
                 ended_at=serializer.validated_data["ended_at"],
                 end_latitude=serializer.validated_data["end_latitude"],
                 end_longitude=serializer.validated_data["end_longitude"],
+                end_photo=serializer.validated_data["end_photo"],
                 end_accuracy=serializer.validated_data.get("end_accuracy"),
             )
             return success_response(

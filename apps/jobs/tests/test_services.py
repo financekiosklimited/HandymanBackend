@@ -319,11 +319,13 @@ class OngoingServicesTests(TestCase):
         )
         self.assertEqual(session.status, "in_progress")
 
+        end_photo = SimpleUploadedFile("end.jpg", b"data", content_type="image/jpeg")
         work_session_service.stop_session(
             session=session,
             ended_at=timezone.now(),
             end_latitude=1,
             end_longitude=1,
+            end_photo=end_photo,
         )
         session.refresh_from_db()
         self.assertEqual(session.status, "completed")
@@ -491,12 +493,14 @@ class OngoingServicesTests(TestCase):
         )
         session.status = "completed"
         session.save()
+        end_photo = SimpleUploadedFile("end.jpg", b"data", content_type="image/jpeg")
         with self.assertRaisesRegex(ValidationError, "Session is not active"):
             work_session_service.stop_session(
                 session=session,
                 ended_at=timezone.now(),
                 end_latitude=1,
                 end_longitude=1,
+                end_photo=end_photo,
             )
 
     def test_submit_report_job_not_active(self):
@@ -792,20 +796,24 @@ class OngoingServicesTests(TestCase):
             start_photo=photo,
         )
         # Try to stop with end time before start time
+        end_photo = SimpleUploadedFile("end.jpg", b"data", content_type="image/jpeg")
         with self.assertRaisesRegex(ValidationError, "End time must be after start"):
             work_session_service.stop_session(
                 session=session,
                 ended_at=start_time - timedelta(hours=1),
                 end_latitude=1,
                 end_longitude=1,
+                end_photo=end_photo,
             )
         # Try to stop with end time equal to start time
+        end_photo2 = SimpleUploadedFile("end2.jpg", b"data", content_type="image/jpeg")
         with self.assertRaisesRegex(ValidationError, "End time must be after start"):
             work_session_service.stop_session(
                 session=session,
                 ended_at=start_time,
                 end_latitude=1,
                 end_longitude=1,
+                end_photo=end_photo2,
             )
 
     @patch(

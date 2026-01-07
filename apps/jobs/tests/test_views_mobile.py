@@ -3707,8 +3707,9 @@ class HandymanWorkSessionStopViewTests(APITestCase):
             "ended_at": timezone.now().isoformat(),
             "end_latitude": "43.6532",
             "end_longitude": "-79.3832",
+            "end_photo": create_test_image(),
         }
-        response = self.client.post(url, data, format="json")
+        response = self.client.post(url, data, format="multipart")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["message"], "Work session stopped successfully")
 
@@ -3733,8 +3734,9 @@ class HandymanWorkSessionStopViewTests(APITestCase):
             "ended_at": timezone.now().isoformat(),
             "end_latitude": "43.6532",
             "end_longitude": "-79.3832",
+            "end_photo": create_test_image(),
         }
-        response = self.client.post(url, data, format="json")
+        response = self.client.post(url, data, format="multipart")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("not active", str(response.data))
 
@@ -3747,8 +3749,9 @@ class HandymanWorkSessionStopViewTests(APITestCase):
             "ended_at": timezone.now().isoformat(),
             "end_latitude": "100.0",  # Invalid
             "end_longitude": "-79.3832",
+            "end_photo": create_test_image(),
         }
-        response = self.client.post(url, data, format="json")
+        response = self.client.post(url, data, format="multipart")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 

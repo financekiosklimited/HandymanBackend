@@ -649,6 +649,7 @@ class WorkSessionAdmin(ModelAdmin):
                     "end_latitude",
                     "end_longitude",
                     "end_accuracy",
+                    "end_photo",
                 )
             },
         ),
