@@ -308,7 +308,7 @@ class JobListCreateView(APIView):
                                 "name": "Plumbing",
                             },
                             "status": "open",
-                            "total_applicants": 3,
+                            "applicant_count": 3,
                             "created_at": "2024-01-15T10:30:00Z",
                         }
                     ],
@@ -359,9 +359,9 @@ class JobListCreateView(APIView):
             (total_count + page_size - 1) // page_size if total_count > 0 else 1
         )
 
-        # Optimize queries with annotation for total_applicants
+        # Optimize queries with annotation for applicant_count
         jobs = jobs.select_related("category", "city").prefetch_related("images").annotate(
-            applications_count=Count("applications")
+            applicant_count=Count("applications")
         )
 
         # Slice queryset

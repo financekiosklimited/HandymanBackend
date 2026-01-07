@@ -109,7 +109,7 @@ class JobListSerializer(serializers.ModelSerializer):
         max_digits=10, decimal_places=2, coerce_to_string=False
     )
     tasks = JobTaskListSerializer(many=True, read_only=True)
-    total_applicants = serializers.SerializerMethodField(
+    applicant_count = serializers.SerializerMethodField(
         help_text="Total number of job applications for this job"
     )
 
@@ -130,17 +130,17 @@ class JobListSerializer(serializers.ModelSerializer):
             "status_at",
             "tasks",
             "images",
-            "total_applicants",
+            "applicant_count",
             "created_at",
             "updated_at",
         ]
         read_only_fields = fields
 
-    def get_total_applicants(self, obj):
+    def get_applicant_count(self, obj):
         """Get the total count of job applications for this job."""
         # Use annotation if available (for optimized queries)
-        if hasattr(obj, "applications_count"):
-            return obj.applications_count
+        if hasattr(obj, "applicant_count"):
+            return obj.applicant_count
         # Fall back to counting the queryset
         return obj.applications.count()
 
