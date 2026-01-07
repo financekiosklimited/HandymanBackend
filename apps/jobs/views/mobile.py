@@ -1,4 +1,4 @@
-from django.db.models import Case, FloatField, Q, Value, When
+from django.db.models import Case, Count, FloatField, Q, Value, When
 from django.db.models.functions import ACos, Cos, Radians, Sin
 from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
@@ -308,6 +308,7 @@ class JobListCreateView(APIView):
                                 "name": "Plumbing",
                             },
                             "status": "open",
+                            "total_applicants": 3,
                             "created_at": "2024-01-15T10:30:00Z",
                         }
                     ],
@@ -358,8 +359,10 @@ class JobListCreateView(APIView):
             (total_count + page_size - 1) // page_size if total_count > 0 else 1
         )
 
-        # Optimize queries
-        jobs = jobs.select_related("category", "city").prefetch_related("images")
+        # Optimize queries with annotation for total_applicants
+        jobs = jobs.select_related("category", "city").prefetch_related("images").annotate(
+            applications_count=Count("applications")
+        )
 
         # Slice queryset
         start = (page - 1) * page_size
