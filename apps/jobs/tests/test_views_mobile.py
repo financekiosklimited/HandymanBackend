@@ -5972,14 +5972,16 @@ class HandymanJobDashboardViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_get_dashboard_includes_homeowner_info(self):
-        """Test that dashboard includes homeowner display name and avatar."""
+        """Test that dashboard includes homeowner nested object."""
         self.client.force_authenticate(user=self.handyman)
         response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data["data"]
-        self.assertEqual(data["job"]["homeowner_display_name"], "Test Homeowner")
-        self.assertIsNone(data["job"]["homeowner_avatar_url"])
+        self.assertIn("homeowner", data["job"])
+        self.assertIsNotNone(data["job"]["homeowner"])
+        self.assertEqual(data["job"]["homeowner"]["display_name"], "Test Homeowner")
+        self.assertIsNone(data["job"]["homeowner"]["avatar_url"])
 
     def test_get_dashboard_with_only_completed_tasks(self):
         """Test dashboard when all tasks are completed."""
@@ -6467,8 +6469,7 @@ class HandymanJobDashboardSerializerTests(APITestCase):
                 "longitude": None,
                 "completion_requested_at": None,
                 "completed_at": None,
-                "homeowner_display_name": None,
-                "homeowner_avatar_url": None,
+                "homeowner": None,
                 "created_at": "2024-01-15T10:30:00Z",
             },
             "tasks_progress": {
@@ -6541,8 +6542,12 @@ class HandymanJobDashboardSerializerTests(APITestCase):
                 "longitude": "-79.347015",
                 "completion_requested_at": None,
                 "completed_at": None,
-                "homeowner_display_name": "John Homeowner",
-                "homeowner_avatar_url": "https://example.com/avatar.jpg",
+                "homeowner": {
+                    "public_id": "123e4567-e89b-12d3-a456-426614174003",
+                    "display_name": "John Homeowner",
+                    "avatar_url": "https://example.com/avatar.jpg",
+                    "rating": 4.5,
+                },
                 "created_at": "2024-01-15T10:30:00Z",
             },
             "tasks_progress": {
@@ -6632,8 +6637,12 @@ class HandymanJobDashboardSerializerTests(APITestCase):
                 "postal_code": "M5H 2N2",
                 "latitude": "43.651070",
                 "longitude": "-79.347015",
-                "homeowner_display_name": "John Homeowner",
-                "homeowner_avatar_url": None,
+                "homeowner": {
+                    "public_id": "123e4567-e89b-12d3-a456-426614174003",
+                    "display_name": "John Homeowner",
+                    "avatar_url": None,
+                    "rating": None,
+                },
                 "created_at": "2024-01-15T10:30:00Z",
             },
             "tasks_progress": {
@@ -6730,17 +6739,21 @@ class JobDashboardJobInfoSerializerTests(APITestCase):
         )
 
     def test_serializer_with_homeowner_profile(self):
-        """Test serializer returns homeowner display name and avatar URL."""
+        """Test serializer returns homeowner nested object."""
         from apps.jobs.serializers import JobDashboardJobInfoSerializer
 
         serializer = JobDashboardJobInfoSerializer(self.job)
         data = serializer.data
 
-        self.assertEqual(data["homeowner_display_name"], "John Homeowner")
-        self.assertIsNone(data["homeowner_avatar_url"])
+        self.assertIn("homeowner", data)
+        self.assertIsNotNone(data["homeowner"])
+        self.assertEqual(data["homeowner"]["display_name"], "John Homeowner")
+        self.assertIsNone(data["homeowner"]["avatar_url"])
+        self.assertIn("public_id", data["homeowner"])
+        self.assertIn("rating", data["homeowner"])
 
     def test_serializer_without_homeowner_profile(self):
-        """Test serializer returns None when homeowner has no profile."""
+        """Test serializer returns None values when homeowner has no profile."""
         from apps.jobs.serializers import JobDashboardJobInfoSerializer
 
         user_without_profile = User.objects.create_user(
@@ -6753,8 +6766,10 @@ class JobDashboardJobInfoSerializerTests(APITestCase):
         serializer = JobDashboardJobInfoSerializer(self.job)
         data = serializer.data
 
-        self.assertIsNone(data["homeowner_display_name"])
-        self.assertIsNone(data["homeowner_avatar_url"])
+        self.assertIn("homeowner", data)
+        self.assertIsNotNone(data["homeowner"])
+        self.assertIsNone(data["homeowner"]["display_name"])
+        self.assertIsNone(data["homeowner"]["avatar_url"])
 
 
 class HomeownerJobDashboardViewTests(APITestCase):
@@ -6974,14 +6989,16 @@ class HomeownerJobDashboardViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_get_dashboard_includes_handyman_info(self):
-        """Test that dashboard includes handyman display name and avatar."""
+        """Test that dashboard includes handyman nested object."""
         self.client.force_authenticate(user=self.homeowner)
         response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data["data"]
-        self.assertEqual(data["job"]["handyman_display_name"], "Test Handyman")
-        self.assertIsNone(data["job"]["handyman_avatar_url"])
+        self.assertIn("handyman", data["job"])
+        self.assertIsNotNone(data["job"]["handyman"])
+        self.assertEqual(data["job"]["handyman"]["display_name"], "Test Handyman")
+        self.assertIsNone(data["job"]["handyman"]["avatar_url"])
 
     def test_get_dashboard_with_only_completed_tasks(self):
         """Test dashboard when all tasks are completed."""
@@ -7433,8 +7450,7 @@ class HomeownerJobDashboardViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data["data"]
 
-        self.assertIsNone(data["job"]["handyman_display_name"])
-        self.assertIsNone(data["job"]["handyman_avatar_url"])
+        self.assertIsNone(data["job"]["handyman"])
 
 
 class HomeownerJobDashboardJobInfoSerializerTests(APITestCase):
@@ -7478,14 +7494,18 @@ class HomeownerJobDashboardJobInfoSerializerTests(APITestCase):
         )
 
     def test_serializer_with_handyman_profile(self):
-        """Test serializer returns handyman display name and avatar URL."""
+        """Test serializer returns handyman nested object."""
         from apps.jobs.serializers import HomeownerJobDashboardJobInfoSerializer
 
         serializer = HomeownerJobDashboardJobInfoSerializer(self.job)
         data = serializer.data
 
-        self.assertEqual(data["handyman_display_name"], "John Handyman")
-        self.assertIsNone(data["handyman_avatar_url"])
+        self.assertIn("handyman", data)
+        self.assertIsNotNone(data["handyman"])
+        self.assertEqual(data["handyman"]["display_name"], "John Handyman")
+        self.assertIsNone(data["handyman"]["avatar_url"])
+        self.assertIn("public_id", data["handyman"])
+        self.assertIn("rating", data["handyman"])
 
     def test_serializer_without_handyman_profile(self):
         """Test serializer returns None when handyman has no profile."""
@@ -7501,8 +7521,7 @@ class HomeownerJobDashboardJobInfoSerializerTests(APITestCase):
         serializer = HomeownerJobDashboardJobInfoSerializer(self.job)
         data = serializer.data
 
-        self.assertIsNone(data["handyman_display_name"])
-        self.assertIsNone(data["handyman_avatar_url"])
+        self.assertIsNone(data["handyman"])
 
     def test_serializer_without_assigned_handyman(self):
         """Test serializer returns None when no handyman is assigned."""
@@ -7514,5 +7533,4 @@ class HomeownerJobDashboardJobInfoSerializerTests(APITestCase):
         serializer = HomeownerJobDashboardJobInfoSerializer(self.job)
         data = serializer.data
 
-        self.assertIsNone(data["handyman_display_name"])
-        self.assertIsNone(data["handyman_avatar_url"])
+        self.assertIsNone(data["handyman"])

@@ -316,6 +316,11 @@ class JobListCreateView(APIView):
                             },
                             "status": "open",
                             "applicant_count": 3,
+                            "homeowner": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174099",
+                                "display_name": "John D.",
+                                "avatar_url": "https://example.com/avatars/john.jpg",
+                            },
                             "created_at": "2024-01-15T10:30:00Z",
                         }
                     ],
@@ -378,7 +383,7 @@ class JobListCreateView(APIView):
 
         # Optimize queries with annotation for applicant_count
         jobs = (
-            jobs.select_related("category", "city")
+            jobs.select_related("category", "city", "homeowner__homeowner_profile")
             .prefetch_related("images")
             .annotate(applicant_count=Count("applications"))
         )
@@ -1026,6 +1031,11 @@ class ForYouJobListView(APIView):
                                 },
                             ],
                             "images": [],
+                            "homeowner": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174099",
+                                "display_name": "John D.",
+                                "avatar_url": "https://example.com/avatars/john.jpg",
+                            },
                             "created_at": "2024-01-15T10:30:00Z",
                             "updated_at": "2024-01-15T10:30:00Z",
                             "distance_km": 2.5,
@@ -1131,7 +1141,9 @@ class ForYouJobListView(APIView):
         )
 
         # Optimize queries
-        jobs = jobs.select_related("category", "city").prefetch_related("images")
+        jobs = jobs.select_related(
+            "category", "city", "homeowner__homeowner_profile"
+        ).prefetch_related("images")
 
         # Slice queryset
         start = (page - 1) * page_size
@@ -1302,6 +1314,11 @@ class GuestJobListView(APIView):
                                 },
                             ],
                             "images": [],
+                            "homeowner": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174099",
+                                "display_name": "John D.",
+                                "avatar_url": "https://example.com/avatars/john.jpg",
+                            },
                             "created_at": "2024-01-15T10:30:00Z",
                             "updated_at": "2024-01-15T10:30:00Z",
                             "distance_km": 2.5,
@@ -1408,7 +1425,9 @@ class GuestJobListView(APIView):
         )
 
         # Optimize queries
-        jobs = jobs.select_related("category", "city").prefetch_related("images")
+        jobs = jobs.select_related(
+            "category", "city", "homeowner__homeowner_profile"
+        ).prefetch_related("images")
 
         # Slice queryset
         start = (page - 1) * page_size
@@ -1643,6 +1662,13 @@ class HandymanForYouJobListView(APIView):
                                 "province_code": "ON",
                             },
                             "status": "open",
+                            "homeowner": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174099",
+                                "display_name": "John D.",
+                                "avatar_url": "https://example.com/avatars/john.jpg",
+                            },
+                            "homeowner_rating": 4.5,
+                            "homeowner_review_count": 12,
                             "created_at": "2024-01-15T10:30:00Z",
                             "distance_km": 5.2,
                         }
@@ -1661,7 +1687,7 @@ class HandymanForYouJobListView(APIView):
         # Get all open jobs (exclude jobs created by this user if they're also a homeowner)
         jobs = (
             Job.objects.filter(status="open")
-            .select_related("category", "city")
+            .select_related("category", "city", "homeowner__homeowner_profile")
             .prefetch_related("images")
         )
 
@@ -2727,8 +2753,12 @@ class HomeownerJobDashboardView(BaseHomeownerOngoingView):
                             },
                             "address": "123 Main St, Toronto",
                             "postal_code": "M5H 2N2",
-                            "handyman_display_name": "John Handyman",
-                            "handyman_avatar_url": None,
+                            "handyman": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174098",
+                                "display_name": "John Handyman",
+                                "avatar_url": None,
+                                "rating": 4.8,
+                            },
                             "created_at": "2024-01-15T10:30:00Z",
                         },
                         "tasks_progress": {
@@ -2818,8 +2848,12 @@ class HomeownerJobDashboardView(BaseHomeownerOngoingView):
                             },
                             "address": "123 Main St, Toronto",
                             "postal_code": "M5H 2N2",
-                            "handyman_display_name": "John Handyman",
-                            "handyman_avatar_url": None,
+                            "handyman": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174098",
+                                "display_name": "John Handyman",
+                                "avatar_url": None,
+                                "rating": 4.8,
+                            },
                             "created_at": "2024-01-15T10:30:00Z",
                         },
                         "tasks_progress": {
@@ -3004,14 +3038,13 @@ class HomeownerJobDashboardView(BaseHomeownerOngoingView):
                 "longitude": job.longitude,
                 "completion_requested_at": job.completion_requested_at,
                 "completed_at": job.completed_at,
-                "handyman_display_name": (
-                    job.assigned_handyman.handyman_profile.display_name
-                    if job.assigned_handyman
-                    and hasattr(job.assigned_handyman, "handyman_profile")
-                    else None
-                ),
-                "handyman_avatar_url": (
-                    job.assigned_handyman.handyman_profile.avatar_url
+                "handyman": (
+                    {
+                        "public_id": str(job.assigned_handyman.public_id),
+                        "display_name": job.assigned_handyman.handyman_profile.display_name,
+                        "avatar_url": job.assigned_handyman.handyman_profile.avatar_url,
+                        "rating": job.assigned_handyman.handyman_profile.rating,
+                    }
                     if job.assigned_handyman
                     and hasattr(job.assigned_handyman, "handyman_profile")
                     else None
@@ -3252,8 +3285,12 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                             },
                             "address": "123 Main St, Toronto",
                             "postal_code": "M5H 2N2",
-                            "homeowner_display_name": "John Homeowner",
-                            "homeowner_avatar_url": None,
+                            "homeowner": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174003",
+                                "display_name": "John Homeowner",
+                                "avatar_url": None,
+                                "rating": 4.5,
+                            },
                             "created_at": "2024-01-15T10:30:00Z",
                         },
                         "tasks_progress": {
@@ -3344,8 +3381,12 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                             },
                             "address": "123 Main St, Toronto",
                             "postal_code": "M5H 2N2",
-                            "homeowner_display_name": "John Homeowner",
-                            "homeowner_avatar_url": None,
+                            "homeowner": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174099",
+                                "display_name": "John Homeowner",
+                                "avatar_url": None,
+                                "rating": 4.5,
+                            },
                             "created_at": "2024-01-15T10:30:00Z",
                         },
                         "tasks_progress": {
@@ -3549,15 +3590,20 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                 "longitude": job.longitude,
                 "completion_requested_at": job.completion_requested_at,
                 "completed_at": job.completed_at,
-                "homeowner_display_name": (
-                    job.homeowner.homeowner_profile.display_name
+                "homeowner": (
+                    {
+                        "public_id": str(job.homeowner.public_id),
+                        "display_name": job.homeowner.homeowner_profile.display_name,
+                        "avatar_url": job.homeowner.homeowner_profile.avatar_url,
+                        "rating": job.homeowner.homeowner_profile.rating,
+                    }
                     if hasattr(job.homeowner, "homeowner_profile")
-                    else None
-                ),
-                "homeowner_avatar_url": (
-                    job.homeowner.homeowner_profile.avatar_url
-                    if hasattr(job.homeowner, "homeowner_profile")
-                    else None
+                    else {
+                        "public_id": str(job.homeowner.public_id),
+                        "display_name": None,
+                        "avatar_url": None,
+                        "rating": None,
+                    }
                 ),
                 "created_at": job.created_at,
             },

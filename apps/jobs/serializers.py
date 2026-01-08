@@ -97,6 +97,63 @@ class JobTaskListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+# ========================
+# Nested Info Serializers for Job Listings and Dashboards
+# ========================
+
+
+class HomeownerInfoSerializer(serializers.Serializer):
+    """
+    Nested serializer for homeowner info in job listings (without rating).
+    Used in job list APIs where rating is not needed.
+    """
+
+    public_id = serializers.UUIDField(help_text="Homeowner's public ID")
+    display_name = serializers.CharField(
+        allow_null=True, help_text="Homeowner's display name"
+    )
+    avatar_url = serializers.URLField(
+        allow_null=True, help_text="Homeowner's avatar URL"
+    )
+
+
+class HomeownerInfoWithRatingSerializer(HomeownerInfoSerializer):
+    """
+    Nested serializer for homeowner info with rating (for dashboards).
+    Extends HomeownerInfoSerializer with rating field.
+    """
+
+    rating = serializers.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        allow_null=True,
+        coerce_to_string=False,
+        help_text="Homeowner's rating (1-5)",
+    )
+
+
+class HandymanInfoWithRatingSerializer(serializers.Serializer):
+    """
+    Nested serializer for handyman info with rating (for dashboards).
+    Used in homeowner job dashboard to show assigned handyman details.
+    """
+
+    public_id = serializers.UUIDField(help_text="Handyman's public ID")
+    display_name = serializers.CharField(
+        allow_null=True, help_text="Handyman's display name"
+    )
+    avatar_url = serializers.URLField(
+        allow_null=True, help_text="Handyman's avatar URL"
+    )
+    rating = serializers.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        allow_null=True,
+        coerce_to_string=False,
+        help_text="Handyman's rating (1-5)",
+    )
+
+
 class JobListSerializer(serializers.ModelSerializer):
     """
     Serializer for job listing (read-only).
@@ -111,6 +168,9 @@ class JobListSerializer(serializers.ModelSerializer):
     tasks = JobTaskListSerializer(many=True, read_only=True)
     applicant_count = serializers.SerializerMethodField(
         help_text="Total number of job applications for this job"
+    )
+    homeowner = serializers.SerializerMethodField(
+        help_text="Homeowner information (public_id, display_name, avatar_url)"
     )
 
     class Meta:
@@ -131,6 +191,7 @@ class JobListSerializer(serializers.ModelSerializer):
             "tasks",
             "images",
             "applicant_count",
+            "homeowner",
             "created_at",
             "updated_at",
         ]
@@ -143,6 +204,21 @@ class JobListSerializer(serializers.ModelSerializer):
             return obj.applicant_count
         # Fall back to counting the queryset
         return obj.applications.count()
+
+    def get_homeowner(self, obj):
+        """Get homeowner info (without rating for job listings)."""
+        if hasattr(obj.homeowner, "homeowner_profile"):
+            profile = obj.homeowner.homeowner_profile
+            return {
+                "public_id": obj.homeowner.public_id,
+                "display_name": profile.display_name,
+                "avatar_url": profile.avatar_url,
+            }
+        return {
+            "public_id": obj.homeowner.public_id,
+            "display_name": None,
+            "avatar_url": None,
+        }
 
 
 class JobDetailSerializer(JobListSerializer):
@@ -1897,7 +1973,8 @@ class JobDashboardReportStatsSerializer(serializers.Serializer):
 
 class JobDashboardJobInfoSerializer(serializers.ModelSerializer):
     """
-    Serializer for basic job info in dashboard.
+    Serializer for basic job info in handyman dashboard.
+    Includes nested homeowner info with rating.
     """
 
     category = JobCategorySerializer(read_only=True)
@@ -1905,8 +1982,9 @@ class JobDashboardJobInfoSerializer(serializers.ModelSerializer):
     estimated_budget = serializers.DecimalField(
         max_digits=10, decimal_places=2, coerce_to_string=False
     )
-    homeowner_display_name = serializers.SerializerMethodField()
-    homeowner_avatar_url = serializers.SerializerMethodField()
+    homeowner = serializers.SerializerMethodField(
+        help_text="Homeowner information including rating"
+    )
 
     class Meta:
         model = Job
@@ -1925,23 +2003,27 @@ class JobDashboardJobInfoSerializer(serializers.ModelSerializer):
             "longitude",
             "completion_requested_at",
             "completed_at",
-            "homeowner_display_name",
-            "homeowner_avatar_url",
+            "homeowner",
             "created_at",
         ]
         read_only_fields = fields
 
-    def get_homeowner_display_name(self, obj):
-        """Get homeowner's display name."""
+    def get_homeowner(self, obj):
+        """Get homeowner info with rating for dashboard."""
         if hasattr(obj.homeowner, "homeowner_profile"):
-            return obj.homeowner.homeowner_profile.display_name
-        return None
-
-    def get_homeowner_avatar_url(self, obj):
-        """Get homeowner's avatar URL."""
-        if hasattr(obj.homeowner, "homeowner_profile"):
-            return obj.homeowner.homeowner_profile.avatar_url
-        return None
+            profile = obj.homeowner.homeowner_profile
+            return {
+                "public_id": obj.homeowner.public_id,
+                "display_name": profile.display_name,
+                "avatar_url": profile.avatar_url,
+                "rating": profile.rating,
+            }
+        return {
+            "public_id": obj.homeowner.public_id,
+            "display_name": None,
+            "avatar_url": None,
+            "rating": None,
+        }
 
 
 class JobDashboardReviewSerializer(serializers.Serializer):
@@ -1999,7 +2081,7 @@ HandymanJobDashboardResponseSerializer = create_response_serializer(
 class HomeownerJobDashboardJobInfoSerializer(serializers.ModelSerializer):
     """
     Serializer for basic job info in homeowner dashboard.
-    Shows assigned handyman info instead of homeowner info.
+    Shows assigned handyman info with rating.
     """
 
     category = JobCategorySerializer(read_only=True)
@@ -2007,8 +2089,9 @@ class HomeownerJobDashboardJobInfoSerializer(serializers.ModelSerializer):
     estimated_budget = serializers.DecimalField(
         max_digits=10, decimal_places=2, coerce_to_string=False
     )
-    handyman_display_name = serializers.SerializerMethodField()
-    handyman_avatar_url = serializers.SerializerMethodField()
+    handyman = serializers.SerializerMethodField(
+        help_text="Assigned handyman information including rating"
+    )
 
     class Meta:
         model = Job
@@ -2027,22 +2110,21 @@ class HomeownerJobDashboardJobInfoSerializer(serializers.ModelSerializer):
             "longitude",
             "completion_requested_at",
             "completed_at",
-            "handyman_display_name",
-            "handyman_avatar_url",
+            "handyman",
             "created_at",
         ]
         read_only_fields = fields
 
-    def get_handyman_display_name(self, obj):
-        """Get assigned handyman's display name."""
+    def get_handyman(self, obj):
+        """Get assigned handyman info with rating for dashboard."""
         if obj.assigned_handyman and hasattr(obj.assigned_handyman, "handyman_profile"):
-            return obj.assigned_handyman.handyman_profile.display_name
-        return None
-
-    def get_handyman_avatar_url(self, obj):
-        """Get assigned handyman's avatar URL."""
-        if obj.assigned_handyman and hasattr(obj.assigned_handyman, "handyman_profile"):
-            return obj.assigned_handyman.handyman_profile.avatar_url
+            profile = obj.assigned_handyman.handyman_profile
+            return {
+                "public_id": obj.assigned_handyman.public_id,
+                "display_name": profile.display_name,
+                "avatar_url": profile.avatar_url,
+                "rating": profile.rating,
+            }
         return None
 
 
