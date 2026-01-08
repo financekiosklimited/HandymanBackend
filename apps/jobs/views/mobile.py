@@ -290,7 +290,13 @@ class JobListCreateView(APIView):
                 required=False,
             ),
         ],
-        description="List all jobs for authenticated homeowner with pagination and filtering. Returns only jobs created by the homeowner. Optional text search available. Requires homeowner role and verified email.",
+        description=(
+            "List all jobs for authenticated homeowner with pagination and filtering. "
+            "Returns only jobs created by the homeowner. "
+            "Jobs are ordered by status priority (open and in_progress first), "
+            "then by created_at descending (newest first). "
+            "Optional text search available. Requires homeowner role and verified email."
+        ),
         summary="List homeowner jobs",
         tags=["Mobile Homeowner Jobs"],
         examples=[
@@ -343,8 +349,6 @@ class JobListCreateView(APIView):
         # Search filter
         search_query = request.query_params.get("search")
         if search_query:
-            from django.db.models import Q
-
             jobs = jobs.filter(
                 Q(title__icontains=search_query)
                 | Q(description__icontains=search_query)
@@ -360,12 +364,27 @@ class JobListCreateView(APIView):
             (total_count + page_size - 1) // page_size if total_count > 0 else 1
         )
 
+        # Add priority ordering annotation
+        # Priority 0: open and in_progress (highest priority - shown first)
+        # Priority 1: all other statuses
+        jobs = jobs.annotate(
+            status_priority=Case(
+                When(status="open", then=Value(0)),
+                When(status="in_progress", then=Value(0)),
+                default=Value(1),
+                output_field=FloatField(),
+            )
+        )
+
         # Optimize queries with annotation for applicant_count
         jobs = (
             jobs.select_related("category", "city")
             .prefetch_related("images")
             .annotate(applicant_count=Count("applications"))
         )
+
+        # Order by status_priority ASC, then created_at DESC
+        jobs = jobs.order_by("status_priority", "-created_at")
 
         # Slice queryset
         start = (page - 1) * page_size

@@ -374,6 +374,102 @@ class MobileJobListCreateViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 2)
 
+    def test_list_jobs_priority_ordering_open_and_in_progress_first(self):
+        """Test that open and in_progress jobs are listed first."""
+        # Create jobs with different statuses
+        Job.objects.create(
+            homeowner=self.user,
+            title="Completed job",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="completed",
+        )
+        Job.objects.create(
+            homeowner=self.user,
+            title="Open job",
+            description="Test",
+            estimated_budget=Decimal("60.00"),
+            category=self.category,
+            city=self.city,
+            address="456 Oak Ave",
+            status="open",
+        )
+        Job.objects.create(
+            homeowner=self.user,
+            title="Cancelled job",
+            description="Test",
+            estimated_budget=Decimal("70.00"),
+            category=self.category,
+            city=self.city,
+            address="789 Pine St",
+            status="cancelled",
+        )
+        Job.objects.create(
+            homeowner=self.user,
+            title="In progress job",
+            description="Test",
+            estimated_budget=Decimal("80.00"),
+            category=self.category,
+            city=self.city,
+            address="321 Elm St",
+            status="in_progress",
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 4)
+
+        # First two should be open/in_progress (priority 0)
+        first_two_statuses = {
+            response.data["data"][0]["status"],
+            response.data["data"][1]["status"],
+        }
+        self.assertEqual(first_two_statuses, {"open", "in_progress"})
+
+        # Last two should be completed/cancelled (priority 1)
+        last_two_statuses = {
+            response.data["data"][2]["status"],
+            response.data["data"][3]["status"],
+        }
+        self.assertEqual(last_two_statuses, {"completed", "cancelled"})
+
+    def test_list_jobs_ordering_within_priority_group(self):
+        """Test that within each priority group, jobs are sorted by created_at desc."""
+        # Create two open jobs
+        Job.objects.create(
+            homeowner=self.user,
+            title="Open old",
+            description="Test",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+        Job.objects.create(
+            homeowner=self.user,
+            title="Open new",
+            description="Test",
+            estimated_budget=Decimal("60.00"),
+            category=self.category,
+            city=self.city,
+            address="456 Oak Ave",
+            status="open",
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+
+        # Newer job should appear first (created_at DESC)
+        self.assertEqual(response.data["data"][0]["title"], "Open new")
+        self.assertEqual(response.data["data"][1]["title"], "Open old")
+
     def test_create_job_success(self):
         """Test successfully creating a job."""
         data = {
