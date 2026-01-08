@@ -67,6 +67,7 @@ LOCAL_APPS = [
     "apps.waitlist",
     "apps.jobs",
     "apps.notifications",
+    "apps.chat",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

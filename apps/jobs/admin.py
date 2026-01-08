@@ -19,6 +19,7 @@ from .models import (
     JobDispute,
     JobImage,
     JobTask,
+    Review,
     WorkSession,
     WorkSessionMedia,
 )
@@ -272,6 +273,53 @@ class JobApplicationInline(TabularInline):
     show_change_link = True
 
 
+class ReviewInline(TabularInline):
+    """
+    Inline admin for Review in Job detail view.
+    """
+
+    model = Review
+    extra = 0
+    fields = (
+        "reviewer_type",
+        "rating",
+        "reviewer_name",
+        "reviewer_email",
+        "reviewee_name",
+        "reviewee_email",
+        "comment",
+        "created_at",
+    )
+    readonly_fields = (
+        "reviewer_name",
+        "reviewer_email",
+        "reviewee_name",
+        "reviewee_email",
+        "created_at",
+    )
+    ordering = ("-created_at",)
+
+    @display(description="Reviewer Name")
+    def reviewer_name(self, obj):
+        """Display reviewer's full name."""
+        return obj.reviewer.get_full_name() or "-"
+
+    @display(description="Reviewer Email")
+    def reviewer_email(self, obj):
+        """Display reviewer's email."""
+        return obj.reviewer.email
+
+    @display(description="Reviewee Name")
+    def reviewee_name(self, obj):
+        """Display reviewee's full name."""
+        return obj.reviewee.get_full_name() or "-"
+
+    @display(description="Reviewee Email")
+    def reviewee_email(self, obj):
+        """Display reviewee's email."""
+        return obj.reviewee.email
+
+
 @admin.register(JobCategory)
 class JobCategoryAdmin(ModelAdmin):
     """
@@ -396,6 +444,7 @@ class JobAdmin(ModelAdmin):
         DailyReportInline,
         JobDisputeInline,
         JobApplicationInline,
+        ReviewInline,
     ]
     date_hierarchy = "created_at"
     list_per_page = 25
@@ -1249,3 +1298,110 @@ class JobApplicationAdmin(ModelAdmin):
                 f"{error_count} application(s) could not be rejected.",
                 level="warning",
             )
+
+
+@admin.register(Review)
+class ReviewAdmin(ModelAdmin):
+    """
+    Admin interface for Review model with Unfold styling.
+    """
+
+    list_display = (
+        "job_link",
+        "reviewer_type_display",
+        "rating_display",
+        "reviewer_name",
+        "reviewer_email_link",
+        "reviewee_name",
+        "reviewee_email_link",
+        "created_at",
+    )
+    list_filter = ("reviewer_type", "rating", "created_at")
+    search_fields = (
+        "job__title",
+        "reviewer__email",
+        "reviewer__first_name",
+        "reviewer__last_name",
+        "reviewee__email",
+        "reviewee__first_name",
+        "reviewee__last_name",
+        "comment",
+    )
+    ordering = ("-created_at",)
+    autocomplete_fields = ("job", "reviewer", "reviewee")
+    readonly_fields = ("public_id", "created_at", "updated_at")
+    date_hierarchy = "created_at"
+    list_per_page = 25
+
+    fieldsets = (
+        (
+            "Review Information",
+            {
+                "fields": (
+                    "public_id",
+                    "job",
+                    "reviewer_type",
+                    "reviewer",
+                    "reviewee",
+                    "rating",
+                    "comment",
+                )
+            },
+        ),
+        (
+            "Timestamps",
+            {"fields": ("created_at", "updated_at")},
+        ),
+    )
+
+    @display(description="Job")
+    def job_link(self, obj):
+        """Display job title as clickable link."""
+        return format_html(
+            '<a href="/admin/jobs/job/{}/change/">{}</a>',
+            obj.job.pk,
+            obj.job.title[:40] + "..." if len(obj.job.title) > 40 else obj.job.title,
+        )
+
+    @display(description="Type")
+    def reviewer_type_display(self, obj):
+        """Display reviewer type with icon."""
+        icons = {
+            "homeowner": "🏠",
+            "handyman": "🔧",
+        }
+        icon = icons.get(obj.reviewer_type, "")
+        return f"{icon} {obj.get_reviewer_type_display()}"
+
+    @display(description="Rating")
+    def rating_display(self, obj):
+        """Display rating as numeric value."""
+        return f"{obj.rating}/5"
+
+    @display(description="Reviewer Name")
+    def reviewer_name(self, obj):
+        """Display reviewer's full name."""
+        return obj.reviewer.get_full_name() or "-"
+
+    @display(description="Reviewer Email")
+    def reviewer_email_link(self, obj):
+        """Display reviewer's email as clickable link."""
+        return format_html(
+            '<a href="/admin/accounts/user/{}/change/">{}</a>',
+            obj.reviewer.pk,
+            obj.reviewer.email,
+        )
+
+    @display(description="Reviewee Name")
+    def reviewee_name(self, obj):
+        """Display reviewee's full name."""
+        return obj.reviewee.get_full_name() or "-"
+
+    @display(description="Reviewee Email")
+    def reviewee_email_link(self, obj):
+        """Display reviewee's email as clickable link."""
+        return format_html(
+            '<a href="/admin/accounts/user/{}/change/">{}</a>',
+            obj.reviewee.pk,
+            obj.reviewee.email,
+        )

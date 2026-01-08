@@ -158,7 +158,8 @@ class HandymanProfileModelTests(TestCase):
         )
 
         self.assertIsNotNone(profile.avatar_url)
-        self.assertIn("avatar.jpg", profile.avatar_url)
+        self.assertIn("/handyman/avatars/", profile.avatar_url)
+        self.assertTrue(profile.avatar_url.endswith(".jpg"))
 
     def test_handyman_avatar_url_when_no_avatar(self):
         """Test avatar_url property returns None when no avatar."""
@@ -296,7 +297,8 @@ class HomeownerProfileModelTests(TestCase):
         )
 
         self.assertIsNotNone(profile.avatar_url)
-        self.assertIn("avatar.jpg", profile.avatar_url)
+        self.assertIn("/homeowner/avatars/", profile.avatar_url)
+        self.assertTrue(profile.avatar_url.endswith(".jpg"))
 
     def test_homeowner_avatar_url_when_no_avatar(self):
         """Test avatar_url property returns None when no avatar."""

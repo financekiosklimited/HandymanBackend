@@ -66,6 +66,7 @@ class Notification(BaseModel):
         ("job_dispute_opened", "Job Dispute Opened"),
         ("job_dispute_resolved", "Job Dispute Resolved"),
         ("review_received", "Review Received"),
+        ("chat_message_received", "Chat Message Received"),
     ]
 
     user = models.ForeignKey(

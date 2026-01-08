@@ -1,0 +1,1051 @@
+"""
+Test cases for homeowner chat views.
+"""
+
+from decimal import Decimal
+from unittest.mock import patch
+
+from rest_framework import status
+from rest_framework.test import APITestCase
+
+from apps.accounts.models import User, UserRole
+from apps.chat.models import ChatConversation, ChatMessage
+from apps.jobs.models import City, Job, JobCategory
+from apps.profiles.models import HandymanProfile, HomeownerProfile
+
+
+class HomeownerConversationListViewTests(APITestCase):
+    """Test cases for HomeownerConversationListView."""
+
+    def setUp(self):
+        """Set up test data."""
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com",
+            password="testpass123",
+        )
+        self.homeowner.email_verified_at = "2024-01-01T00:00:00Z"
+        self.homeowner.save()
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Test Homeowner",
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+        )
+
+        # Create job and job conversation
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix kitchen sink",
+            description="Need to fix a leaky kitchen sink",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            assigned_handyman=self.handyman,
+        )
+        self.job_conversation = ChatConversation.objects.create(
+            conversation_type=ChatConversation.ConversationType.JOB,
+            job=self.job,
+            homeowner=self.homeowner,
+            handyman=self.handyman,
+        )
+
+        # Create general conversation
+        self.general_conversation = ChatConversation.objects.create(
+            conversation_type=ChatConversation.ConversationType.GENERAL,
+            homeowner=self.homeowner,
+            handyman=self.handyman,
+        )
+
+        self.url = "/api/v1/mobile/homeowner/conversations/"
+
+    def test_list_conversations_returns_only_general(self):
+        """Test listing conversations returns only general chat."""
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"], "Conversations retrieved successfully"
+        )
+        # Should only return general conversation, not job conversation
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(
+            str(response.data["data"][0]["public_id"]),
+            str(self.general_conversation.public_id),
+        )
+        self.assertEqual(response.data["data"][0]["conversation_type"], "general")
+
+    def test_list_conversations_empty_when_no_general_chat(self):
+        """Test listing conversations returns empty when no general chat exists."""
+        # Delete general conversation
+        self.general_conversation.delete()
+
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+
+    def test_list_conversations_unauthenticated(self):
+        """Test listing conversations without authentication fails."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_list_conversations_wrong_platform(self):
+        """Test listing conversations from wrong platform fails."""
+        self.homeowner.token_payload["plat"] = "web"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_list_conversations_wrong_role(self):
+        """Test listing conversations with wrong role fails."""
+        self.homeowner.token_payload["active_role"] = "handyman"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_list_conversations_with_last_message(self):
+        """Test listing conversations includes last message info."""
+        # Add a message to the general conversation
+        ChatMessage.objects.create(
+            conversation=self.general_conversation,
+            sender=self.handyman,
+            sender_role=ChatMessage.SenderRole.HANDYMAN,
+            content="Test message content",
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data["data"][0]["last_message"])
+        self.assertEqual(
+            response.data["data"][0]["last_message"]["content"], "Test message content"
+        )
+
+    def test_list_conversations_without_other_party_profile(self):
+        """Test listing conversations when other party has no profile."""
+        # Delete the handyman profile
+        HandymanProfile.objects.filter(user=self.handyman).delete()
+
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should still return conversation but with None display_name/avatar
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertIsNone(response.data["data"][0]["other_party"]["display_name"])
+        self.assertIsNone(response.data["data"][0]["other_party"]["avatar_url"])
+
+    def test_list_conversations_with_avatar(self):
+        """Test listing conversations includes avatar URL when profile has avatar."""
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        # Create test avatar image
+        img = Image.new("RGB", (100, 100), color="red")
+        buffer = BytesIO()
+        img.save(buffer, format="JPEG")
+        buffer.seek(0)
+        avatar = SimpleUploadedFile(
+            name="avatar.jpg",
+            content=buffer.read(),
+            content_type="image/jpeg",
+        )
+
+        # Add avatar to handyman profile
+        handyman_profile = HandymanProfile.objects.get(user=self.handyman)
+        handyman_profile.avatar.save("avatar.jpg", avatar, save=True)
+
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data["data"][0]["other_party"]["avatar_url"])
+
+    def test_list_job_conversation_includes_job_info(self):
+        """Test that job conversation list includes job info."""
+        # Change URL to include job conversations - we need to test serialize_conversation_for_list with job
+        # Since list view now only returns general, let's test via serialize_conversation_for_list directly
+        from apps.chat.views.mobile_homeowner import serialize_conversation_for_list
+
+        data = serialize_conversation_for_list(self.job_conversation, "homeowner")
+
+        self.assertIsNotNone(data["job"])
+        self.assertEqual(str(data["job"]["public_id"]), str(self.job.public_id))
+        self.assertEqual(data["job"]["title"], "Fix kitchen sink")
+        self.assertEqual(data["job"]["status"], "in_progress")
+
+
+class HomeownerUnreadCountViewTests(APITestCase):
+    """Test cases for HomeownerUnreadCountView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com",
+            password="testpass123",
+        )
+        self.homeowner.email_verified_at = "2024-01-01T00:00:00Z"
+        self.homeowner.save()
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Test Job",
+            description="Test",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            assigned_handyman=self.handyman,
+        )
+
+        # Create job conversation with unread count
+        self.job_conversation = ChatConversation.objects.create(
+            conversation_type=ChatConversation.ConversationType.JOB,
+            job=self.job,
+            homeowner=self.homeowner,
+            handyman=self.handyman,
+            homeowner_unread_count=5,
+        )
+
+        # Create general conversation with unread count
+        self.general_conversation = ChatConversation.objects.create(
+            conversation_type=ChatConversation.ConversationType.GENERAL,
+            homeowner=self.homeowner,
+            handyman=self.handyman,
+            homeowner_unread_count=3,
+        )
+
+        self.url = "/api/v1/mobile/homeowner/conversations/unread-count/"
+
+    def test_get_unread_count_returns_only_general(self):
+        """Test getting unread count returns only general chat count."""
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"], "Unread count retrieved successfully"
+        )
+        # Should only count general conversation (3), not job conversation (5)
+        self.assertEqual(response.data["data"]["unread_count"], 3)
+
+    def test_get_unread_count_zero_when_no_general_chat(self):
+        """Test unread count is 0 when no general chat exists."""
+        # Delete general conversation
+        self.general_conversation.delete()
+
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["unread_count"], 0)
+
+    def test_get_unread_count_unauthenticated(self):
+        """Test getting unread count without authentication fails."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class HomeownerJobChatViewTests(APITestCase):
+    """Test cases for HomeownerJobChatView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com",
+            password="testpass123",
+        )
+        self.homeowner.email_verified_at = "2024-01-01T00:00:00Z"
+        self.homeowner.save()
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Test Homeowner",
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Test Job",
+            description="Test",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            assigned_handyman=self.handyman,
+        )
+
+    def test_get_or_create_job_chat_creates_new(self):
+        """Test creating a new job chat conversation."""
+        url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/chat/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["message"], "Conversation created successfully")
+        self.assertIn("public_id", response.data["data"])
+        self.assertEqual(response.data["data"]["conversation_type"], "job")
+
+        # Verify conversation was created
+        self.assertTrue(ChatConversation.objects.filter(job=self.job).exists())
+
+    def test_get_or_create_job_chat_gets_existing(self):
+        """Test getting existing job chat conversation."""
+        # Create conversation first
+        conversation = ChatConversation.objects.create(
+            conversation_type=ChatConversation.ConversationType.JOB,
+            job=self.job,
+            homeowner=self.homeowner,
+            handyman=self.handyman,
+        )
+
+        url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/chat/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"], "Conversation retrieved successfully"
+        )
+        self.assertEqual(
+            str(response.data["data"]["public_id"]),
+            str(conversation.public_id),
+        )
+
+    def test_get_job_chat_not_found(self):
+        """Test getting chat for non-existent job."""
+        url = "/api/v1/mobile/homeowner/jobs/00000000-0000-0000-0000-000000000000/chat/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_job_chat_job_not_owned(self):
+        """Test getting chat for job not owned by user."""
+        other_user = User.objects.create_user(
+            email="other@example.com",
+            password="testpass123",
+        )
+        other_job = Job.objects.create(
+            homeowner=other_user,
+            title="Other Job",
+            description="Test",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="456 Oak St",
+            status="in_progress",
+            assigned_handyman=self.handyman,
+        )
+
+        url = f"/api/v1/mobile/homeowner/jobs/{other_job.public_id}/chat/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_job_chat_job_not_in_progress(self):
+        """Test getting chat for job not in progress."""
+        self.job.status = "open"
+        self.job.save()
+
+        url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/chat/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_get_job_chat_unauthenticated(self):
+        """Test getting chat without authentication fails."""
+        url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/chat/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_get_job_chat_without_profiles(self):
+        """Test getting job chat when users have no profiles."""
+        # Delete profiles
+        HomeownerProfile.objects.filter(user=self.homeowner).delete()
+        HandymanProfile.objects.filter(user=self.handyman).delete()
+
+        url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/chat/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        # Check that both profiles are serialized with None values
+        self.assertIsNone(response.data["data"]["homeowner"]["display_name"])
+        self.assertIsNone(response.data["data"]["homeowner"]["avatar_url"])
+        self.assertIsNone(response.data["data"]["handyman"]["display_name"])
+        self.assertIsNone(response.data["data"]["handyman"]["avatar_url"])
+
+    def test_get_job_chat_includes_job_info(self):
+        """Test that job chat response includes job info."""
+        url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/chat/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIsNotNone(response.data["data"]["job"])
+        self.assertEqual(
+            str(response.data["data"]["job"]["public_id"]), str(self.job.public_id)
+        )
+        self.assertEqual(response.data["data"]["job"]["title"], "Test Job")
+        self.assertEqual(response.data["data"]["job"]["status"], "in_progress")
+
+    def test_get_job_chat_with_profile_avatars(self):
+        """Test that job chat response includes avatar URLs when profiles have avatars."""
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        # Create test avatar image
+        img = Image.new("RGB", (100, 100), color="red")
+        buffer = BytesIO()
+        img.save(buffer, format="JPEG")
+        buffer.seek(0)
+        avatar = SimpleUploadedFile(
+            name="avatar.jpg",
+            content=buffer.read(),
+            content_type="image/jpeg",
+        )
+
+        # Add avatar to homeowner profile
+        homeowner_profile = HomeownerProfile.objects.get(user=self.homeowner)
+        homeowner_profile.avatar.save("avatar.jpg", avatar, save=True)
+
+        # Create another avatar for handyman
+        buffer.seek(0)
+        avatar2 = SimpleUploadedFile(
+            name="avatar2.jpg",
+            content=buffer.read(),
+            content_type="image/jpeg",
+        )
+        handyman_profile = HandymanProfile.objects.get(user=self.handyman)
+        handyman_profile.avatar.save("avatar2.jpg", avatar2, save=True)
+
+        url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/chat/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        # Check both avatars are returned
+        self.assertIsNotNone(response.data["data"]["homeowner"]["avatar_url"])
+        self.assertIsNotNone(response.data["data"]["handyman"]["avatar_url"])
+
+
+class HomeownerConversationMessagesViewTests(APITestCase):
+    """Test cases for HomeownerConversationMessagesView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com",
+            password="testpass123",
+        )
+        self.homeowner.email_verified_at = "2024-01-01T00:00:00Z"
+        self.homeowner.save()
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Test Homeowner",
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Test Job",
+            description="Test",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            assigned_handyman=self.handyman,
+        )
+        self.conversation = ChatConversation.objects.create(
+            conversation_type=ChatConversation.ConversationType.JOB,
+            job=self.job,
+            homeowner=self.homeowner,
+            handyman=self.handyman,
+        )
+
+        # Create some messages
+        self.message1 = ChatMessage.objects.create(
+            conversation=self.conversation,
+            sender=self.homeowner,
+            sender_role=ChatMessage.SenderRole.HOMEOWNER,
+            content="Hello handyman!",
+        )
+        self.message2 = ChatMessage.objects.create(
+            conversation=self.conversation,
+            sender=self.handyman,
+            sender_role=ChatMessage.SenderRole.HANDYMAN,
+            content="Hello homeowner!",
+        )
+
+        self.list_url = f"/api/v1/mobile/homeowner/conversations/{self.conversation.public_id}/messages/"
+
+    def test_list_messages_success(self):
+        """Test listing messages successfully."""
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.list_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Messages retrieved successfully")
+        self.assertEqual(len(response.data["data"]), 2)
+        self.assertIn("has_more", response.data["meta"])
+
+    def test_list_messages_with_limit(self):
+        """Test listing messages with limit parameter."""
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(f"{self.list_url}?limit=1")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertTrue(response.data["meta"]["has_more"])
+
+    def test_list_messages_with_before(self):
+        """Test listing messages with before parameter."""
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(f"{self.list_url}?before={self.message2.public_id}")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(
+            str(response.data["data"][0]["public_id"]),
+            str(self.message1.public_id),
+        )
+
+    def test_list_messages_conversation_not_found(self):
+        """Test listing messages for non-existent conversation."""
+        url = "/api/v1/mobile/homeowner/conversations/00000000-0000-0000-0000-000000000000/messages/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_list_messages_unauthenticated(self):
+        """Test listing messages without authentication fails."""
+        response = self.client.get(self.list_url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    @patch("apps.chat.services.notification_service")
+    def test_send_message_success(self, mock_notification):
+        """Test sending a message successfully."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {"content": "Test message"}
+        response = self.client.post(self.list_url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["message"], "Message sent successfully")
+        self.assertEqual(response.data["data"]["content"], "Test message")
+        self.assertEqual(response.data["data"]["sender_role"], "homeowner")
+
+    @patch("apps.chat.services.notification_service")
+    def test_send_message_empty_content_fails(self, mock_notification):
+        """Test sending message with empty content fails."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {"content": ""}
+        response = self.client.post(self.list_url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch("apps.chat.services.notification_service")
+    def test_send_message_content_too_long_fails(self, mock_notification):
+        """Test sending message with content exceeding max length."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {"content": "a" * 2001}
+        response = self.client.post(self.list_url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_send_message_conversation_not_found(self):
+        """Test sending message to non-existent conversation."""
+        url = "/api/v1/mobile/homeowner/conversations/00000000-0000-0000-0000-000000000000/messages/"
+        self.client.force_authenticate(user=self.homeowner)
+        data = {"content": "Test"}
+        response = self.client.post(url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_send_message_unauthenticated(self):
+        """Test sending message without authentication fails."""
+        data = {"content": "Test"}
+        response = self.client.post(self.list_url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    @patch("apps.chat.services.notification_service")
+    def test_send_message_archived_conversation_fails(self, mock_notification):
+        """Test sending message to archived conversation fails."""
+        self.conversation.status = ChatConversation.Status.ARCHIVED
+        self.conversation.save()
+
+        self.client.force_authenticate(user=self.homeowner)
+        data = {"content": "Test message"}
+        response = self.client.post(self.list_url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class HomeownerConversationReadViewTests(APITestCase):
+    """Test cases for HomeownerConversationReadView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com",
+            password="testpass123",
+        )
+        self.homeowner.email_verified_at = "2024-01-01T00:00:00Z"
+        self.homeowner.save()
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Test Job",
+            description="Test",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            assigned_handyman=self.handyman,
+        )
+        self.conversation = ChatConversation.objects.create(
+            conversation_type=ChatConversation.ConversationType.JOB,
+            job=self.job,
+            homeowner=self.homeowner,
+            handyman=self.handyman,
+            homeowner_unread_count=2,
+        )
+
+        # Create unread messages from handyman
+        self.message1 = ChatMessage.objects.create(
+            conversation=self.conversation,
+            sender=self.handyman,
+            sender_role=ChatMessage.SenderRole.HANDYMAN,
+            content="Message 1",
+            is_read=False,
+        )
+        self.message2 = ChatMessage.objects.create(
+            conversation=self.conversation,
+            sender=self.handyman,
+            sender_role=ChatMessage.SenderRole.HANDYMAN,
+            content="Message 2",
+            is_read=False,
+        )
+
+        self.url = f"/api/v1/mobile/homeowner/conversations/{self.conversation.public_id}/read/"
+
+    def test_mark_as_read_success(self):
+        """Test marking messages as read successfully."""
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Messages marked as read")
+        self.assertEqual(response.data["data"]["messages_read"], 2)
+
+        # Verify messages are marked as read
+        self.message1.refresh_from_db()
+        self.message2.refresh_from_db()
+        self.assertTrue(self.message1.is_read)
+        self.assertTrue(self.message2.is_read)
+
+        # Verify unread count is reset
+        self.conversation.refresh_from_db()
+        self.assertEqual(self.conversation.homeowner_unread_count, 0)
+
+    def test_mark_as_read_conversation_not_found(self):
+        """Test marking messages as read for non-existent conversation."""
+        url = "/api/v1/mobile/homeowner/conversations/00000000-0000-0000-0000-000000000000/read/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.post(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_mark_as_read_unauthenticated(self):
+        """Test marking messages as read without authentication fails."""
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_mark_as_read_not_own_conversation(self):
+        """Test marking messages as read for conversation not owned fails."""
+        other_user = User.objects.create_user(
+            email="other@example.com",
+            password="testpass123",
+        )
+        other_user.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.client.force_authenticate(user=other_user)
+        response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class HomeownerGeneralChatViewTests(APITestCase):
+    """Test cases for HomeownerGeneralChatView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com",
+            password="testpass123",
+        )
+        self.homeowner.email_verified_at = "2024-01-01T00:00:00Z"
+        self.homeowner.save()
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Test Homeowner",
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+        )
+
+    def test_create_general_chat_success(self):
+        """Test creating a new general chat conversation."""
+        url = f"/api/v1/mobile/homeowner/users/{self.handyman.public_id}/chat/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["message"], "Conversation created successfully")
+        self.assertIn("public_id", response.data["data"])
+        self.assertEqual(response.data["data"]["conversation_type"], "general")
+        self.assertIsNone(response.data["data"]["job"])
+
+        # Verify conversation was created
+        self.assertTrue(
+            ChatConversation.objects.filter(
+                conversation_type="general",
+                homeowner=self.homeowner,
+                handyman=self.handyman,
+            ).exists()
+        )
+
+    def test_get_existing_general_chat(self):
+        """Test getting existing general chat conversation."""
+        # Create conversation first
+        conversation = ChatConversation.objects.create(
+            conversation_type=ChatConversation.ConversationType.GENERAL,
+            homeowner=self.homeowner,
+            handyman=self.handyman,
+        )
+
+        url = f"/api/v1/mobile/homeowner/users/{self.handyman.public_id}/chat/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"], "Conversation retrieved successfully"
+        )
+        self.assertEqual(
+            str(response.data["data"]["public_id"]),
+            str(conversation.public_id),
+        )
+
+    def test_general_chat_user_not_found(self):
+        """Test creating chat with non-existent user."""
+        url = (
+            "/api/v1/mobile/homeowner/users/00000000-0000-0000-0000-000000000000/chat/"
+        )
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_general_chat_user_not_handyman(self):
+        """Test creating chat with user who is not a handyman."""
+        # Create another homeowner (not a handyman)
+        other_homeowner = User.objects.create_user(
+            email="other@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=other_homeowner, role="homeowner")
+
+        url = f"/api/v1/mobile/homeowner/users/{other_homeowner.public_id}/chat/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_general_chat_unauthenticated(self):
+        """Test creating chat without authentication fails."""
+        url = f"/api/v1/mobile/homeowner/users/{self.handyman.public_id}/chat/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class HomeownerJobChatUnreadCountViewTests(APITestCase):
+    """Test cases for HomeownerJobChatUnreadCountView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com",
+            password="testpass123",
+        )
+        self.homeowner.email_verified_at = "2024-01-01T00:00:00Z"
+        self.homeowner.save()
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Test Job",
+            description="Test",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            assigned_handyman=self.handyman,
+        )
+
+    def test_get_job_unread_count_success(self):
+        """Test getting unread count for job with conversation."""
+        ChatConversation.objects.create(
+            conversation_type=ChatConversation.ConversationType.JOB,
+            job=self.job,
+            homeowner=self.homeowner,
+            handyman=self.handyman,
+            homeowner_unread_count=7,
+        )
+
+        url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/chat/unread-count/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"], "Unread count retrieved successfully"
+        )
+        self.assertEqual(response.data["data"]["unread_count"], 7)
+
+    def test_get_job_unread_count_no_conversation(self):
+        """Test getting unread count for job without conversation returns 0."""
+        url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/chat/unread-count/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["unread_count"], 0)
+
+    def test_get_job_unread_count_job_not_found(self):
+        """Test getting unread count for non-existent job."""
+        url = "/api/v1/mobile/homeowner/jobs/00000000-0000-0000-0000-000000000000/chat/unread-count/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_job_unread_count_not_owner(self):
+        """Test getting unread count for job not owned by user."""
+        other_user = User.objects.create_user(
+            email="other@example.com",
+            password="testpass123",
+        )
+        other_job = Job.objects.create(
+            homeowner=other_user,
+            title="Other Job",
+            description="Test",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="456 Oak St",
+            status="in_progress",
+            assigned_handyman=self.handyman,
+        )
+
+        url = f"/api/v1/mobile/homeowner/jobs/{other_job.public_id}/chat/unread-count/"
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_job_unread_count_unauthenticated(self):
+        """Test getting unread count without authentication fails."""
+        url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/chat/unread-count/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

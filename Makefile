@@ -83,7 +83,7 @@ test: ## Run tests
 .PHONY: coverage
 coverage: ## Run tests with coverage report
 	@echo "$(BLUE)Running tests with coverage...$(NC)"
-	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run python -m coverage run --source='apps,config' --parallel-mode manage.py test --parallel
+	DJANGO_SETTINGS_MODULE=config.settings.test COVERAGE_PROCESS_START=pyproject.toml $(UV) run python -m coverage run manage.py test --parallel
 	@echo "$(GREEN)Combining coverage data...$(NC)"
 	$(UV) run python -m coverage combine
 	@echo "$(GREEN)Generating coverage report...$(NC)"
@@ -92,7 +92,7 @@ coverage: ## Run tests with coverage report
 .PHONY: coverage-html
 coverage-html: ## Generate HTML coverage report
 	@echo "$(BLUE)Running tests with coverage...$(NC)"
-	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run python -m coverage run --source='apps,config' --parallel-mode manage.py test --parallel
+	DJANGO_SETTINGS_MODULE=config.settings.test COVERAGE_PROCESS_START=pyproject.toml $(UV) run python -m coverage run manage.py test --parallel
 	@echo "$(GREEN)Combining coverage data...$(NC)"
 	$(UV) run python -m coverage combine
 	@echo "$(GREEN)Generating HTML coverage report...$(NC)"
@@ -102,7 +102,7 @@ coverage-html: ## Generate HTML coverage report
 .PHONY: coverage-xml
 coverage-xml: ## Generate XML coverage report (for CI)
 	@echo "$(BLUE)Running tests with coverage...$(NC)"
-	DJANGO_SETTINGS_MODULE=config.settings.test $(UV) run python -m coverage run --source='apps,config' --parallel-mode manage.py test --parallel
+	DJANGO_SETTINGS_MODULE=config.settings.test COVERAGE_PROCESS_START=pyproject.toml $(UV) run python -m coverage run manage.py test --parallel
 	@echo "$(GREEN)Combining coverage data...$(NC)"
 	$(UV) run python -m coverage combine
 	@echo "$(GREEN)Generating XML coverage report...$(NC)"

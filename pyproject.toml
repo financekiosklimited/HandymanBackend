@@ -120,6 +120,8 @@ line-ending = "auto"
 
 [tool.coverage.run]
 source = ["apps", "config"]
+concurrency = ["multiprocessing"]
+parallel = true
 omit = [
     "*/migrations/*",
     "*/tests/*",
