@@ -406,6 +406,76 @@ class HomeownerHandymanPublicSerializersTests(TestCase):
         self.assertNotIn("latitude", serializer.data)
         self.assertNotIn("longitude", serializer.data)
 
+    def test_homeowner_list_serializer_is_bookmarked_fallback(self):
+        """Test is_bookmarked fallback database check when not annotated."""
+        from unittest.mock import Mock
+
+        from apps.bookmarks.models import HandymanBookmark
+
+        # Create a homeowner user for the request context
+        homeowner_user = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        UserRole.objects.create(user=homeowner_user, role="homeowner")
+        HomeownerProfile.objects.create(user=homeowner_user)
+
+        # Create a mock request with authenticated user
+        mock_request = Mock()
+        mock_request.user = homeowner_user
+
+        # Test without bookmark - should return False via database check
+        serializer = HomeownerHandymanListSerializer(
+            self.profile, context={"request": mock_request}
+        )
+        # Profile doesn't have is_bookmarked annotation, so it falls back to DB
+        self.assertFalse(serializer.data["is_bookmarked"])
+
+        # Create bookmark
+        HandymanBookmark.objects.create(
+            homeowner=homeowner_user, handyman_profile=self.profile
+        )
+
+        # Test with bookmark - should return True via database check
+        serializer = HomeownerHandymanListSerializer(
+            self.profile, context={"request": mock_request}
+        )
+        self.assertTrue(serializer.data["is_bookmarked"])
+
+    def test_homeowner_detail_serializer_is_bookmarked_fallback(self):
+        """Test is_bookmarked fallback database check for detail serializer."""
+        from unittest.mock import Mock
+
+        from apps.bookmarks.models import HandymanBookmark
+
+        # Create a homeowner user for the request context
+        homeowner_user = User.objects.create_user(
+            email="homeowner_detail@example.com", password="testpass123"
+        )
+        UserRole.objects.create(user=homeowner_user, role="homeowner")
+        HomeownerProfile.objects.create(user=homeowner_user)
+
+        # Create a mock request with authenticated user
+        mock_request = Mock()
+        mock_request.user = homeowner_user
+
+        # Test without bookmark - should return False via database check
+        serializer = HomeownerHandymanDetailSerializer(
+            self.profile, context={"request": mock_request}
+        )
+        # Profile doesn't have is_bookmarked annotation, so it falls back to DB
+        self.assertFalse(serializer.data["is_bookmarked"])
+
+        # Create bookmark
+        HandymanBookmark.objects.create(
+            homeowner=homeowner_user, handyman_profile=self.profile
+        )
+
+        # Test with bookmark - should return True via database check
+        serializer = HomeownerHandymanDetailSerializer(
+            self.profile, context={"request": mock_request}
+        )
+        self.assertTrue(serializer.data["is_bookmarked"])
+
 
 class HandymanProfileUpdateSerializerValidationTests(TestCase):
     """Test cases for HandymanProfileUpdateSerializer validation."""

@@ -406,6 +406,10 @@ class HomeownerNearbyHandymanListView(APIView):
     )
     def get(self, request):
         """List nearby handymen ordered by distance."""
+        from django.db.models import Exists, OuterRef
+
+        from apps.bookmarks.models import HandymanBookmark
+
         latitude = request.query_params.get("latitude")
         longitude = request.query_params.get("longitude")
         radius_km = request.query_params.get("radius_km", "25")
@@ -448,6 +452,13 @@ class HomeownerNearbyHandymanListView(APIView):
             )
             .select_related("user")
             .annotate(
+                # Annotate is_bookmarked for the current user
+                is_bookmarked=Exists(
+                    HandymanBookmark.objects.filter(
+                        homeowner=request.user,
+                        handyman_profile=OuterRef("pk"),
+                    )
+                ),
                 distance_km=Case(
                     When(
                         latitude__isnull=False,
@@ -465,7 +476,7 @@ class HomeownerNearbyHandymanListView(APIView):
                     ),
                     default=Value(None),
                     output_field=FloatField(),
-                )
+                ),
             )
             .filter(distance_km__lte=radius)
             .order_by("distance_km", "-created_at")
@@ -546,8 +557,19 @@ class HomeownerHandymanDetailView(APIView):
     )
     def get(self, request, public_id):
         """Get handyman detail for homeowners."""
+        from django.db.models import Exists, OuterRef
+
+        from apps.bookmarks.models import HandymanBookmark
+
         try:
-            profile = HandymanProfile.objects.get(
+            profile = HandymanProfile.objects.annotate(
+                is_bookmarked=Exists(
+                    HandymanBookmark.objects.filter(
+                        homeowner=request.user,
+                        handyman_profile=OuterRef("pk"),
+                    )
+                )
+            ).get(
                 public_id=public_id,
                 is_approved=True,
                 is_active=True,
@@ -558,7 +580,9 @@ class HomeownerHandymanDetailView(APIView):
         except HandymanProfile.DoesNotExist:
             return not_found_response("Handyman not found")
 
-        serializer = HomeownerHandymanDetailSerializer(profile)
+        serializer = HomeownerHandymanDetailSerializer(
+            profile, context={"request": request}
+        )
         return success_response(
             serializer.data, message="Handyman retrieved successfully"
         )

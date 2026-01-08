@@ -257,11 +257,15 @@ class HandymanForYouJobSerializer(ForYouJobSerializer):
 
     homeowner_rating = serializers.SerializerMethodField()
     homeowner_review_count = serializers.SerializerMethodField()
+    is_bookmarked = serializers.SerializerMethodField(
+        help_text="Whether this job is bookmarked by the current handyman"
+    )
 
     class Meta(ForYouJobSerializer.Meta):
         fields = ForYouJobSerializer.Meta.fields + [
             "homeowner_rating",
             "homeowner_review_count",
+            "is_bookmarked",
         ]
 
     def get_homeowner_rating(self, obj):
@@ -276,6 +280,17 @@ class HandymanForYouJobSerializer(ForYouJobSerializer):
             return obj.homeowner.homeowner_profile.review_count
         return 0
 
+    def get_is_bookmarked(self, obj):
+        """Check if the job is bookmarked by the current handyman."""
+        # Use annotated value if available (for optimized queries)
+        if hasattr(obj, "is_bookmarked"):
+            return obj.is_bookmarked
+        # Fall back to checking the database
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            return obj.bookmarks.filter(handyman=request.user).exists()
+        return False
+
 
 class HandymanJobDetailSerializer(JobDetailSerializer):
     """
@@ -286,6 +301,9 @@ class HandymanJobDetailSerializer(JobDetailSerializer):
     my_application = serializers.SerializerMethodField()
     homeowner_rating = serializers.SerializerMethodField()
     homeowner_review_count = serializers.SerializerMethodField()
+    is_bookmarked = serializers.SerializerMethodField(
+        help_text="Whether this job is bookmarked by the current handyman"
+    )
 
     class Meta(JobDetailSerializer.Meta):
         fields = JobDetailSerializer.Meta.fields + [
@@ -293,6 +311,7 @@ class HandymanJobDetailSerializer(JobDetailSerializer):
             "my_application",
             "homeowner_rating",
             "homeowner_review_count",
+            "is_bookmarked",
         ]
 
     def get_has_applied(self, obj):
@@ -327,6 +346,17 @@ class HandymanJobDetailSerializer(JobDetailSerializer):
         if hasattr(obj.homeowner, "homeowner_profile"):
             return obj.homeowner.homeowner_profile.review_count
         return 0
+
+    def get_is_bookmarked(self, obj):
+        """Check if the job is bookmarked by the current handyman."""
+        # Use annotated value if available (for optimized queries)
+        if hasattr(obj, "is_bookmarked"):
+            return obj.is_bookmarked
+        # Fall back to checking the database
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            return obj.bookmarks.filter(handyman=request.user).exists()
+        return False
 
 
 class JobTaskInputSerializer(serializers.Serializer):

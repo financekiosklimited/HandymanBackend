@@ -244,6 +244,9 @@ class HomeownerHandymanListSerializer(serializers.ModelSerializer):
         allow_null=True,
         help_text="Distance from user location in kilometers.",
     )
+    is_bookmarked = serializers.SerializerMethodField(
+        help_text="Whether this handyman is bookmarked by the current homeowner"
+    )
 
     class Meta:
         model = HandymanProfile
@@ -254,8 +257,20 @@ class HomeownerHandymanListSerializer(serializers.ModelSerializer):
             "rating",
             "hourly_rate",
             "distance_km",
+            "is_bookmarked",
         ]
         read_only_fields = fields
+
+    def get_is_bookmarked(self, obj):
+        """Check if the handyman is bookmarked by the current homeowner."""
+        # Use annotated value if available (for optimized queries)
+        if hasattr(obj, "is_bookmarked"):
+            return obj.is_bookmarked
+        # Fall back to checking the database
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            return obj.bookmarks.filter(homeowner=request.user).exists()
+        return False
 
 
 class HomeownerHandymanDetailSerializer(serializers.ModelSerializer):
@@ -276,6 +291,9 @@ class HomeownerHandymanDetailSerializer(serializers.ModelSerializer):
         allow_null=True,
         coerce_to_string=False,
     )
+    is_bookmarked = serializers.SerializerMethodField(
+        help_text="Whether this handyman is bookmarked by the current homeowner"
+    )
 
     class Meta:
         model = HandymanProfile
@@ -285,8 +303,20 @@ class HomeownerHandymanDetailSerializer(serializers.ModelSerializer):
             "avatar_url",
             "rating",
             "hourly_rate",
+            "is_bookmarked",
         ]
         read_only_fields = fields
+
+    def get_is_bookmarked(self, obj):
+        """Check if the handyman is bookmarked by the current homeowner."""
+        # Use annotated value if available (for optimized queries)
+        if hasattr(obj, "is_bookmarked"):
+            return obj.is_bookmarked
+        # Fall back to checking the database
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            return obj.bookmarks.filter(homeowner=request.user).exists()
+        return False
 
 
 HomeownerHandymanListResponseSerializer = create_list_response_serializer(

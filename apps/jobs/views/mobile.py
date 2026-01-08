@@ -1684,6 +1684,10 @@ class HandymanForYouJobListView(APIView):
     )
     def get(self, request):
         """List open jobs for handymen."""
+        from django.db.models import Exists, OuterRef
+
+        from apps.bookmarks.models import JobBookmark
+
         # Get all open jobs (exclude jobs created by this user if they're also a homeowner)
         jobs = (
             Job.objects.filter(status="open")
@@ -1693,6 +1697,16 @@ class HandymanForYouJobListView(APIView):
 
         # Exclude own jobs if user is also a homeowner
         jobs = jobs.exclude(homeowner=request.user)
+
+        # Annotate is_bookmarked for the current user
+        jobs = jobs.annotate(
+            is_bookmarked=Exists(
+                JobBookmark.objects.filter(
+                    handyman=request.user,
+                    job=OuterRef("pk"),
+                )
+            )
+        )
 
         # Filter by category if provided
         category_id = request.query_params.get("category")
@@ -1860,9 +1874,21 @@ class HandymanJobDetailView(APIView):
     )
     def get(self, request, public_id):
         """Get job detail with application status."""
+        from django.db.models import Exists, OuterRef
+
+        from apps.bookmarks.models import JobBookmark
+
         job = get_object_or_404(
             Job.objects.select_related("category", "city")
             .prefetch_related("images", "applications")
+            .annotate(
+                is_bookmarked=Exists(
+                    JobBookmark.objects.filter(
+                        handyman=request.user,
+                        job=OuterRef("pk"),
+                    )
+                )
+            )
             .filter(Q(status="open") | Q(applications__handyman=request.user))
             .distinct(),
             public_id=public_id,
