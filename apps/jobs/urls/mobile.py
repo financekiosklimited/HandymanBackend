@@ -230,4 +230,36 @@ urlpatterns = [
         mobile_views.HandymanReceivedReviewsView.as_view(),
         name="mobile_handyman_reviews_received",
     ),
+    # Handyman Reimbursement Endpoints
+    path(
+        "handyman/jobs/<uuid:public_id>/reimbursements/",
+        mobile_views.HandymanReimbursementListCreateView.as_view(),
+        name="mobile_handyman_jobs_reimbursements",
+    ),
+    path(
+        "handyman/jobs/<uuid:public_id>/reimbursements/<uuid:reimbursement_id>/",
+        mobile_views.HandymanReimbursementDetailView.as_view(),
+        name="mobile_handyman_jobs_reimbursement_detail",
+    ),
+    path(
+        "handyman/jobs/<uuid:public_id>/reimbursements/<uuid:reimbursement_id>/edit/",
+        mobile_views.HandymanReimbursementEditView.as_view(),
+        name="mobile_handyman_jobs_reimbursement_edit",
+    ),
+    # Homeowner Reimbursement Endpoints
+    path(
+        "homeowner/jobs/<uuid:public_id>/reimbursements/",
+        mobile_views.HomeownerReimbursementListView.as_view(),
+        name="mobile_homeowner_jobs_reimbursements",
+    ),
+    path(
+        "homeowner/jobs/<uuid:public_id>/reimbursements/<uuid:reimbursement_id>/",
+        mobile_views.HomeownerReimbursementDetailView.as_view(),
+        name="mobile_homeowner_jobs_reimbursement_detail",
+    ),
+    path(
+        "homeowner/jobs/<uuid:public_id>/reimbursements/<uuid:reimbursement_id>/review/",
+        mobile_views.HomeownerReimbursementReviewView.as_view(),
+        name="mobile_homeowner_jobs_reimbursement_review",
+    ),
 ]

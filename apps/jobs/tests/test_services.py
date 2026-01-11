@@ -1501,3 +1501,483 @@ class ReviewServiceTests(TestCase):
 
         reviews = review_service.get_reviews_received(self.handyman, "homeowner")
         self.assertEqual(reviews.count(), 2)
+
+
+class ReimbursementServiceTests(TestCase):
+    """Test cases for ReimbursementService."""
+
+    def setUp(self):
+        """Set up test data."""
+        from apps.jobs.services import ReimbursementService
+
+        self.service = ReimbursementService()
+        self.homeowner = User.objects.create_user(
+            email="owner@example.com", password="password123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handy@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        self.owner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner, display_name="Owner"
+        )
+        self.handy_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handy",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Leaky faucet in kitchen",
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            estimated_budget=100,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_submit_reimbursement_success(self, mock_notify):
+        """Test successful reimbursement submission."""
+        from decimal import Decimal
+
+        attachments = [
+            SimpleUploadedFile(
+                "receipt.jpg", b"file content", content_type="image/jpeg"
+            )
+        ]
+
+        reimbursement = self.service.submit_reimbursement(
+            handyman=self.handyman,
+            job=self.job,
+            name="Plumbing materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            attachments=attachments,
+            notes="Required for repair",
+        )
+
+        self.assertEqual(reimbursement.job, self.job)
+        self.assertEqual(reimbursement.handyman, self.handyman)
+        self.assertEqual(reimbursement.name, "Plumbing materials")
+        self.assertEqual(reimbursement.category, "materials")
+        self.assertEqual(reimbursement.amount, Decimal("50.00"))
+        self.assertEqual(reimbursement.status, "pending")
+        self.assertEqual(reimbursement.attachments.count(), 1)
+        mock_notify.assert_called_once()
+
+    def test_submit_reimbursement_not_assigned(self):
+        """Test submitting reimbursement when not assigned to job."""
+        other_handyman = User.objects.create_user(
+            email="other@example.com", password="password123"
+        )
+        UserRole.objects.create(user=other_handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=other_handyman,
+            display_name="Other",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        attachments = [
+            SimpleUploadedFile(
+                "receipt.jpg", b"file content", content_type="image/jpeg"
+            )
+        ]
+
+        with self.assertRaisesRegex(ValidationError, "not assigned"):
+            self.service.submit_reimbursement(
+                handyman=other_handyman,
+                job=self.job,
+                name="Materials",
+                category="materials",
+                amount=50,
+                attachments=attachments,
+            )
+
+    def test_submit_reimbursement_job_not_active(self):
+        """Test submitting reimbursement for non-active job."""
+        self.job.status = "completed"
+        self.job.save()
+
+        attachments = [
+            SimpleUploadedFile(
+                "receipt.jpg", b"file content", content_type="image/jpeg"
+            )
+        ]
+
+        with self.assertRaisesRegex(ValidationError, "not active"):
+            self.service.submit_reimbursement(
+                handyman=self.handyman,
+                job=self.job,
+                name="Materials",
+                category="materials",
+                amount=50,
+                attachments=attachments,
+            )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_submit_reimbursement_pending_completion(self, mock_notify):
+        """Test submitting reimbursement for job pending completion."""
+        from decimal import Decimal
+
+        self.job.status = "pending_completion"
+        self.job.save()
+
+        attachments = [
+            SimpleUploadedFile(
+                "receipt.jpg", b"file content", content_type="image/jpeg"
+            )
+        ]
+
+        reimbursement = self.service.submit_reimbursement(
+            handyman=self.handyman,
+            job=self.job,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            attachments=attachments,
+        )
+
+        self.assertEqual(reimbursement.status, "pending")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_review_reimbursement_approve(self, mock_notify):
+        """Test approving a reimbursement."""
+        from decimal import Decimal
+
+        from apps.jobs.models import JobReimbursement
+
+        reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            status="pending",
+        )
+
+        result = self.service.review_reimbursement(
+            homeowner=self.homeowner,
+            reimbursement=reimbursement,
+            decision="approved",
+            comment="Looks good",
+        )
+
+        self.assertEqual(result.status, "approved")
+        self.assertEqual(result.homeowner_comment, "Looks good")
+        self.assertEqual(result.reviewed_by, self.homeowner)
+        self.assertIsNotNone(result.reviewed_at)
+        mock_notify.assert_called_once()
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_review_reimbursement_reject(self, mock_notify):
+        """Test rejecting a reimbursement."""
+        from decimal import Decimal
+
+        from apps.jobs.models import JobReimbursement
+
+        reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            status="pending",
+        )
+
+        result = self.service.review_reimbursement(
+            homeowner=self.homeowner,
+            reimbursement=reimbursement,
+            decision="rejected",
+            comment="Receipt not clear",
+        )
+
+        self.assertEqual(result.status, "rejected")
+        self.assertEqual(result.homeowner_comment, "Receipt not clear")
+        mock_notify.assert_called_once()
+        call_kwargs = mock_notify.call_args.kwargs
+        self.assertEqual(call_kwargs["notification_type"], "reimbursement_rejected")
+
+    def test_review_reimbursement_not_owner(self):
+        """Test reviewing reimbursement when not the job owner."""
+        from decimal import Decimal
+
+        from apps.jobs.models import JobReimbursement
+
+        other_homeowner = User.objects.create_user(
+            email="other_owner@example.com", password="password123"
+        )
+
+        reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            status="pending",
+        )
+
+        with self.assertRaisesRegex(ValidationError, "your own jobs"):
+            self.service.review_reimbursement(
+                homeowner=other_homeowner,
+                reimbursement=reimbursement,
+                decision="approved",
+            )
+
+    def test_review_reimbursement_already_reviewed(self):
+        """Test reviewing already reviewed reimbursement."""
+        from decimal import Decimal
+
+        from apps.jobs.models import JobReimbursement
+
+        reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            status="approved",
+            reviewed_by=self.homeowner,
+            reviewed_at=timezone.now(),
+        )
+
+        with self.assertRaisesRegex(ValidationError, "pending"):
+            self.service.review_reimbursement(
+                homeowner=self.homeowner,
+                reimbursement=reimbursement,
+                decision="rejected",
+            )
+
+    def test_review_reimbursement_invalid_decision(self):
+        """Test reviewing reimbursement with invalid decision."""
+        from decimal import Decimal
+
+        from apps.jobs.models import JobReimbursement
+
+        reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            status="pending",
+        )
+
+        with self.assertRaisesRegex(ValidationError, "Invalid decision"):
+            self.service.review_reimbursement(
+                homeowner=self.homeowner,
+                reimbursement=reimbursement,
+                decision="pending",  # Invalid decision
+            )
+
+    def test_update_reimbursement_success(self):
+        """Test successful reimbursement update."""
+        from decimal import Decimal
+
+        from apps.jobs.models import JobReimbursement, JobReimbursementAttachment
+
+        reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            status="pending",
+        )
+        # Add initial attachment
+        JobReimbursementAttachment.objects.create(
+            reimbursement=reimbursement,
+            file=SimpleUploadedFile("receipt.jpg", b"file", content_type="image/jpeg"),
+            file_name="receipt.jpg",
+        )
+
+        result = self.service.update_reimbursement(
+            handyman=self.handyman,
+            reimbursement=reimbursement,
+            name="Updated Materials",
+            category="tools",
+            amount=Decimal("75.00"),
+            notes="Updated notes",
+        )
+
+        self.assertEqual(result.name, "Updated Materials")
+        self.assertEqual(result.category, "tools")
+        self.assertEqual(result.amount, Decimal("75.00"))
+        self.assertEqual(result.notes, "Updated notes")
+
+    def test_update_reimbursement_not_owner(self):
+        """Test updating reimbursement when not the owner."""
+        from decimal import Decimal
+
+        from apps.jobs.models import JobReimbursement, JobReimbursementAttachment
+
+        other_handyman = User.objects.create_user(
+            email="other@example.com", password="password123"
+        )
+
+        reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            status="pending",
+        )
+        JobReimbursementAttachment.objects.create(
+            reimbursement=reimbursement,
+            file=SimpleUploadedFile("receipt.jpg", b"file", content_type="image/jpeg"),
+            file_name="receipt.jpg",
+        )
+
+        with self.assertRaisesRegex(ValidationError, "your own"):
+            self.service.update_reimbursement(
+                handyman=other_handyman,
+                reimbursement=reimbursement,
+                name="Updated",
+            )
+
+    def test_update_reimbursement_not_pending(self):
+        """Test updating non-pending reimbursement."""
+        from decimal import Decimal
+
+        from apps.jobs.models import JobReimbursement, JobReimbursementAttachment
+
+        reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            status="approved",
+        )
+        JobReimbursementAttachment.objects.create(
+            reimbursement=reimbursement,
+            file=SimpleUploadedFile("receipt.jpg", b"file", content_type="image/jpeg"),
+            file_name="receipt.jpg",
+        )
+
+        with self.assertRaisesRegex(ValidationError, "pending"):
+            self.service.update_reimbursement(
+                handyman=self.handyman,
+                reimbursement=reimbursement,
+                name="Updated",
+            )
+
+    def test_update_reimbursement_add_attachments(self):
+        """Test adding attachments to reimbursement."""
+        from decimal import Decimal
+
+        from apps.jobs.models import JobReimbursement, JobReimbursementAttachment
+
+        reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            status="pending",
+        )
+        JobReimbursementAttachment.objects.create(
+            reimbursement=reimbursement,
+            file=SimpleUploadedFile("receipt.jpg", b"file", content_type="image/jpeg"),
+            file_name="receipt.jpg",
+        )
+
+        new_attachment = SimpleUploadedFile(
+            "receipt2.jpg", b"file2", content_type="image/jpeg"
+        )
+        result = self.service.update_reimbursement(
+            handyman=self.handyman,
+            reimbursement=reimbursement,
+            attachments=[new_attachment],
+        )
+
+        self.assertEqual(result.attachments.count(), 2)
+
+    def test_update_reimbursement_remove_attachments(self):
+        """Test removing attachments from reimbursement."""
+        from decimal import Decimal
+
+        from apps.jobs.models import JobReimbursement, JobReimbursementAttachment
+
+        reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            status="pending",
+        )
+        att1 = JobReimbursementAttachment.objects.create(
+            reimbursement=reimbursement,
+            file=SimpleUploadedFile(
+                "receipt1.jpg", b"file1", content_type="image/jpeg"
+            ),
+            file_name="receipt1.jpg",
+        )
+        JobReimbursementAttachment.objects.create(
+            reimbursement=reimbursement,
+            file=SimpleUploadedFile(
+                "receipt2.jpg", b"file2", content_type="image/jpeg"
+            ),
+            file_name="receipt2.jpg",
+        )
+
+        result = self.service.update_reimbursement(
+            handyman=self.handyman,
+            reimbursement=reimbursement,
+            attachments_to_remove=[att1.public_id],
+        )
+
+        self.assertEqual(result.attachments.count(), 1)
+
+    def test_update_reimbursement_no_attachments_left(self):
+        """Test error when removing all attachments."""
+        from decimal import Decimal
+
+        from apps.jobs.models import JobReimbursement, JobReimbursementAttachment
+
+        reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            status="pending",
+        )
+        att = JobReimbursementAttachment.objects.create(
+            reimbursement=reimbursement,
+            file=SimpleUploadedFile("receipt.jpg", b"file", content_type="image/jpeg"),
+            file_name="receipt.jpg",
+        )
+
+        with self.assertRaisesRegex(ValidationError, "At least one attachment"):
+            self.service.update_reimbursement(
+                handyman=self.handyman,
+                reimbursement=reimbursement,
+                attachments_to_remove=[att.public_id],
+            )

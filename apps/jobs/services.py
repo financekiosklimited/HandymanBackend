@@ -1248,3 +1248,182 @@ daily_report_service = DailyReportService()
 job_completion_service = JobCompletionService()
 dispute_service = DisputeService()
 review_service = ReviewService()
+
+
+class ReimbursementService:
+    """Business logic for job reimbursements."""
+
+    @transaction.atomic
+    def submit_reimbursement(
+        self, handyman, job, name, category, amount, attachments, notes=""
+    ):
+        """Submit a new reimbursement request."""
+        from apps.jobs.models import JobReimbursement, JobReimbursementAttachment
+
+        # Validate handyman is assigned to job
+        if job.assigned_handyman != handyman:
+            raise ValidationError("You are not assigned to this job.")
+
+        # Validate job is in progress or pending completion
+        if job.status not in ("in_progress", "pending_completion"):
+            raise ValidationError("Job is not active for reimbursement requests.")
+
+        # Create reimbursement
+        reimbursement = JobReimbursement.objects.create(
+            job=job,
+            handyman=handyman,
+            name=name,
+            category=category,
+            amount=amount,
+            notes=notes,
+        )
+
+        # Create attachments
+        for attachment_file in attachments:
+            JobReimbursementAttachment.objects.create(
+                reimbursement=reimbursement,
+                file=attachment_file,
+                file_name=attachment_file.name,
+            )
+
+        # Send notification to homeowner
+        notification_service.create_and_send_notification(
+            user=job.homeowner,
+            notification_type="reimbursement_submitted",
+            title=f"Reimbursement request for {job.title}",
+            body=f"{handyman.handyman_profile.display_name} submitted a reimbursement request of ${amount}.",
+            target_role="homeowner",
+            data={
+                "job_id": str(job.public_id),
+                "reimbursement_id": str(reimbursement.public_id),
+            },
+            triggered_by=handyman,
+        )
+
+        logger.info(
+            "Reimbursement %s submitted for job %s",
+            reimbursement.public_id,
+            job.public_id,
+        )
+        return reimbursement
+
+    @transaction.atomic
+    def review_reimbursement(self, homeowner, reimbursement, decision, comment=""):
+        """Approve or reject a reimbursement request."""
+        job = reimbursement.job
+
+        # Validate homeowner owns the job
+        if job.homeowner != homeowner:
+            raise ValidationError(
+                "You can only review reimbursements for your own jobs."
+            )
+
+        # Validate reimbursement is pending
+        if reimbursement.status != "pending":
+            raise ValidationError("Only pending reimbursements can be reviewed.")
+
+        # Validate decision
+        if decision not in ("approved", "rejected"):
+            raise ValidationError("Invalid decision.")
+
+        # Update reimbursement
+        reimbursement.status = decision
+        reimbursement.homeowner_comment = comment
+        reimbursement.reviewed_by = homeowner
+        reimbursement.reviewed_at = timezone.now()
+        reimbursement.save(
+            update_fields=[
+                "status",
+                "homeowner_comment",
+                "reviewed_by",
+                "reviewed_at",
+                "updated_at",
+            ]
+        )
+
+        # Send notification to handyman
+        notification_type = (
+            "reimbursement_approved"
+            if decision == "approved"
+            else "reimbursement_rejected"
+        )
+        notification_service.create_and_send_notification(
+            user=reimbursement.handyman,
+            notification_type=notification_type,
+            title=f"Reimbursement {decision}",
+            body=f"Your reimbursement request for {job.title} was {decision}.",
+            target_role="handyman",
+            data={
+                "job_id": str(job.public_id),
+                "reimbursement_id": str(reimbursement.public_id),
+            },
+            triggered_by=homeowner,
+        )
+
+        logger.info(
+            "Reimbursement %s reviewed as %s", reimbursement.public_id, decision
+        )
+        return reimbursement
+
+    @transaction.atomic
+    def update_reimbursement(
+        self,
+        handyman,
+        reimbursement,
+        name=None,
+        category=None,
+        amount=None,
+        notes=None,
+        attachments=None,
+        attachments_to_remove=None,
+    ):
+        """Update a pending reimbursement request."""
+        from apps.jobs.models import JobReimbursementAttachment
+
+        # Validate handyman owns the reimbursement
+        if reimbursement.handyman != handyman:
+            raise ValidationError("You can only edit your own reimbursements.")
+
+        # Validate reimbursement is pending
+        if reimbursement.status != "pending":
+            raise ValidationError("Only pending reimbursements can be edited.")
+
+        # Update fields if provided
+        if name is not None:
+            reimbursement.name = name
+        if category is not None:
+            reimbursement.category = category
+        if amount is not None:
+            reimbursement.amount = amount
+        if notes is not None:
+            reimbursement.notes = notes
+
+        reimbursement.save(
+            update_fields=["name", "category", "amount", "notes", "updated_at"]
+        )
+
+        # Remove attachments if specified
+        if attachments_to_remove:
+            JobReimbursementAttachment.objects.filter(
+                reimbursement=reimbursement,
+                public_id__in=attachments_to_remove,
+            ).delete()
+
+        # Add new attachments
+        if attachments:
+            for attachment_file in attachments:
+                JobReimbursementAttachment.objects.create(
+                    reimbursement=reimbursement,
+                    file=attachment_file,
+                    file_name=attachment_file.name,
+                )
+
+        # Ensure at least one attachment remains
+        if reimbursement.attachments.count() == 0:
+            raise ValidationError("At least one attachment is required.")
+
+        logger.info("Reimbursement %s updated", reimbursement.public_id)
+        return reimbursement
+
+
+reimbursement_service = ReimbursementService()

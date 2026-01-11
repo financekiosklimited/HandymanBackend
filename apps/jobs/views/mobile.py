@@ -5451,3 +5451,629 @@ class HandymanReceivedReviewsView(APIView):
             message="Reviews retrieved successfully",
             meta=meta,
         )
+
+
+# ========================
+# Reimbursement Views
+# ========================
+
+
+class HandymanReimbursementListCreateView(APIView):
+    """List and create reimbursements for a job (handyman)."""
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        PhoneVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_reimbursements_list",
+        responses={
+            200: "JobReimbursementListResponseSerializer",
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "List all reimbursements submitted by the handyman for a specific job. "
+            "Requires handyman role and phone verification. "
+            "Only shows reimbursements for jobs assigned to the handyman."
+        ),
+        summary="List my reimbursements for a job",
+        tags=["Mobile Handyman Reimbursements"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Reimbursements retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "name": "Plumbing materials",
+                            "category": "materials",
+                            "amount": "150.00",
+                            "notes": "Required for repair",
+                            "status": "pending",
+                            "homeowner_comment": "",
+                            "reviewed_at": None,
+                            "attachments": [
+                                {
+                                    "public_id": "456e4567-e89b-12d3-a456-426614174001",
+                                    "file": "https://cdn.example.com/...",
+                                    "file_name": "receipt.jpg",
+                                    "created_at": "2024-01-15T10:30:00Z",
+                                }
+                            ],
+                            "created_at": "2024-01-15T10:30:00Z",
+                            "updated_at": "2024-01-15T10:30:00Z",
+                        }
+                    ],
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def get(self, request, public_id):
+        """List all reimbursements for a job."""
+        job = get_object_or_404(
+            Job, public_id=public_id, assigned_handyman=request.user
+        )
+        reimbursements = job.reimbursements.prefetch_related("attachments").all()
+
+        from apps.jobs.serializers import JobReimbursementSerializer
+
+        serializer = JobReimbursementSerializer(reimbursements, many=True)
+        return success_response(
+            serializer.data, message="Reimbursements retrieved successfully"
+        )
+
+    @extend_schema(
+        operation_id="mobile_handyman_reimbursements_create",
+        request={
+            "multipart/form-data": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "category": {"type": "string"},
+                    "amount": {"type": "string"},
+                    "notes": {"type": "string"},
+                    "attachments": {
+                        "type": "array",
+                        "items": {"type": "string", "format": "binary"},
+                    },
+                },
+                "required": ["name", "category", "amount", "attachments"],
+            }
+        },
+        responses={
+            201: "JobReimbursementDetailResponseSerializer",
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Submit a new reimbursement request for a job. "
+            "Requires handyman role and phone verification. "
+            "Job must be in 'in_progress' or 'pending_completion' status. "
+            "At least one attachment (receipt/proof) is required."
+        ),
+        summary="Submit reimbursement request",
+        tags=["Mobile Handyman Reimbursements"],
+        examples=[
+            OpenApiExample(
+                "Create Reimbursement Request",
+                value={
+                    "name": "Plumbing materials",
+                    "category": "materials",
+                    "amount": "150.00",
+                    "notes": "Required for repair",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Reimbursement submitted successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "name": "Plumbing materials",
+                        "category": "materials",
+                        "amount": "150.00",
+                        "notes": "Required for repair",
+                        "status": "pending",
+                        "homeowner_comment": "",
+                        "reviewed_at": None,
+                        "attachments": [],
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-15T10:30:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["201"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id):
+        """Submit a new reimbursement."""
+        from django.core.exceptions import ValidationError
+
+        from apps.jobs.serializers import (
+            JobReimbursementCreateSerializer,
+            JobReimbursementSerializer,
+        )
+        from apps.jobs.services import reimbursement_service
+
+        job = get_object_or_404(Job, public_id=public_id)
+        serializer = JobReimbursementCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            reimbursement = reimbursement_service.submit_reimbursement(
+                handyman=request.user,
+                job=job,
+                **serializer.validated_data,
+            )
+            return created_response(
+                JobReimbursementSerializer(reimbursement).data,
+                message="Reimbursement submitted successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HandymanReimbursementDetailView(APIView):
+    """View reimbursement detail (handyman)."""
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        PhoneVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_reimbursement_detail",
+        responses={
+            200: "JobReimbursementDetailResponseSerializer",
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Get details of a specific reimbursement. "
+            "Requires handyman role and phone verification. "
+            "Only accessible for jobs assigned to the handyman."
+        ),
+        summary="Get reimbursement detail",
+        tags=["Mobile Handyman Reimbursements"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Reimbursement retrieved successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "name": "Plumbing materials",
+                        "category": "materials",
+                        "amount": "150.00",
+                        "notes": "Required for repair",
+                        "status": "pending",
+                        "homeowner_comment": "",
+                        "reviewed_at": None,
+                        "attachments": [],
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-15T10:30:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def get(self, request, public_id, reimbursement_id):
+        """Get reimbursement detail."""
+        from apps.jobs.models import JobReimbursement
+        from apps.jobs.serializers import JobReimbursementSerializer
+
+        job = get_object_or_404(
+            Job, public_id=public_id, assigned_handyman=request.user
+        )
+        reimbursement = get_object_or_404(
+            JobReimbursement.objects.prefetch_related("attachments"),
+            public_id=reimbursement_id,
+            job=job,
+        )
+
+        serializer = JobReimbursementSerializer(reimbursement)
+        return success_response(
+            serializer.data, message="Reimbursement retrieved successfully"
+        )
+
+
+class HandymanReimbursementEditView(APIView):
+    """Edit a pending reimbursement (handyman)."""
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        PhoneVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_reimbursement_edit",
+        request={
+            "multipart/form-data": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "category": {"type": "string"},
+                    "amount": {"type": "string"},
+                    "notes": {"type": "string"},
+                    "attachments": {
+                        "type": "array",
+                        "items": {"type": "string", "format": "binary"},
+                    },
+                    "attachments_to_remove": {
+                        "type": "array",
+                        "items": {"type": "string", "format": "uuid"},
+                    },
+                },
+            }
+        },
+        responses={
+            200: "JobReimbursementDetailResponseSerializer",
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Edit a pending reimbursement request. "
+            "Requires handyman role and phone verification. "
+            "Only pending reimbursements can be edited. "
+            "At least one attachment must remain after edit."
+        ),
+        summary="Edit reimbursement",
+        tags=["Mobile Handyman Reimbursements"],
+        examples=[
+            OpenApiExample(
+                "Update Reimbursement",
+                value={
+                    "name": "Updated materials",
+                    "amount": "75.00",
+                    "notes": "Updated notes",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Reimbursement updated successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "name": "Updated materials",
+                        "category": "materials",
+                        "amount": "75.00",
+                        "notes": "Updated notes",
+                        "status": "pending",
+                        "homeowner_comment": "",
+                        "reviewed_at": None,
+                        "attachments": [],
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-16T10:30:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def put(self, request, public_id, reimbursement_id):
+        """Edit a pending reimbursement."""
+        from django.core.exceptions import ValidationError
+
+        from apps.jobs.models import JobReimbursement
+        from apps.jobs.serializers import (
+            JobReimbursementSerializer,
+            JobReimbursementUpdateSerializer,
+        )
+        from apps.jobs.services import reimbursement_service
+
+        job = get_object_or_404(
+            Job, public_id=public_id, assigned_handyman=request.user
+        )
+        reimbursement = get_object_or_404(
+            JobReimbursement, public_id=reimbursement_id, job=job
+        )
+
+        serializer = JobReimbursementUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            reimbursement = reimbursement_service.update_reimbursement(
+                handyman=request.user,
+                reimbursement=reimbursement,
+                **serializer.validated_data,
+            )
+            return success_response(
+                JobReimbursementSerializer(reimbursement).data,
+                message="Reimbursement updated successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HomeownerReimbursementListView(APIView):
+    """List reimbursements for a job (homeowner)."""
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        PhoneVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_homeowner_reimbursements_list",
+        responses={
+            200: "JobReimbursementListResponseSerializer",
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "List all reimbursements submitted for a homeowner's job. "
+            "Requires homeowner role and phone verification."
+        ),
+        summary="List reimbursements for my job",
+        tags=["Mobile Homeowner Reimbursements"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Reimbursements retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "name": "Plumbing materials",
+                            "category": "materials",
+                            "amount": "150.00",
+                            "notes": "Required for repair",
+                            "status": "pending",
+                            "homeowner_comment": "",
+                            "reviewed_at": None,
+                            "attachments": [],
+                            "created_at": "2024-01-15T10:30:00Z",
+                            "updated_at": "2024-01-15T10:30:00Z",
+                        }
+                    ],
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def get(self, request, public_id):
+        """List all reimbursements for homeowner's job."""
+        job = get_object_or_404(Job, public_id=public_id, homeowner=request.user)
+        reimbursements = job.reimbursements.prefetch_related("attachments").all()
+
+        from apps.jobs.serializers import JobReimbursementSerializer
+
+        serializer = JobReimbursementSerializer(reimbursements, many=True)
+        return success_response(
+            serializer.data, message="Reimbursements retrieved successfully"
+        )
+
+
+class HomeownerReimbursementDetailView(APIView):
+    """View reimbursement detail (homeowner)."""
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        PhoneVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_homeowner_reimbursement_detail",
+        responses={
+            200: "JobReimbursementDetailResponseSerializer",
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Get details of a specific reimbursement for homeowner's job. "
+            "Requires homeowner role and phone verification."
+        ),
+        summary="Get reimbursement detail",
+        tags=["Mobile Homeowner Reimbursements"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Reimbursement retrieved successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "name": "Plumbing materials",
+                        "category": "materials",
+                        "amount": "150.00",
+                        "notes": "Required for repair",
+                        "status": "pending",
+                        "homeowner_comment": "",
+                        "reviewed_at": None,
+                        "attachments": [],
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-15T10:30:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def get(self, request, public_id, reimbursement_id):
+        """Get reimbursement detail."""
+        from apps.jobs.models import JobReimbursement
+        from apps.jobs.serializers import JobReimbursementSerializer
+
+        job = get_object_or_404(Job, public_id=public_id, homeowner=request.user)
+        reimbursement = get_object_or_404(
+            JobReimbursement.objects.prefetch_related("attachments"),
+            public_id=reimbursement_id,
+            job=job,
+        )
+
+        serializer = JobReimbursementSerializer(reimbursement)
+        return success_response(
+            serializer.data, message="Reimbursement retrieved successfully"
+        )
+
+
+class HomeownerReimbursementReviewView(APIView):
+    """Approve or reject a reimbursement (homeowner)."""
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        PhoneVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_homeowner_reimbursement_review",
+        request="JobReimbursementReviewSerializer",
+        responses={
+            200: "JobReimbursementDetailResponseSerializer",
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Approve or reject a reimbursement request. "
+            "Requires homeowner role and phone verification. "
+            "Only pending reimbursements can be reviewed."
+        ),
+        summary="Review reimbursement",
+        tags=["Mobile Homeowner Reimbursements"],
+        examples=[
+            OpenApiExample(
+                "Approve Reimbursement",
+                value={
+                    "decision": "approved",
+                    "comment": "Approved, looks good.",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Reject Reimbursement",
+                value={
+                    "decision": "rejected",
+                    "comment": "Receipt not clear enough.",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Reimbursement approved successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "name": "Plumbing materials",
+                        "category": "materials",
+                        "amount": "150.00",
+                        "notes": "Required for repair",
+                        "status": "approved",
+                        "homeowner_comment": "Approved, looks good.",
+                        "reviewed_at": "2024-01-16T10:30:00Z",
+                        "attachments": [],
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-16T10:30:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id, reimbursement_id):
+        """Review (approve/reject) a reimbursement."""
+        from django.core.exceptions import ValidationError
+
+        from apps.jobs.models import JobReimbursement
+        from apps.jobs.serializers import (
+            JobReimbursementReviewSerializer,
+            JobReimbursementSerializer,
+        )
+        from apps.jobs.services import reimbursement_service
+
+        job = get_object_or_404(Job, public_id=public_id, homeowner=request.user)
+        reimbursement = get_object_or_404(
+            JobReimbursement, public_id=reimbursement_id, job=job
+        )
+
+        serializer = JobReimbursementReviewSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            reimbursement = reimbursement_service.review_reimbursement(
+                homeowner=request.user,
+                reimbursement=reimbursement,
+                decision=serializer.validated_data["decision"],
+                comment=serializer.validated_data.get("comment", ""),
+            )
+            return success_response(
+                JobReimbursementSerializer(reimbursement).data,
+                message=f"Reimbursement {serializer.validated_data['decision']} successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})

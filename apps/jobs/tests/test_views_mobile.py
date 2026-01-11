@@ -7892,3 +7892,685 @@ class HomeownerJobDashboardJobInfoSerializerTests(APITestCase):
         data = serializer.data
 
         self.assertIsNone(data["handyman"])
+
+
+# ========================
+# Reimbursement Views Tests
+# ========================
+
+
+class HandymanReimbursementListCreateViewTests(APITestCase):
+    """Test cases for handyman reimbursement list/create."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        self.owner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner, display_name="Owner"
+        )
+        self.handy_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handy",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Leaky faucet in kitchen",
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            estimated_budget=100,
+        )
+
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reimbursements/"
+
+    def test_list_reimbursements_success(self):
+        """Test listing reimbursements for assigned job."""
+        from apps.jobs.models import JobReimbursement
+
+        JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["name"], "Materials")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_reimbursement_success(self, mock_notify):
+        """Test creating reimbursement with valid data."""
+        self.client.force_authenticate(user=self.handyman)
+
+        image = create_test_image()
+        data = {
+            "name": "Plumbing materials",
+            "category": "materials",
+            "amount": "50.00",
+            "notes": "Required for repair",
+            "attachments": [image],
+        }
+
+        response = self.client.post(self.url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["data"]["name"], "Plumbing materials")
+        self.assertEqual(response.data["data"]["status"], "pending")
+        mock_notify.assert_called_once()
+
+    def test_create_reimbursement_requires_attachment(self):
+        """Test creating reimbursement without attachment fails."""
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {
+            "name": "Plumbing materials",
+            "category": "materials",
+            "amount": "50.00",
+        }
+
+        response = self.client.post(self.url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_reimbursement_not_assigned(self):
+        """Test handyman not assigned to job cannot submit."""
+        from datetime import UTC, datetime
+
+        other_handyman = User.objects.create_user(
+            email="other@example.com", password="password123"
+        )
+        UserRole.objects.create(user=other_handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=other_handyman,
+            display_name="Other",
+            phone_verified_at=datetime.now(UTC),
+        )
+        other_handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.client.force_authenticate(user=other_handyman)
+
+        image = create_test_image()
+        data = {
+            "name": "Materials",
+            "category": "materials",
+            "amount": "50.00",
+            "attachments": [image],
+        }
+
+        response = self.client.post(self.url, data, format="multipart")
+
+        # Returns 400 because service validates handyman is not assigned
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_reimbursement_job_not_in_progress(self):
+        """Test cannot submit for completed/cancelled job."""
+        self.job.status = "completed"
+        self.job.save()
+
+        self.client.force_authenticate(user=self.handyman)
+
+        image = create_test_image()
+        data = {
+            "name": "Materials",
+            "category": "materials",
+            "amount": "50.00",
+            "attachments": [image],
+        }
+
+        response = self.client.post(self.url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class HandymanReimbursementDetailViewTests(APITestCase):
+    """Test cases for handyman reimbursement detail."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        from apps.jobs.models import JobReimbursement
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        HomeownerProfile.objects.create(user=self.homeowner, display_name="Owner")
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handy",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Leaky faucet in kitchen",
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            estimated_budget=100,
+        )
+
+        self.reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+        )
+
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reimbursements/{self.reimbursement.public_id}/"
+
+    def test_get_reimbursement_detail_success(self):
+        """Test getting reimbursement detail."""
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["name"], "Materials")
+        self.assertEqual(response.data["data"]["amount"], "50.00")
+
+
+class HandymanReimbursementEditViewTests(APITestCase):
+    """Test cases for handyman reimbursement edit."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        from apps.jobs.models import JobReimbursement, JobReimbursementAttachment
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        HomeownerProfile.objects.create(user=self.homeowner, display_name="Owner")
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handy",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Leaky faucet in kitchen",
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            estimated_budget=100,
+        )
+
+        self.reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+        )
+        # Add required attachment
+        JobReimbursementAttachment.objects.create(
+            reimbursement=self.reimbursement,
+            file=create_test_image(),
+            file_name="receipt.jpg",
+        )
+
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reimbursements/{self.reimbursement.public_id}/edit/"
+
+    def test_edit_reimbursement_success(self):
+        """Test editing a pending reimbursement."""
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {
+            "name": "Updated Materials",
+            "amount": "75.00",
+            "notes": "Updated notes",
+        }
+        response = self.client.put(self.url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["name"], "Updated Materials")
+        self.assertEqual(response.data["data"]["amount"], "75.00")
+        self.assertEqual(response.data["data"]["notes"], "Updated notes")
+
+    def test_edit_reimbursement_not_pending(self):
+        """Test cannot edit non-pending reimbursement."""
+        self.reimbursement.status = "approved"
+        self.reimbursement.save()
+
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"name": "Updated"}
+        response = self.client.put(self.url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_edit_reimbursement_add_attachment(self):
+        """Test adding attachment to reimbursement."""
+        self.client.force_authenticate(user=self.handyman)
+
+        new_image = create_test_image()
+        data = {"attachments": [new_image]}
+        response = self.client.put(self.url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]["attachments"]), 2)
+
+    def test_edit_reimbursement_invalid_amount(self):
+        """Test invalid amount validation."""
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {"amount": "-10.00"}
+        response = self.client.put(self.url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class HomeownerReimbursementListViewTests(APITestCase):
+    """Test cases for homeowner viewing reimbursements."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        from apps.jobs.models import JobReimbursement
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Owner",
+            phone_verified_at=datetime.now(UTC),
+        )
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handy",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Leaky faucet in kitchen",
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            estimated_budget=100,
+        )
+
+        self.reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+        )
+
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/reimbursements/"
+
+    def test_list_reimbursements_success(self):
+        """Test listing reimbursements for homeowner's job."""
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["name"], "Materials")
+
+
+class HomeownerReimbursementDetailViewTests(APITestCase):
+    """Test cases for homeowner reimbursement detail."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        from apps.jobs.models import JobReimbursement
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Owner",
+            phone_verified_at=datetime.now(UTC),
+        )
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handy",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Leaky faucet in kitchen",
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            estimated_budget=100,
+        )
+
+        self.reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+        )
+
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/reimbursements/{self.reimbursement.public_id}/"
+
+    def test_get_reimbursement_detail_success(self):
+        """Test getting reimbursement detail."""
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["name"], "Materials")
+        self.assertEqual(response.data["data"]["amount"], "50.00")
+
+
+class HomeownerReimbursementReviewViewTests(APITestCase):
+    """Test cases for homeowner approve/reject reimbursement."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        from apps.jobs.models import JobReimbursement
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        UserRole.objects.create(user=self.handyman, role="handyman")
+
+        HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Owner",
+            phone_verified_at=datetime.now(UTC),
+        )
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handy",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Leaky faucet in kitchen",
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            estimated_budget=100,
+        )
+
+        self.reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("50.00"),
+        )
+
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.url = f"/api/v1/mobile/homeowner/jobs/{self.job.public_id}/reimbursements/{self.reimbursement.public_id}/review/"
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_approve_reimbursement_success(self, mock_notify):
+        """Test approving a pending reimbursement."""
+        self.client.force_authenticate(user=self.homeowner)
+
+        data = {"decision": "approved", "comment": "Looks good"}
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["status"], "approved")
+        self.assertEqual(response.data["data"]["homeowner_comment"], "Looks good")
+        mock_notify.assert_called_once()
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_reject_reimbursement_success(self, mock_notify):
+        """Test rejecting a pending reimbursement."""
+        self.client.force_authenticate(user=self.homeowner)
+
+        data = {"decision": "rejected", "comment": "Receipt not clear"}
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["status"], "rejected")
+        mock_notify.assert_called_once()
+
+    def test_review_already_reviewed(self):
+        """Test cannot review already reviewed reimbursement."""
+        self.reimbursement.status = "approved"
+        self.reimbursement.save()
+
+        self.client.force_authenticate(user=self.homeowner)
+
+        data = {"decision": "rejected"}
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_review_not_job_owner(self):
+        """Test non-owner cannot review."""
+        from datetime import UTC, datetime
+
+        other_homeowner = User.objects.create_user(
+            email="other@example.com", password="password123"
+        )
+        UserRole.objects.create(user=other_homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=other_homeowner,
+            display_name="Other",
+            phone_verified_at=datetime.now(UTC),
+        )
+        other_homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.client.force_authenticate(user=other_homeowner)
+
+        data = {"decision": "approved"}
+        response = self.client.post(self.url, data, format="json")
+
+        # Should return 404 because other homeowner is not the job owner
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_review_invalid_decision(self):
+        """Test invalid decision fails validation."""
+        self.client.force_authenticate(user=self.homeowner)
+
+        data = {"decision": "pending"}  # Invalid decision
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

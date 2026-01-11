@@ -2816,3 +2816,263 @@ class HandymanForYouJobSerializerTests(TestCase):
 
         self.assertIsNone(data["homeowner_rating"])
         self.assertEqual(data["homeowner_review_count"], 0)
+
+
+# ========================
+# Reimbursement Serializer Tests
+# ========================
+
+
+class JobReimbursementSerializerTests(TestCase):
+    """Test cases for JobReimbursementSerializer."""
+
+    def setUp(self):
+        """Set up test data."""
+        from apps.jobs.models import JobReimbursement
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Kitchen faucet is leaking",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+        )
+        self.reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Plumbing materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            notes="Required for repair",
+        )
+
+    def test_serializer_fields(self):
+        """Test serializer returns expected fields."""
+        from apps.jobs.serializers import JobReimbursementSerializer
+
+        serializer = JobReimbursementSerializer(self.reimbursement)
+        data = serializer.data
+
+        self.assertIn("public_id", data)
+        self.assertIn("name", data)
+        self.assertIn("category", data)
+        self.assertIn("amount", data)
+        self.assertIn("notes", data)
+        self.assertIn("status", data)
+        self.assertIn("homeowner_comment", data)
+        self.assertIn("reviewed_at", data)
+        self.assertIn("attachments", data)
+        self.assertIn("created_at", data)
+        self.assertIn("updated_at", data)
+
+    def test_serializer_values(self):
+        """Test serializer returns correct values."""
+        from apps.jobs.serializers import JobReimbursementSerializer
+
+        serializer = JobReimbursementSerializer(self.reimbursement)
+        data = serializer.data
+
+        self.assertEqual(data["name"], "Plumbing materials")
+        self.assertEqual(data["category"], "materials")
+        self.assertEqual(data["amount"], "50.00")
+        self.assertEqual(data["notes"], "Required for repair")
+        self.assertEqual(data["status"], "pending")
+
+
+class JobReimbursementCreateSerializerTests(TestCase):
+    """Test cases for JobReimbursementCreateSerializer."""
+
+    def test_valid_data(self):
+        """Test serializer with valid data."""
+        from apps.jobs.serializers import JobReimbursementCreateSerializer
+
+        image = SimpleUploadedFile(
+            "receipt.jpg", b"file content", content_type="image/jpeg"
+        )
+        data = {
+            "name": "Plumbing materials",
+            "category": "materials",
+            "amount": "50.00",
+            "notes": "Required for repair",
+            "attachments": [image],
+        }
+        serializer = JobReimbursementCreateSerializer(data=data)
+        self.assertTrue(serializer.is_valid())
+
+    def test_amount_must_be_positive(self):
+        """Test amount validation."""
+        from apps.jobs.serializers import JobReimbursementCreateSerializer
+
+        image = SimpleUploadedFile(
+            "receipt.jpg", b"file content", content_type="image/jpeg"
+        )
+        data = {
+            "name": "Materials",
+            "category": "materials",
+            "amount": "0",
+            "attachments": [image],
+        }
+        serializer = JobReimbursementCreateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("amount", serializer.errors)
+
+    def test_negative_amount_fails(self):
+        """Test negative amount validation."""
+        from apps.jobs.serializers import JobReimbursementCreateSerializer
+
+        image = SimpleUploadedFile(
+            "receipt.jpg", b"file content", content_type="image/jpeg"
+        )
+        data = {
+            "name": "Materials",
+            "category": "materials",
+            "amount": "-10.00",
+            "attachments": [image],
+        }
+        serializer = JobReimbursementCreateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+
+    def test_attachments_required(self):
+        """Test attachments are required."""
+        from apps.jobs.serializers import JobReimbursementCreateSerializer
+
+        data = {
+            "name": "Materials",
+            "category": "materials",
+            "amount": "50.00",
+        }
+        serializer = JobReimbursementCreateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("attachments", serializer.errors)
+
+    def test_invalid_category(self):
+        """Test invalid category fails."""
+        from apps.jobs.serializers import JobReimbursementCreateSerializer
+
+        image = SimpleUploadedFile(
+            "receipt.jpg", b"file content", content_type="image/jpeg"
+        )
+        data = {
+            "name": "Materials",
+            "category": "invalid_category",
+            "amount": "50.00",
+            "attachments": [image],
+        }
+        serializer = JobReimbursementCreateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("category", serializer.errors)
+
+
+class JobReimbursementReviewSerializerTests(TestCase):
+    """Test cases for JobReimbursementReviewSerializer."""
+
+    def test_valid_approve(self):
+        """Test valid approve decision."""
+        from apps.jobs.serializers import JobReimbursementReviewSerializer
+
+        data = {"decision": "approved", "comment": "Looks good"}
+        serializer = JobReimbursementReviewSerializer(data=data)
+        self.assertTrue(serializer.is_valid())
+        self.assertEqual(serializer.validated_data["decision"], "approved")
+
+    def test_valid_reject(self):
+        """Test valid reject decision."""
+        from apps.jobs.serializers import JobReimbursementReviewSerializer
+
+        data = {"decision": "rejected", "comment": "Receipt not clear"}
+        serializer = JobReimbursementReviewSerializer(data=data)
+        self.assertTrue(serializer.is_valid())
+        self.assertEqual(serializer.validated_data["decision"], "rejected")
+
+    def test_invalid_decision(self):
+        """Test invalid decision fails."""
+        from apps.jobs.serializers import JobReimbursementReviewSerializer
+
+        data = {"decision": "pending"}
+        serializer = JobReimbursementReviewSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("decision", serializer.errors)
+
+    def test_comment_optional(self):
+        """Test comment is optional."""
+        from apps.jobs.serializers import JobReimbursementReviewSerializer
+
+        data = {"decision": "approved"}
+        serializer = JobReimbursementReviewSerializer(data=data)
+        self.assertTrue(serializer.is_valid())
+
+
+class JobReimbursementUpdateSerializerTests(TestCase):
+    """Test cases for JobReimbursementUpdateSerializer."""
+
+    def test_valid_partial_update(self):
+        """Test valid partial update."""
+        from apps.jobs.serializers import JobReimbursementUpdateSerializer
+
+        data = {"name": "Updated Name", "amount": "75.00"}
+        serializer = JobReimbursementUpdateSerializer(data=data)
+        self.assertTrue(serializer.is_valid())
+        self.assertEqual(serializer.validated_data["name"], "Updated Name")
+
+    def test_all_fields_optional(self):
+        """Test all fields are optional."""
+        from apps.jobs.serializers import JobReimbursementUpdateSerializer
+
+        data = {}
+        serializer = JobReimbursementUpdateSerializer(data=data)
+        self.assertTrue(serializer.is_valid())
+
+    def test_amount_must_be_positive(self):
+        """Test amount validation."""
+        from apps.jobs.serializers import JobReimbursementUpdateSerializer
+
+        data = {"amount": "0"}
+        serializer = JobReimbursementUpdateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("amount", serializer.errors)
+
+    def test_negative_amount_fails(self):
+        """Test negative amount validation."""
+        from apps.jobs.serializers import JobReimbursementUpdateSerializer
+
+        data = {"amount": "-10.00"}
+        serializer = JobReimbursementUpdateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+
+    def test_invalid_category(self):
+        """Test invalid category fails."""
+        from apps.jobs.serializers import JobReimbursementUpdateSerializer
+
+        data = {"category": "invalid_category"}
+        serializer = JobReimbursementUpdateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("category", serializer.errors)
+
+    def test_valid_category(self):
+        """Test valid category."""
+        from apps.jobs.serializers import JobReimbursementUpdateSerializer
+
+        data = {"category": "tools"}
+        serializer = JobReimbursementUpdateSerializer(data=data)
+        self.assertTrue(serializer.is_valid())
+        self.assertEqual(serializer.validated_data["category"], "tools")

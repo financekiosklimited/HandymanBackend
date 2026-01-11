@@ -1185,3 +1185,202 @@ class ReviewModelTests(TestCase):
         reviews = list(Review.objects.all())
         self.assertEqual(reviews[0].id, review2.id)  # Most recent first
         self.assertEqual(reviews[1].id, review1.id)
+
+
+class JobReimbursementModelTests(TestCase):
+    """Test cases for JobReimbursement model."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Kitchen faucet is leaking",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+        )
+
+    def test_create_reimbursement_success(self):
+        """Test creating a reimbursement."""
+        from apps.jobs.models import JobReimbursement
+
+        reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Plumbing materials",
+            category="materials",
+            amount=Decimal("50.00"),
+            notes="Required for repair",
+        )
+        self.assertEqual(reimbursement.name, "Plumbing materials")
+        self.assertEqual(reimbursement.category, "materials")
+        self.assertEqual(reimbursement.amount, Decimal("50.00"))
+        self.assertEqual(reimbursement.status, "pending")
+        self.assertIsNotNone(reimbursement.public_id)
+
+    def test_reimbursement_string_representation(self):
+        """Test reimbursement string representation."""
+        from apps.jobs.models import JobReimbursement
+
+        reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Pipe fittings",
+            category="materials",
+            amount=Decimal("25.00"),
+        )
+        self.assertEqual(str(reimbursement), "Pipe fittings - 25.00 (pending)")
+
+    def test_reimbursement_ordering(self):
+        """Test reimbursements are ordered by created_at descending."""
+        from apps.jobs.models import JobReimbursement
+
+        r1 = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Item 1",
+            category="materials",
+            amount=Decimal("10.00"),
+        )
+        r2 = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Item 2",
+            category="tools",
+            amount=Decimal("20.00"),
+        )
+        reimbursements = list(JobReimbursement.objects.all())
+        self.assertEqual(reimbursements[0].id, r2.id)  # Most recent first
+        self.assertEqual(reimbursements[1].id, r1.id)
+
+    def test_reimbursement_cascade_delete_with_job(self):
+        """Test that reimbursement is deleted when job is deleted."""
+        from apps.jobs.models import JobReimbursement
+
+        reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Materials",
+            category="materials",
+            amount=Decimal("30.00"),
+        )
+        reimbursement_id = reimbursement.id
+        self.job.delete()
+        self.assertFalse(JobReimbursement.objects.filter(id=reimbursement_id).exists())
+
+
+class JobReimbursementAttachmentModelTests(TestCase):
+    """Test cases for JobReimbursementAttachment model."""
+
+    def setUp(self):
+        """Set up test data."""
+        from apps.jobs.models import JobReimbursement
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Kitchen faucet is leaking",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+        )
+        self.reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            name="Plumbing materials",
+            category="materials",
+            amount=Decimal("50.00"),
+        )
+
+    def test_create_attachment_success(self):
+        """Test creating a reimbursement attachment."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.jobs.models import JobReimbursementAttachment
+
+        test_file = SimpleUploadedFile(
+            "receipt.jpg", b"file content", content_type="image/jpeg"
+        )
+        attachment = JobReimbursementAttachment.objects.create(
+            reimbursement=self.reimbursement,
+            file=test_file,
+            file_name="receipt.jpg",
+        )
+        self.assertEqual(attachment.file_name, "receipt.jpg")
+        self.assertEqual(attachment.reimbursement, self.reimbursement)
+        self.assertIsNotNone(attachment.public_id)
+
+    def test_attachment_string_representation(self):
+        """Test attachment string representation."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.jobs.models import JobReimbursementAttachment
+
+        test_file = SimpleUploadedFile(
+            "receipt.jpg", b"file content", content_type="image/jpeg"
+        )
+        attachment = JobReimbursementAttachment.objects.create(
+            reimbursement=self.reimbursement,
+            file=test_file,
+            file_name="receipt.jpg",
+        )
+        self.assertIn("receipt.jpg", str(attachment))
+
+    def test_attachment_cascade_delete_with_reimbursement(self):
+        """Test that attachment is deleted when reimbursement is deleted."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.jobs.models import JobReimbursementAttachment
+
+        test_file = SimpleUploadedFile(
+            "receipt.jpg", b"file content", content_type="image/jpeg"
+        )
+        attachment = JobReimbursementAttachment.objects.create(
+            reimbursement=self.reimbursement,
+            file=test_file,
+            file_name="receipt.jpg",
+        )
+        attachment_id = attachment.id
+        self.reimbursement.delete()
+        self.assertFalse(
+            JobReimbursementAttachment.objects.filter(id=attachment_id).exists()
+        )

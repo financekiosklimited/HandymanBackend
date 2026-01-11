@@ -2358,3 +2358,116 @@ class HomeownerJobDashboardSerializer(serializers.Serializer):
 HomeownerJobDashboardResponseSerializer = create_response_serializer(
     HomeownerJobDashboardSerializer, "HomeownerJobDashboardResponse"
 )
+
+
+# ========================
+# Job Reimbursement Serializers
+# ========================
+
+
+class JobReimbursementAttachmentSerializer(serializers.ModelSerializer):
+    """Serializer for reimbursement attachment (read-only)."""
+
+    file = serializers.FileField(use_url=True)
+
+    class Meta:
+        from apps.jobs.models import JobReimbursementAttachment
+
+        model = JobReimbursementAttachment
+        fields = ["public_id", "file", "file_name", "created_at"]
+        read_only_fields = fields
+
+
+class JobReimbursementSerializer(serializers.ModelSerializer):
+    """Serializer for job reimbursement (read-only)."""
+
+    from apps.jobs.models import JobReimbursement
+
+    attachments = JobReimbursementAttachmentSerializer(many=True, read_only=True)
+
+    class Meta:
+        from apps.jobs.models import JobReimbursement
+
+        model = JobReimbursement
+        fields = [
+            "public_id",
+            "name",
+            "category",
+            "amount",
+            "notes",
+            "status",
+            "homeowner_comment",
+            "reviewed_at",
+            "attachments",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class JobReimbursementCreateSerializer(serializers.Serializer):
+    """Serializer for creating a reimbursement (handyman)."""
+
+    from apps.jobs.models import JobReimbursement
+
+    name = serializers.CharField(max_length=255)
+    category = serializers.ChoiceField(choices=JobReimbursement.CATEGORY_CHOICES)
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+    notes = serializers.CharField(required=False, allow_blank=True, default="")
+    attachments = serializers.ListField(
+        child=serializers.FileField(allow_empty_file=False),
+        min_length=1,
+        help_text="At least one attachment required",
+    )
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Amount must be greater than 0.")
+        return value
+
+
+class JobReimbursementUpdateSerializer(serializers.Serializer):
+    """Serializer for updating a reimbursement (handyman). All fields optional."""
+
+    from apps.jobs.models import JobReimbursement
+
+    name = serializers.CharField(max_length=255, required=False)
+    category = serializers.ChoiceField(
+        choices=JobReimbursement.CATEGORY_CHOICES, required=False
+    )
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    attachments = serializers.ListField(
+        child=serializers.FileField(allow_empty_file=False),
+        required=False,
+        help_text="New attachments to add (existing ones are preserved)",
+    )
+    attachments_to_remove = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        help_text="List of attachment public_ids to remove",
+    )
+
+    def validate_amount(self, value):
+        if value is not None and value <= 0:
+            raise serializers.ValidationError("Amount must be greater than 0.")
+        return value
+
+
+class JobReimbursementReviewSerializer(serializers.Serializer):
+    """Serializer for reviewing (approve/reject) a reimbursement (homeowner)."""
+
+    decision = serializers.ChoiceField(
+        choices=[("approved", "Approved"), ("rejected", "Rejected")],
+    )
+    comment = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+# Response serializers for reimbursement
+JobReimbursementListResponseSerializer = create_list_response_serializer(
+    JobReimbursementSerializer, "JobReimbursementListResponse"
+)
+
+JobReimbursementDetailResponseSerializer = create_response_serializer(
+    JobReimbursementSerializer, "JobReimbursementDetailResponse"
+)

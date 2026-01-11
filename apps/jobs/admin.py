@@ -20,6 +20,8 @@ from .models import (
     JobCategory,
     JobDispute,
     JobImage,
+    JobReimbursement,
+    JobReimbursementAttachment,
     JobTask,
     Review,
     WorkSession,
@@ -1547,6 +1549,168 @@ class JobApplicationAttachmentAdmin(ModelAdmin):
             '<a href="/admin/jobs/jobapplication/{}/change/">{}</a>',
             obj.application.pk,
             f"{obj.application.job.title[:30]}...",
+        )
+
+    @display(description="File")
+    def file_link(self, obj):
+        """Display file as clickable link."""
+        if obj.file:
+            return format_html('<a href="{}" target="_blank">View</a>', obj.file.url)
+        return "-"
+
+
+# =============================================================================
+# Reimbursement Admin
+# =============================================================================
+
+
+class JobReimbursementAttachmentInline(TabularInline):
+    """Inline for reimbursement attachments."""
+
+    model = JobReimbursementAttachment
+    extra = 0
+    fields = ("file", "file_name", "created_at")
+    readonly_fields = ("created_at",)
+    ordering = ("created_at",)
+
+
+@admin.register(JobReimbursement)
+class JobReimbursementAdmin(ModelAdmin):
+    """Admin interface for JobReimbursement model with Unfold styling."""
+
+    list_display = (
+        "job_link",
+        "handyman_link",
+        "name",
+        "category",
+        "amount_display",
+        "status_display",
+        "reviewed_at",
+        "created_at",
+    )
+    list_filter = ("status", "category", "created_at")
+    search_fields = ("job__title", "handyman__email", "name")
+    ordering = ("-created_at",)
+    autocomplete_fields = ("job", "handyman", "reviewed_by")
+    readonly_fields = ("public_id", "created_at", "updated_at", "reviewed_at")
+    inlines = [JobReimbursementAttachmentInline]
+    date_hierarchy = "created_at"
+    list_per_page = 25
+
+    fieldsets = (
+        (
+            "Reimbursement Information",
+            {
+                "fields": (
+                    "public_id",
+                    "job",
+                    "handyman",
+                    "name",
+                    "category",
+                    "amount",
+                    "notes",
+                )
+            },
+        ),
+        (
+            "Review",
+            {
+                "fields": (
+                    "status",
+                    "homeowner_comment",
+                    "reviewed_by",
+                    "reviewed_at",
+                )
+            },
+        ),
+        (
+            "Timestamps",
+            {"fields": ("created_at", "updated_at")},
+        ),
+    )
+
+    @display(description="Job")
+    def job_link(self, obj):
+        """Display job title as clickable link."""
+        return format_html(
+            '<a href="/admin/jobs/job/{}/change/">{}</a>',
+            obj.job.pk,
+            obj.job.title[:40] + "..." if len(obj.job.title) > 40 else obj.job.title,
+        )
+
+    @display(description="Handyman")
+    def handyman_link(self, obj):
+        """Display handyman email as clickable link."""
+        return format_html(
+            '<a href="/admin/accounts/user/{}/change/">{}</a>',
+            obj.handyman.pk,
+            obj.handyman.email,
+        )
+
+    @display(description="Amount")
+    def amount_display(self, obj):
+        """Display amount formatted."""
+        return f"${obj.amount}"
+
+    @display(description="Status")
+    def status_display(self, obj):
+        """Display status with color coding."""
+        status_colors = {
+            "pending": "🟡",
+            "approved": "✅",
+            "rejected": "🔴",
+        }
+        icon = status_colors.get(obj.status, "")
+        return f"{icon} {obj.get_status_display()}"
+
+
+@admin.register(JobReimbursementAttachment)
+class JobReimbursementAttachmentAdmin(ModelAdmin):
+    """Admin interface for JobReimbursementAttachment model with Unfold styling."""
+
+    list_display = (
+        "reimbursement_link",
+        "file_name",
+        "file_link",
+        "created_at",
+    )
+    list_filter = ("created_at",)
+    search_fields = (
+        "reimbursement__job__title",
+        "reimbursement__name",
+        "file_name",
+    )
+    ordering = ("-created_at",)
+    autocomplete_fields = ("reimbursement",)
+    readonly_fields = ("public_id", "created_at", "updated_at")
+    date_hierarchy = "created_at"
+    list_per_page = 25
+
+    fieldsets = (
+        (
+            "Attachment Information",
+            {
+                "fields": (
+                    "public_id",
+                    "reimbursement",
+                    "file",
+                    "file_name",
+                )
+            },
+        ),
+        (
+            "Timestamps",
+            {"fields": ("created_at", "updated_at")},
+        ),
+    )
+
+    @display(description="Reimbursement")
+    def reimbursement_link(self, obj):
+        """Display reimbursement as clickable link."""
+        return format_html(
+            '<a href="/admin/jobs/jobreimbursement/{}/change/">{}</a>',
+            obj.reimbursement.pk,
+            f"{obj.reimbursement.name[:30]}...",
         )
 
     @display(description="File")

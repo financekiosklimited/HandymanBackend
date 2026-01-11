@@ -754,7 +754,6 @@ class JobReimbursement(BaseModel):
     amount = models.DecimalField(
         max_digits=10, decimal_places=2, help_text="Reimbursement amount"
     )
-    attachment = models.FileField(upload_to="reimbursements/attachments/%Y/%m/%d/")
     notes = models.TextField(blank=True, help_text="Optional description/notes")
 
     # Review
@@ -783,3 +782,29 @@ class JobReimbursement(BaseModel):
 
     def __str__(self):
         return f"{self.name} - {self.amount} ({self.status})"
+
+
+class JobReimbursementAttachment(BaseModel):
+    """
+    Attachment files for a job reimbursement.
+    """
+
+    reimbursement = models.ForeignKey(
+        "JobReimbursement",
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+    file = models.FileField(upload_to="reimbursements/attachments/%Y/%m/%d/")
+    file_name = models.CharField(max_length=255, help_text="Original file name")
+
+    class Meta:
+        db_table = "job_reimbursement_attachments"
+        ordering = ["created_at"]
+        verbose_name = "Job Reimbursement Attachment"
+        verbose_name_plural = "Job Reimbursement Attachments"
+        indexes = [
+            models.Index(fields=["reimbursement"]),
+        ]
+
+    def __str__(self):
+        return f"{self.file_name} for {self.reimbursement}"
