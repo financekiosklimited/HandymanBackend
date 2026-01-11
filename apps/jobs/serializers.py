@@ -16,6 +16,8 @@ from apps.jobs.models import (
     DailyReportTask,
     Job,
     JobApplication,
+    JobApplicationAttachment,
+    JobApplicationMaterial,
     JobCategory,
     JobDispute,
     JobImage,
@@ -1059,6 +1061,53 @@ GuestJobDetailResponseSerializer = create_response_serializer(
 # ========================
 
 
+class JobApplicationMaterialSerializer(serializers.ModelSerializer):
+    """
+    Serializer for job application material (read-only).
+    """
+
+    class Meta:
+        model = JobApplicationMaterial
+        fields = [
+            "public_id",
+            "name",
+            "price",
+            "description",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class JobApplicationAttachmentSerializer(serializers.ModelSerializer):
+    """
+    Serializer for job application attachment (read-only).
+    """
+
+    file = serializers.FileField(use_url=True)
+
+    class Meta:
+        model = JobApplicationAttachment
+        fields = [
+            "public_id",
+            "file",
+            "file_name",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class JobApplicationMaterialInputSerializer(serializers.Serializer):
+    """
+    Serializer for inputting job application material.
+    """
+
+    name = serializers.CharField(max_length=255)
+    price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    description = serializers.CharField(
+        max_length=255, required=False, allow_blank=True
+    )
+
+
 class JobApplicationListSerializer(serializers.ModelSerializer):
     """
     Serializer for job application listing (read-only).
@@ -1085,6 +1134,8 @@ class JobApplicationDetailSerializer(serializers.ModelSerializer):
     """
 
     job = JobDetailSerializer(read_only=True)
+    materials = JobApplicationMaterialSerializer(many=True, read_only=True)
+    attachments = JobApplicationAttachmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = JobApplication
@@ -1093,6 +1144,11 @@ class JobApplicationDetailSerializer(serializers.ModelSerializer):
             "job",
             "status",
             "status_at",
+            "predicted_hours",
+            "estimated_total_price",
+            "negotiation_reasoning",
+            "materials",
+            "attachments",
             "created_at",
             "updated_at",
         ]
@@ -1105,6 +1161,19 @@ class JobApplicationCreateSerializer(serializers.Serializer):
     """
 
     job_id = serializers.UUIDField(required=True)
+    predicted_hours = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=True
+    )
+    estimated_total_price = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=True
+    )
+    negotiation_reasoning = serializers.CharField(required=False, allow_blank=True)
+    materials = JobApplicationMaterialInputSerializer(many=True, required=False)
+    attachments = serializers.ListField(
+        child=serializers.FileField(allow_empty_file=False),
+        required=False,
+        allow_empty=True,
+    )
 
     def validate_job_id(self, value):
         """
@@ -1116,6 +1185,24 @@ class JobApplicationCreateSerializer(serializers.Serializer):
         except Job.DoesNotExist:
             raise serializers.ValidationError("Invalid job.")
 
+    def validate_predicted_hours(self, value):
+        """
+        Validate predicted hours is positive.
+        """
+        if value <= 0:
+            raise serializers.ValidationError("Predicted hours must be greater than 0.")
+        return value
+
+    def validate_estimated_total_price(self, value):
+        """
+        Validate estimated total price is positive.
+        """
+        if value <= 0:
+            raise serializers.ValidationError(
+                "Estimated total price must be greater than 0."
+            )
+        return value
+
     def create(self, validated_data):
         """
         Create job application using the service.
@@ -1124,8 +1211,85 @@ class JobApplicationCreateSerializer(serializers.Serializer):
 
         job = validated_data["job_id"]
         handyman = self.context["request"].user
+        predicted_hours = validated_data["predicted_hours"]
+        estimated_total_price = validated_data["estimated_total_price"]
+        negotiation_reasoning = validated_data.get("negotiation_reasoning", "")
+        materials_data = validated_data.get("materials", [])
+        attachments = validated_data.get("attachments", [])
 
-        application = job_application_service.apply_to_job(handyman=handyman, job=job)
+        application = job_application_service.apply_to_job(
+            handyman=handyman,
+            job=job,
+            predicted_hours=predicted_hours,
+            estimated_total_price=estimated_total_price,
+            negotiation_reasoning=negotiation_reasoning,
+            materials_data=materials_data,
+            attachments=attachments,
+        )
+        return application
+
+
+class JobApplicationUpdateSerializer(serializers.Serializer):
+    """
+    Serializer for updating a job application.
+    Only pending applications can be updated.
+    All fields are optional for partial updates.
+    """
+
+    predicted_hours = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False
+    )
+    estimated_total_price = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False
+    )
+    negotiation_reasoning = serializers.CharField(required=False, allow_blank=True)
+    materials = JobApplicationMaterialInputSerializer(many=True, required=False)
+    attachments = serializers.ListField(
+        child=serializers.FileField(allow_empty_file=False),
+        required=False,
+        allow_empty=True,
+    )
+
+    def validate_predicted_hours(self, value):
+        """
+        Validate predicted hours is positive.
+        """
+        if value <= 0:
+            raise serializers.ValidationError("Predicted hours must be greater than 0.")
+        return value
+
+    def validate_estimated_total_price(self, value):
+        """
+        Validate estimated total price is positive.
+        """
+        if value <= 0:
+            raise serializers.ValidationError(
+                "Estimated total price must be greater than 0."
+            )
+        return value
+
+    def update(self, instance, validated_data):
+        """
+        Update job application using the service.
+        """
+        from apps.jobs.services import job_application_service
+
+        handyman = self.context["request"].user
+        predicted_hours = validated_data.get("predicted_hours")
+        estimated_total_price = validated_data.get("estimated_total_price")
+        negotiation_reasoning = validated_data.get("negotiation_reasoning")
+        materials_data = validated_data.get("materials")
+        attachments = validated_data.get("attachments")
+
+        application = job_application_service.update_application(
+            handyman=handyman,
+            application=instance,
+            predicted_hours=predicted_hours,
+            estimated_total_price=estimated_total_price,
+            negotiation_reasoning=negotiation_reasoning,
+            materials_data=materials_data,
+            attachments=attachments,
+        )
         return application
 
 
@@ -1156,6 +1320,8 @@ class HomeownerJobApplicationListSerializer(serializers.ModelSerializer):
 
     job = JobListSerializer(read_only=True)
     handyman_profile = serializers.SerializerMethodField()
+    materials = JobApplicationMaterialSerializer(many=True, read_only=True)
+    attachments = JobApplicationAttachmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = JobApplication
@@ -1165,6 +1331,11 @@ class HomeownerJobApplicationListSerializer(serializers.ModelSerializer):
             "handyman_profile",
             "status",
             "status_at",
+            "predicted_hours",
+            "estimated_total_price",
+            "negotiation_reasoning",
+            "materials",
+            "attachments",
             "created_at",
             "updated_at",
         ]

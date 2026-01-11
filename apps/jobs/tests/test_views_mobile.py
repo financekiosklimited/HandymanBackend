@@ -18,6 +18,7 @@ from apps.jobs.models import (
     DailyReportTask,
     Job,
     JobApplication,
+    JobApplicationMaterial,
     JobCategory,
     JobDispute,
     JobTask,
@@ -2506,23 +2507,148 @@ class HandymanJobApplicationListCreateViewTests(APITestCase):
     def test_create_application_service_failure(self):
         """Test service failure during application creation."""
 
-        data = {"job_id": str(self.job.public_id)}
+        data = {
+            "job_id": str(self.job.public_id),
+            "predicted_hours": "8.5",
+            "estimated_total_price": "450.00",
+        }
         with patch(
-            "apps.jobs.serializers.JobApplicationCreateSerializer.save"
-        ) as mock_save:
-            mock_save.side_effect = Exception("Service error")
+            "apps.jobs.services.JobApplicationService.apply_to_job"
+        ) as mock_apply:
+            mock_apply.side_effect = Exception("Service error")
             response = self.client.post(self.url, data)
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("detail", response.data["errors"])
             self.assertEqual(response.data["errors"]["detail"], "Service error")
 
     def test_create_application_success(self):
         """Test successfully creating a job application."""
-        data = {"job_id": str(self.job.public_id)}
+        data = {
+            "job_id": str(self.job.public_id),
+            "predicted_hours": "8.5",
+            "estimated_total_price": "450.00",
+        }
 
         response = self.client.post(self.url, data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertIn("status", response.data["data"])
         self.assertEqual(response.data["data"]["status"], "pending")
+        self.assertEqual(response.data["data"]["predicted_hours"], "8.50")
+        self.assertEqual(response.data["data"]["estimated_total_price"], "450.00")
+
+    def test_create_application_with_materials_and_attachments(self):
+        """Test creating application with materials and attachments."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        file = SimpleUploadedFile(
+            "test.pdf", b"content", content_type="application/pdf"
+        )
+        data = {
+            "job_id": str(self.job.public_id),
+            "predicted_hours": "8.5",
+            "estimated_total_price": "450.00",
+            "negotiation_reasoning": "Test reasoning",
+            "materials": '[{"name": "PVC Pipe", "price": "25.50", "description": "2m"}]',
+            "attachments": file,
+        }
+
+        response = self.client.post(self.url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn("materials", response.data["data"])
+        self.assertIn("attachments", response.data["data"])
+        self.assertEqual(len(response.data["data"]["materials"]), 1)
+        self.assertEqual(len(response.data["data"]["attachments"]), 1)
+
+    def test_create_application_with_invalid_materials_json(self):
+        """Test creating application with invalid materials JSON."""
+        data = {
+            "job_id": str(self.job.public_id),
+            "predicted_hours": "8.5",
+            "estimated_total_price": "450.00",
+            "materials": "invalid json",
+        }
+
+        response = self.client.post(self.url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("materials", response.data["errors"])
+
+    def test_create_application_with_attachments_list(self):
+        """Test creating application with list of attachments in data."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        file1 = SimpleUploadedFile(
+            "test1.pdf", b"content1", content_type="application/pdf"
+        )
+        data = {
+            "job_id": str(self.job.public_id),
+            "predicted_hours": "8.5",
+            "estimated_total_price": "450.00",
+            "attachments": file1,
+        }
+
+        response = self.client.post(self.url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn("attachments", response.data["data"])
+        self.assertGreaterEqual(len(response.data["data"]["attachments"]), 1)
+
+    def test_create_application_with_zero_predicted_hours(self):
+        """Test creating application with zero predicted hours."""
+        data = {
+            "job_id": str(self.job.public_id),
+            "predicted_hours": "0",
+            "estimated_total_price": "450.00",
+        }
+
+        response = self.client.post(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("predicted_hours", response.data["errors"])
+
+    def test_create_application_with_zero_price(self):
+        """Test creating application with zero price."""
+        data = {
+            "job_id": str(self.job.public_id),
+            "predicted_hours": "8.5",
+            "estimated_total_price": "0",
+        }
+
+        response = self.client.post(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("estimated_total_price", response.data["errors"])
+
+    def test_create_application_attachments_non_file_in_data_ignored(self):
+        """Test that non-file attachments value in data is ignored."""
+        data = {
+            "job_id": str(self.job.public_id),
+            "predicted_hours": "8.5",
+            "estimated_total_price": "450.00",
+            "attachments": "not_a_file",  # String, not a file - should be ignored
+        }
+
+        response = self.client.post(self.url, data)
+        # Should succeed - the non-file attachments should be ignored/deleted
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        # No attachments should be in the response
+        self.assertEqual(len(response.data["data"]["attachments"]), 0)
+
+    def test_create_application_with_non_attachments_file_ignored(self):
+        """Test that files with non-attachments keys are ignored."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        # Upload a file with a key that doesn't match 'attachments' pattern
+        file = SimpleUploadedFile(
+            "test.pdf", b"content", content_type="application/pdf"
+        )
+        data = {
+            "job_id": str(self.job.public_id),
+            "predicted_hours": "8.5",
+            "estimated_total_price": "450.00",
+            "other_file": file,  # Non-attachments key - should be ignored
+        }
+
+        response = self.client.post(self.url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        # No attachments should be in the response since the file key wasn't 'attachments'
+        self.assertEqual(len(response.data["data"]["attachments"]), 0)
 
 
 class HandymanJobApplicationWithdrawViewTests(APITestCase):
@@ -2693,6 +2819,238 @@ class HandymanJobApplicationDetailViewTests(APITestCase):
         self.client.force_authenticate(user=None)
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class HandymanJobApplicationEditViewTests(APITestCase):
+    """Test cases for handyman JobApplicationEditView."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        self.other_handyman = User.objects.create_user(
+            email="otherhandyman@example.com", password="testpass123"
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "phone_verified": True,
+            "email_verified": True,
+        }
+
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+        HandymanProfile.objects.create(
+            user=self.other_handyman,
+            display_name="Other Handyman",
+            phone_verified_at=timezone.now(),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix faucet",
+            description="Leaking faucet",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+
+        self.application = JobApplication.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            status="pending",
+            predicted_hours=Decimal("8.00"),
+            estimated_total_price=Decimal("400.00"),
+            negotiation_reasoning="Initial estimate",
+        )
+
+        # Create initial materials
+        JobApplicationMaterial.objects.create(
+            application=self.application,
+            name="Old Material",
+            price=Decimal("10.00"),
+            description="Old description",
+        )
+
+        self.url = (
+            f"/api/v1/mobile/handyman/applications/{self.application.public_id}/edit/"
+        )
+        self.client.force_authenticate(user=self.handyman)
+
+    def test_edit_application_success_partial_update(self):
+        """Test successfully updating only some fields."""
+        data = {
+            "predicted_hours": "10.00",
+            "estimated_total_price": "500.00",
+        }
+
+        response = self.client.put(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["predicted_hours"], "10.00")
+        self.assertEqual(response.data["data"]["estimated_total_price"], "500.00")
+        self.assertEqual(
+            response.data["data"]["negotiation_reasoning"], "Initial estimate"
+        )
+
+    def test_edit_application_success_full_update(self):
+        """Test successfully updating all fields."""
+        data = {
+            "predicted_hours": "12.50",
+            "estimated_total_price": "600.00",
+            "negotiation_reasoning": "Updated after site visit",
+        }
+
+        response = self.client.put(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["predicted_hours"], "12.50")
+        self.assertEqual(response.data["data"]["estimated_total_price"], "600.00")
+        self.assertEqual(
+            response.data["data"]["negotiation_reasoning"], "Updated after site visit"
+        )
+
+    def test_edit_application_with_new_materials(self):
+        """Test updating application with new materials (replaces old ones)."""
+        data = {
+            "predicted_hours": "10.00",
+            "estimated_total_price": "500.00",
+            "materials": '[{"name": "New Pipe", "price": "25.50", "description": "3m"}]',
+        }
+
+        response = self.client.put(self.url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]["materials"]), 1)
+        self.assertEqual(response.data["data"]["materials"][0]["name"], "New Pipe")
+        self.assertEqual(response.data["data"]["materials"][0]["price"], "25.50")
+
+    def test_edit_application_with_empty_materials(self):
+        """Test updating application with empty materials array (removes all)."""
+        data = {
+            "materials": "[]",
+        }
+
+        response = self.client.put(self.url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]["materials"]), 0)
+
+    def test_edit_application_with_new_attachments(self):
+        """Test updating application with new attachments."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        file = SimpleUploadedFile(
+            "updated.pdf", b"new content", content_type="application/pdf"
+        )
+        data = {
+            "predicted_hours": "10.00",
+            "attachments": file,
+        }
+
+        response = self.client.put(self.url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]["attachments"]), 1)
+        self.assertIn("updated.pdf", response.data["data"]["attachments"][0]["file"])
+
+    def test_edit_application_non_pending_fails(self):
+        """Test editing non-pending application fails."""
+        # Change status to approved
+        self.application.status = "approved"
+        self.application.save()
+
+        data = {"predicted_hours": "10.00"}
+
+        response = self.client.put(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("detail", response.data["errors"])
+        self.assertIn("pending", response.data["errors"]["detail"].lower())
+
+    def test_edit_application_not_owner_fails(self):
+        """Test editing application by different handyman fails."""
+        self.other_handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "phone_verified": True,
+            "email_verified": True,
+        }
+        self.client.force_authenticate(user=self.other_handyman)
+
+        data = {"predicted_hours": "10.00"}
+
+        response = self.client.put(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_edit_application_invalid_hours_fails(self):
+        """Test editing with invalid predicted hours fails."""
+        data = {"predicted_hours": "0"}
+
+        response = self.client.put(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("predicted_hours", response.data["errors"])
+
+    def test_edit_application_invalid_price_fails(self):
+        """Test editing with invalid price fails."""
+        data = {"estimated_total_price": "-10.00"}
+
+        response = self.client.put(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("estimated_total_price", response.data["errors"])
+
+    def test_edit_application_unauthenticated(self):
+        """Test editing without authentication returns 401."""
+        self.client.force_authenticate(user=None)
+        data = {"predicted_hours": "10.00"}
+
+        response = self.client.put(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_edit_application_invalid_json_materials(self):
+        """Test updating application with invalid JSON materials fails."""
+        data = {
+            "predicted_hours": "10.00",
+            "materials": "invalid-json-not-a-list",
+        }
+
+        response = self.client.put(self.url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("materials", response.data["errors"])
+        self.assertIn("Invalid JSON", response.data["errors"]["materials"])
+
+    def test_edit_application_ignores_non_attachments_files(self):
+        """Test editing application ignores files with non-attachments keys."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        file = SimpleUploadedFile(
+            "test.pdf", b"content", content_type="application/pdf"
+        )
+        data = {
+            "predicted_hours": "10.00",
+            "other_file": file,  # Non-attachments key - should be ignored
+        }
+
+        response = self.client.put(self.url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # No attachments should be added since the file key wasn't 'attachments'
+        self.assertEqual(len(response.data["data"]["attachments"]), 0)
 
 
 class HomeownerApplicationListViewTests(APITestCase):

@@ -68,6 +68,11 @@ urlpatterns = [
         mobile_views.HandymanJobApplicationWithdrawView.as_view(),
         name="mobile_handyman_application_withdraw",
     ),
+    path(
+        "handyman/applications/<uuid:public_id>/edit/",
+        mobile_views.HandymanJobApplicationEditView.as_view(),
+        name="mobile_handyman_application_edit",
+    ),
     # Homeowner application management endpoints (global)
     path(
         "homeowner/applications/",

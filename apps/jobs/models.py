@@ -555,6 +555,23 @@ class JobApplication(BaseModel):
         blank=True,
         help_text="Timestamp when status was last changed",
     )
+    predicted_hours = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Predicted total hours needed",
+    )
+    estimated_total_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Estimated total price from handyman (labor + material)",
+    )
+    negotiation_reasoning = models.TextField(
+        blank=True, help_text="Detailed reasoning of negotiation"
+    )
 
     class Meta:
         db_table = "job_applications"
@@ -590,6 +607,63 @@ class JobApplication(BaseModel):
             self.status_at = timezone.now()
 
         super().save(*args, **kwargs)
+
+
+class JobApplicationMaterial(BaseModel):
+    """
+    Bill of material for a job application.
+    """
+
+    application = models.ForeignKey(
+        "JobApplication",
+        on_delete=models.CASCADE,
+        related_name="materials",
+    )
+    name = models.CharField(max_length=255, help_text="Material name")
+    price = models.DecimalField(
+        max_digits=10, decimal_places=2, help_text="Material price"
+    )
+    description = models.CharField(
+        max_length=255, blank=True, help_text="Description/quantity (e.g., '2m', '2kg')"
+    )
+
+    class Meta:
+        db_table = "job_application_materials"
+        ordering = ["created_at"]
+        verbose_name = "Job Application Material"
+        verbose_name_plural = "Job Application Materials"
+        indexes = [
+            models.Index(fields=["application"]),
+        ]
+
+    def __str__(self):
+        return f"{self.name} - {self.price} for {self.application}"
+
+
+class JobApplicationAttachment(BaseModel):
+    """
+    Attachment files for a job application.
+    """
+
+    application = models.ForeignKey(
+        "JobApplication",
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+    file = models.FileField(upload_to="job-applications/attachments/%Y/%m/%d/")
+    file_name = models.CharField(max_length=255, help_text="Original file name")
+
+    class Meta:
+        db_table = "job_application_attachments"
+        ordering = ["created_at"]
+        verbose_name = "Job Application Attachment"
+        verbose_name_plural = "Job Application Attachments"
+        indexes = [
+            models.Index(fields=["application"]),
+        ]
+
+    def __str__(self):
+        return f"{self.file_name} for {self.application}"
 
 
 class Review(BaseModel):
@@ -644,3 +718,68 @@ class Review(BaseModel):
         """Override save to run validation."""
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+class JobReimbursement(BaseModel):
+    """
+    Reimbursement request submitted by handyman for job-related expenses.
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Pending Review"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+    ]
+
+    CATEGORY_CHOICES = [
+        ("materials", "Materials"),
+        ("tools", "Tools"),
+        ("transport", "Transportation"),
+        ("equipment", "Equipment Rental"),
+        ("other", "Other"),
+    ]
+
+    job = models.ForeignKey(
+        "Job", on_delete=models.CASCADE, related_name="reimbursements"
+    )
+    handyman = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="reimbursements_submitted",
+    )
+
+    # Content
+    name = models.CharField(max_length=255, help_text="Name/title of the expense")
+    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES)
+    amount = models.DecimalField(
+        max_digits=10, decimal_places=2, help_text="Reimbursement amount"
+    )
+    attachment = models.FileField(upload_to="reimbursements/attachments/%Y/%m/%d/")
+    notes = models.TextField(blank=True, help_text="Optional description/notes")
+
+    # Review
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    homeowner_comment = models.TextField(blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reimbursements_reviewed",
+    )
+
+    class Meta:
+        db_table = "job_reimbursements"
+        ordering = ["-created_at"]
+        verbose_name = "Job Reimbursement"
+        verbose_name_plural = "Job Reimbursements"
+        indexes = [
+            models.Index(fields=["job"]),
+            models.Index(fields=["handyman"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.name} - {self.amount} ({self.status})"

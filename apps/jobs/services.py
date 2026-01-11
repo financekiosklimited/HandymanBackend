@@ -14,6 +14,8 @@ from apps.jobs.models import (
     DailyReportTask,
     Job,
     JobApplication,
+    JobApplicationAttachment,
+    JobApplicationMaterial,
     JobDispute,
     JobTask,
     Review,
@@ -31,13 +33,27 @@ class JobApplicationService:
     """
 
     @transaction.atomic
-    def apply_to_job(self, handyman, job: Job) -> JobApplication:
+    def apply_to_job(
+        self,
+        handyman,
+        job: Job,
+        predicted_hours=None,
+        estimated_total_price=None,
+        negotiation_reasoning="",
+        materials_data=None,
+        attachments=None,
+    ) -> JobApplication:
         """
         Create a job application from a handyman to a job.
 
         Args:
             handyman: User (handyman) applying
             job: Job to apply to
+            predicted_hours: Predicted total hours needed (required)
+            estimated_total_price: Estimated total price from handyman (required)
+            negotiation_reasoning: Detailed reasoning of negotiation (optional)
+            materials_data: List of material dicts with name, price, description (optional)
+            attachments: List of file objects (optional)
 
         Returns:
             JobApplication: Created application
@@ -71,7 +87,29 @@ class JobApplicationService:
             job=job,
             handyman=handyman,
             status="pending",
+            predicted_hours=predicted_hours,
+            estimated_total_price=estimated_total_price,
+            negotiation_reasoning=negotiation_reasoning or "",
         )
+
+        # Create materials
+        materials_data = materials_data or []
+        for material_data in materials_data:
+            JobApplicationMaterial.objects.create(
+                application=application,
+                name=material_data["name"],
+                price=material_data["price"],
+                description=material_data.get("description", ""),
+            )
+
+        # Create attachments
+        attachments = attachments or []
+        for attachment_file in attachments:
+            JobApplicationAttachment.objects.create(
+                application=application,
+                file=attachment_file,
+                file_name=attachment_file.name,
+            )
 
         # Create notification for homeowner
         notification_service.create_and_send_notification(
@@ -287,6 +325,91 @@ class JobApplicationService:
         )
 
         logger.info(f"Withdrew application {application.public_id}")
+
+        return application
+
+    @transaction.atomic
+    def update_application(
+        self,
+        handyman,
+        application: JobApplication,
+        predicted_hours=None,
+        estimated_total_price=None,
+        negotiation_reasoning=None,
+        materials_data=None,
+        attachments=None,
+    ) -> JobApplication:
+        """
+        Update a job application.
+
+        Args:
+            handyman: User (handyman) updating
+            application: Application to update
+            predicted_hours: Updated predicted hours (optional)
+            estimated_total_price: Updated price (optional)
+            negotiation_reasoning: Updated reasoning (optional)
+            materials_data: Updated materials list (optional, replaces existing)
+            attachments: Updated attachments list (optional, replaces existing)
+
+        Returns:
+            JobApplication: Updated application
+
+        Raises:
+            ValidationError: If update is invalid
+        """
+        # Validate handyman owns the application
+        if application.handyman != handyman:
+            raise ValidationError("You can only update your own applications.")
+
+        # Validate application is pending
+        if application.status != "pending":
+            raise ValidationError("Only pending applications can be updated.")
+
+        # Update application fields if provided
+        if predicted_hours is not None:
+            application.predicted_hours = predicted_hours
+
+        if estimated_total_price is not None:
+            application.estimated_total_price = estimated_total_price
+
+        if negotiation_reasoning is not None:
+            application.negotiation_reasoning = negotiation_reasoning
+
+        application.save(
+            update_fields=[
+                "predicted_hours",
+                "estimated_total_price",
+                "negotiation_reasoning",
+                "updated_at",
+            ]
+        )
+
+        # Update materials if provided (replace all)
+        if materials_data is not None:
+            # Delete existing materials
+            application.materials.all().delete()
+            # Create new materials
+            for material_data in materials_data:
+                JobApplicationMaterial.objects.create(
+                    application=application,
+                    name=material_data["name"],
+                    price=material_data["price"],
+                    description=material_data.get("description", ""),
+                )
+
+        # Update attachments if provided (replace all)
+        if attachments is not None:
+            # Delete existing attachments
+            application.attachments.all().delete()
+            # Create new attachments
+            for attachment_file in attachments:
+                JobApplicationAttachment.objects.create(
+                    application=application,
+                    file=attachment_file,
+                    file_name=attachment_file.name,
+                )
+
+        logger.info(f"Updated application {application.public_id}")
 
         return application
 

@@ -1993,7 +1993,11 @@ class JobApplicationCreateSerializerTests(TestCase):
         request = self.factory.post("/")
         request.user = self.handyman
 
-        data = {"job_id": str(self.job.public_id)}
+        data = {
+            "job_id": str(self.job.public_id),
+            "predicted_hours": "8.5",
+            "estimated_total_price": "450.00",
+        }
 
         mock_application = MagicMock()
 
@@ -2008,8 +2012,59 @@ class JobApplicationCreateSerializerTests(TestCase):
             self.assertTrue(serializer.is_valid())
             application = serializer.save()
 
-            mock_apply.assert_called_once_with(handyman=self.handyman, job=self.job)
+            mock_apply.assert_called_once_with(
+                handyman=self.handyman,
+                job=self.job,
+                predicted_hours=Decimal("8.5"),
+                estimated_total_price=Decimal("450.00"),
+                negotiation_reasoning="",
+                materials_data=[],
+                attachments=[],
+            )
             self.assertEqual(application, mock_application)
+
+    def test_create_with_materials_and_attachments(self):
+        """Test create with materials and attachments."""
+        from unittest.mock import MagicMock, patch
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.jobs.serializers import JobApplicationCreateSerializer
+
+        request = self.factory.post("/")
+        request.user = self.handyman
+
+        file = SimpleUploadedFile(
+            "test.pdf", b"content", content_type="application/pdf"
+        )
+        data = {
+            "job_id": str(self.job.public_id),
+            "predicted_hours": "8.5",
+            "estimated_total_price": "450.00",
+            "negotiation_reasoning": "Test reasoning",
+            "materials": [{"name": "PVC Pipe", "price": "25.50", "description": "2m"}],
+            "attachments": [file],
+        }
+
+        mock_application = MagicMock()
+
+        with patch(
+            "apps.jobs.services.JobApplicationService.apply_to_job"
+        ) as mock_apply:
+            mock_apply.return_value = mock_application
+
+            serializer = JobApplicationCreateSerializer(
+                data=data, context={"request": request}
+            )
+            self.assertTrue(serializer.is_valid())
+            serializer.save()
+
+            call_kwargs = mock_apply.call_args.kwargs
+            self.assertEqual(call_kwargs["predicted_hours"], Decimal("8.5"))
+            self.assertEqual(call_kwargs["estimated_total_price"], Decimal("450.00"))
+            self.assertEqual(call_kwargs["negotiation_reasoning"], "Test reasoning")
+            self.assertEqual(len(call_kwargs["materials_data"]), 1)
+            self.assertEqual(len(call_kwargs["attachments"]), 1)
 
 
 class HomeownerJobApplicationListSerializerTests(TestCase):

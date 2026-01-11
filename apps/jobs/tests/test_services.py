@@ -14,6 +14,8 @@ from apps.jobs.models import (
     DailyReport,
     DailyReportTask,
     Job,
+    JobApplicationAttachment,
+    JobApplicationMaterial,
     JobCategory,
     JobTask,
     Review,
@@ -88,6 +90,52 @@ class JobApplicationServiceTests(TestCase):
         mock_notify.assert_called_once()
         call_kwargs = mock_notify.call_args.kwargs
         self.assertEqual(call_kwargs["triggered_by"], self.handyman)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_apply_to_job_with_proposal_data(self, mock_notify):
+        """Test job application with proposal data."""
+        from decimal import Decimal
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        materials_data = [
+            {"name": "PVC Pipe", "price": Decimal("25.50"), "description": "2m"},
+            {"name": "Fittings", "price": Decimal("15.00"), "description": "4 pieces"},
+        ]
+        attachments = [
+            SimpleUploadedFile(
+                "quote.pdf", b"file content", content_type="application/pdf"
+            )
+        ]
+
+        application = self.service.apply_to_job(
+            self.handyman,
+            self.job,
+            predicted_hours=Decimal("8.5"),
+            estimated_total_price=Decimal("450.00"),
+            negotiation_reasoning="Need additional materials",
+            materials_data=materials_data,
+            attachments=attachments,
+        )
+
+        self.assertEqual(application.predicted_hours, Decimal("8.5"))
+        self.assertEqual(application.estimated_total_price, Decimal("450.00"))
+        self.assertEqual(application.negotiation_reasoning, "Need additional materials")
+
+        # Check materials were created
+        materials = JobApplicationMaterial.objects.filter(application=application)
+        self.assertEqual(materials.count(), 2)
+        self.assertEqual(materials[0].name, "PVC Pipe")
+        self.assertEqual(materials[1].name, "Fittings")
+
+        # Check attachments were created
+        attachments_created = JobApplicationAttachment.objects.filter(
+            application=application
+        )
+        self.assertEqual(attachments_created.count(), 1)
+        self.assertEqual(attachments_created[0].file_name, "quote.pdf")
 
     def test_apply_to_job_invalid_status(self):
         """Test applying to job with invalid status."""
@@ -259,6 +307,25 @@ class JobApplicationServiceTests(TestCase):
 
         with self.assertRaisesRegex(ValidationError, "pending applications"):
             self.service.withdraw_application(self.handyman, application)
+
+    def test_update_application_wrong_handyman(self):
+        """Test updating application by a different handyman."""
+        application = self.service.apply_to_job(self.handyman, self.job)
+
+        other_handy = User.objects.create_user(
+            email="other_handy@example.com", password="password123"
+        )
+        UserRole.objects.create(user=other_handy, role="handyman")
+        HandymanProfile.objects.create(
+            user=other_handy, display_name="Other", phone_verified_at=datetime.now(UTC)
+        )
+
+        with self.assertRaisesRegex(ValidationError, "only update your own"):
+            self.service.update_application(
+                handyman=other_handy,
+                application=application,
+                predicted_hours=10,
+            )
 
 
 class OngoingServicesTests(TestCase):

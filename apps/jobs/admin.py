@@ -15,6 +15,8 @@ from .models import (
     DailyReportTask,
     Job,
     JobApplication,
+    JobApplicationAttachment,
+    JobApplicationMaterial,
     JobCategory,
     JobDispute,
     JobImage,
@@ -258,6 +260,29 @@ class JobImageInline(TabularInline):
     extra = 0
     fields = ("image", "order")
     ordering = ("order",)
+
+
+class JobApplicationMaterialInline(TabularInline):
+    """
+    Inline admin for JobApplicationMaterial in JobApplication detail view.
+    """
+
+    model = JobApplicationMaterial
+    extra = 0
+    fields = ("name", "price", "description")
+    ordering = ("created_at",)
+
+
+class JobApplicationAttachmentInline(TabularInline):
+    """
+    Inline admin for JobApplicationAttachment in JobApplication detail view.
+    """
+
+    model = JobApplicationAttachment
+    extra = 0
+    fields = ("file", "file_name", "created_at")
+    readonly_fields = ("created_at",)
+    ordering = ("created_at",)
 
 
 class JobApplicationInline(TabularInline):
@@ -1143,6 +1168,8 @@ class JobApplicationAdmin(ModelAdmin):
         "job_link",
         "handyman_link",
         "status_display",
+        "predicted_hours",
+        "estimated_total_price",
         "status_at",
         "created_at",
     )
@@ -1159,6 +1186,7 @@ class JobApplicationAdmin(ModelAdmin):
     date_hierarchy = "created_at"
     list_per_page = 25
     actions = ["approve_applications", "reject_applications"]
+    inlines = [JobApplicationMaterialInline, JobApplicationAttachmentInline]
 
     fieldsets = (
         (
@@ -1170,6 +1198,16 @@ class JobApplicationAdmin(ModelAdmin):
                     "handyman",
                     "status",
                     "status_at",
+                )
+            },
+        ),
+        (
+            "Proposal Details",
+            {
+                "fields": (
+                    "predicted_hours",
+                    "estimated_total_price",
+                    "negotiation_reasoning",
                 )
             },
         ),
@@ -1405,3 +1443,115 @@ class ReviewAdmin(ModelAdmin):
             obj.reviewee.pk,
             obj.reviewee.email,
         )
+
+
+@admin.register(JobApplicationMaterial)
+class JobApplicationMaterialAdmin(ModelAdmin):
+    """
+    Admin interface for JobApplicationMaterial model with Unfold styling.
+    """
+
+    list_display = (
+        "application_link",
+        "name",
+        "price",
+        "description",
+        "created_at",
+    )
+    list_filter = ("created_at",)
+    search_fields = (
+        "application__job__title",
+        "name",
+        "description",
+    )
+    ordering = ("-created_at",)
+    autocomplete_fields = ("application",)
+    readonly_fields = ("public_id", "created_at", "updated_at")
+    date_hierarchy = "created_at"
+    list_per_page = 25
+
+    fieldsets = (
+        (
+            "Material Information",
+            {
+                "fields": (
+                    "public_id",
+                    "application",
+                    "name",
+                    "price",
+                    "description",
+                )
+            },
+        ),
+        (
+            "Timestamps",
+            {"fields": ("created_at", "updated_at")},
+        ),
+    )
+
+    @display(description="Application")
+    def application_link(self, obj):
+        """Display application as clickable link."""
+        return format_html(
+            '<a href="/admin/jobs/jobapplication/{}/change/">{}</a>',
+            obj.application.pk,
+            f"{obj.application.job.title[:30]}...",
+        )
+
+
+@admin.register(JobApplicationAttachment)
+class JobApplicationAttachmentAdmin(ModelAdmin):
+    """
+    Admin interface for JobApplicationAttachment model with Unfold styling.
+    """
+
+    list_display = (
+        "application_link",
+        "file_name",
+        "file_link",
+        "created_at",
+    )
+    list_filter = ("created_at",)
+    search_fields = (
+        "application__job__title",
+        "file_name",
+    )
+    ordering = ("-created_at",)
+    autocomplete_fields = ("application",)
+    readonly_fields = ("public_id", "created_at", "updated_at")
+    date_hierarchy = "created_at"
+    list_per_page = 25
+
+    fieldsets = (
+        (
+            "Attachment Information",
+            {
+                "fields": (
+                    "public_id",
+                    "application",
+                    "file",
+                    "file_name",
+                )
+            },
+        ),
+        (
+            "Timestamps",
+            {"fields": ("created_at", "updated_at")},
+        ),
+    )
+
+    @display(description="Application")
+    def application_link(self, obj):
+        """Display application as clickable link."""
+        return format_html(
+            '<a href="/admin/jobs/jobapplication/{}/change/">{}</a>',
+            obj.application.pk,
+            f"{obj.application.job.title[:30]}...",
+        )
+
+    @display(description="File")
+    def file_link(self, obj):
+        """Display file as clickable link."""
+        if obj.file:
+            return format_html('<a href="{}" target="_blank">View</a>', obj.file.url)
+        return "-"

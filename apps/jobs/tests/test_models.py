@@ -826,6 +826,181 @@ class JobApplicationModelWithProfilesTest(TestCase):
         expected = f"{self.handyman_user.email} → {self.job.title} (pending)"
         self.assertEqual(str(application), expected)
 
+    def test_job_application_with_proposal_fields(self):
+        """Test creating job application with proposal fields."""
+        application = JobApplication.objects.create(
+            job=self.job,
+            handyman=self.handyman_user,
+            status="pending",
+            predicted_hours=Decimal("8.5"),
+            estimated_total_price=Decimal("450.00"),
+            negotiation_reasoning="Need additional materials",
+        )
+
+        self.assertEqual(application.predicted_hours, Decimal("8.5"))
+        self.assertEqual(application.estimated_total_price, Decimal("450.00"))
+        self.assertEqual(application.negotiation_reasoning, "Need additional materials")
+
+
+class JobApplicationMaterialModelTests(TestCase):
+    """Test cases for JobApplicationMaterial model."""
+
+    def setUp(self):
+        """Set up test data."""
+        from apps.accounts.models import User, UserRole
+        from apps.profiles.models import HandymanProfile
+
+        self.handyman_user = User.objects.create_user(
+            email="handyman@test.com", password="testpass123"
+        )
+        UserRole.objects.create(user=self.handyman_user, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman_user,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@test.com", password="testpass123"
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Test Job",
+            description="Test Description",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Test St",
+            status="open",
+        )
+        self.application = JobApplication.objects.create(
+            job=self.job, handyman=self.handyman_user, status="pending"
+        )
+
+    def test_create_material(self):
+        """Test creating job application material."""
+        from apps.jobs.models import JobApplicationMaterial
+
+        material = JobApplicationMaterial.objects.create(
+            application=self.application,
+            name="PVC Pipe",
+            price=Decimal("25.50"),
+            description="2m",
+        )
+
+        self.assertEqual(material.application, self.application)
+        self.assertEqual(material.name, "PVC Pipe")
+        self.assertEqual(material.price, Decimal("25.50"))
+        self.assertEqual(material.description, "2m")
+        self.assertIsNotNone(material.public_id)
+
+    def test_material_str_representation(self):
+        """Test string representation of material."""
+        from apps.jobs.models import JobApplicationMaterial
+
+        material = JobApplicationMaterial.objects.create(
+            application=self.application,
+            name="PVC Pipe",
+            price=Decimal("25.50"),
+            description="2m",
+        )
+
+        expected = f"PVC Pipe - 25.50 for {self.application}"
+        self.assertEqual(str(material), expected)
+
+
+class JobApplicationAttachmentModelTests(TestCase):
+    """Test cases for JobApplicationAttachment model."""
+
+    def setUp(self):
+        """Set up test data."""
+        from apps.accounts.models import User, UserRole
+        from apps.profiles.models import HandymanProfile
+
+        self.handyman_user = User.objects.create_user(
+            email="handyman@test.com", password="testpass123"
+        )
+        UserRole.objects.create(user=self.handyman_user, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman_user,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@test.com", password="testpass123"
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Test Job",
+            description="Test Description",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Test St",
+            status="open",
+        )
+        self.application = JobApplication.objects.create(
+            job=self.job, handyman=self.handyman_user, status="pending"
+        )
+
+    def test_create_attachment(self):
+        """Test creating job application attachment."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.jobs.models import JobApplicationAttachment
+
+        file = SimpleUploadedFile(
+            "test.pdf", b"file content", content_type="application/pdf"
+        )
+        attachment = JobApplicationAttachment.objects.create(
+            application=self.application,
+            file=file,
+            file_name="test.pdf",
+        )
+
+        self.assertEqual(attachment.application, self.application)
+        self.assertEqual(attachment.file_name, "test.pdf")
+        self.assertIsNotNone(attachment.public_id)
+
+    def test_attachment_str_representation(self):
+        """Test string representation of attachment."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.jobs.models import JobApplicationAttachment
+
+        file = SimpleUploadedFile(
+            "test.pdf", b"file content", content_type="application/pdf"
+        )
+        attachment = JobApplicationAttachment.objects.create(
+            application=self.application,
+            file=file,
+            file_name="test.pdf",
+        )
+
+        expected = f"test.pdf for {self.application}"
+        self.assertEqual(str(attachment), expected)
+
 
 class ReviewModelTests(TestCase):
     """Test cases for Review model."""

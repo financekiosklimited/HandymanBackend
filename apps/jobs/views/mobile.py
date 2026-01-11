@@ -68,6 +68,7 @@ from apps.jobs.serializers import (
     JobApplicationDetailSerializer,
     JobApplicationListResponseSerializer,
     JobApplicationListSerializer,
+    JobApplicationUpdateSerializer,
     JobCategoryListResponseSerializer,
     JobCategorySerializer,
     JobCreateResponseSerializer,
@@ -2043,13 +2044,36 @@ class HandymanJobApplicationListCreateView(APIView):
             403: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
-        description="Apply to a job. The job must be in 'open' status. Requires authentication with verified email and phone number.",
+        description=(
+            "Apply to a job with proposal details. The job must be in 'open' status. "
+            "Supports multipart/form-data for file attachments. "
+            "Required fields: job_id, predicted_hours, estimated_total_price. "
+            "Optional: negotiation_reasoning, materials (JSON array), attachments (files). "
+            "Requires authentication with verified email and phone number."
+        ),
         summary="Apply to a job",
         tags=["Mobile Handyman Applications"],
         examples=[
             OpenApiExample(
-                "Request Example",
-                value={"job_id": "223e4567-e89b-12d3-a456-426614174000"},
+                "Request Example - JSON",
+                value={
+                    "job_id": "223e4567-e89b-12d3-a456-426614174000",
+                    "predicted_hours": "8.5",
+                    "estimated_total_price": "450.00",
+                    "negotiation_reasoning": "Based on site inspection, need additional materials for proper installation.",
+                    "materials": [
+                        {
+                            "name": "PVC Pipe 2 inch",
+                            "price": "25.50",
+                            "description": "2m",
+                        },
+                        {
+                            "name": "Pipe Fittings",
+                            "price": "15.00",
+                            "description": "4 pieces",
+                        },
+                    ],
+                },
                 request_only=True,
             ),
             OpenApiExample(
@@ -2064,6 +2088,33 @@ class HandymanJobApplicationListCreateView(APIView):
                         },
                         "status": "pending",
                         "status_at": "2024-01-15T10:30:00Z",
+                        "predicted_hours": "8.5",
+                        "estimated_total_price": "450.00",
+                        "negotiation_reasoning": "Based on site inspection, need additional materials for proper installation.",
+                        "materials": [
+                            {
+                                "public_id": "323e4567-e89b-12d3-a456-426614174000",
+                                "name": "PVC Pipe 2 inch",
+                                "price": "25.50",
+                                "description": "2m",
+                                "created_at": "2024-01-15T10:30:00Z",
+                            },
+                            {
+                                "public_id": "423e4567-e89b-12d3-a456-426614174000",
+                                "name": "Pipe Fittings",
+                                "price": "15.00",
+                                "description": "4 pieces",
+                                "created_at": "2024-01-15T10:30:00Z",
+                            },
+                        ],
+                        "attachments": [
+                            {
+                                "public_id": "523e4567-e89b-12d3-a456-426614174000",
+                                "file": "https://example.com/media/job-applications/attachments/2024/01/15/file.pdf",
+                                "file_name": "quote.pdf",
+                                "created_at": "2024-01-15T10:30:00Z",
+                            },
+                        ],
                         "created_at": "2024-01-15T10:30:00Z",
                     },
                     "errors": None,
@@ -2080,8 +2131,38 @@ class HandymanJobApplicationListCreateView(APIView):
     )
     def post(self, request):
         """Create a new job application."""
+        import json
+
+        # Handle multipart/form-data
+        # Don't use request.data.copy() because it might have issues with file objects
+        # Build data dictionary manually
+        data = {}
+        for key in request.data.keys():
+            if key != "attachments":  # Skip attachments, handle separately
+                data[key] = request.data[key]
+
+        # Parse materials if provided as JSON string
+        if "materials" in data and isinstance(data["materials"], str):
+            try:
+                data["materials"] = json.loads(data["materials"])
+            except json.JSONDecodeError:
+                return validation_error_response(
+                    {"materials": "Invalid JSON format for materials."}
+                )
+
+        # Handle attachments from request.FILES
+        # Collect files from request.FILES (multipart/form-data)
+        attachments_list = []
+        for key, value in request.FILES.items():
+            if key.startswith("attachments") or key == "attachments":
+                attachments_list.append(value)
+
+        # Add attachments to data if we have valid files from request.FILES
+        if attachments_list:
+            data["attachments"] = attachments_list
+
         serializer = JobApplicationCreateSerializer(
-            data=request.data, context={"request": request}
+            data=data, context={"request": request}
         )
 
         if not serializer.is_valid():
@@ -2089,6 +2170,10 @@ class HandymanJobApplicationListCreateView(APIView):
 
         try:
             application = serializer.save()
+            # Prefetch related objects for serializer
+            application = JobApplication.objects.prefetch_related(
+                "materials", "attachments"
+            ).get(pk=application.pk)
             response_serializer = JobApplicationDetailSerializer(application)
             return created_response(
                 response_serializer.data, message="Application created successfully"
@@ -2321,6 +2406,157 @@ class HandymanJobApplicationWithdrawView(APIView):
             return validation_error_response({"detail": str(e)})
 
 
+class HandymanJobApplicationEditView(APIView):
+    """
+    View for editing a job application (only pending applications).
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_applications_edit",
+        request=JobApplicationUpdateSerializer,
+        responses={
+            200: JobApplicationDetailResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Update a pending job application with new proposal details. "
+            "Only pending applications can be edited. "
+            "Supports multipart/form-data for file attachments. "
+            "All fields are optional - only provided fields will be updated. "
+            "Materials and attachments will completely replace existing ones if provided. "
+            "Requires authentication with verified email."
+        ),
+        summary="Edit application",
+        tags=["Mobile Handyman Applications"],
+        examples=[
+            OpenApiExample(
+                "Request Example - Partial Update",
+                value={
+                    "predicted_hours": "10.0",
+                    "estimated_total_price": "500.00",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Request Example - Full Update with Materials",
+                value={
+                    "predicted_hours": "10.0",
+                    "estimated_total_price": "500.00",
+                    "negotiation_reasoning": "Updated estimate after further inspection.",
+                    "materials": [
+                        {
+                            "name": "PVC Pipe 3 inch",
+                            "price": "30.00",
+                            "description": "3m",
+                        }
+                    ],
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Application updated successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "job": {
+                            "public_id": "223e4567-e89b-12d3-a456-426614174000",
+                            "title": "Fix Kitchen Sink",
+                        },
+                        "status": "pending",
+                        "status_at": "2024-01-15T10:30:00Z",
+                        "predicted_hours": "10.00",
+                        "estimated_total_price": "500.00",
+                        "negotiation_reasoning": "Updated estimate after further inspection.",
+                        "materials": [
+                            {
+                                "public_id": "323e4567-e89b-12d3-a456-426614174000",
+                                "name": "PVC Pipe 3 inch",
+                                "price": "30.00",
+                                "description": "3m",
+                                "created_at": "2024-01-15T11:00:00Z",
+                            }
+                        ],
+                        "attachments": [],
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-15T11:00:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def put(self, request, public_id):
+        """Update a job application."""
+        import json
+
+        application = get_object_or_404(
+            JobApplication, public_id=public_id, handyman=request.user
+        )
+
+        # Handle multipart/form-data similar to create
+        data = {}
+        for key in request.data.keys():
+            if key != "attachments":  # Skip attachments, handle separately
+                data[key] = request.data[key]
+
+        # Parse materials if provided as JSON string
+        if "materials" in data and isinstance(data["materials"], str):
+            try:
+                data["materials"] = json.loads(data["materials"])
+            except json.JSONDecodeError:
+                return validation_error_response(
+                    {"materials": "Invalid JSON format for materials."}
+                )
+
+        # Handle attachments from request.FILES
+        attachments_list = []
+        for key, value in request.FILES.items():
+            if key.startswith("attachments") or key == "attachments":
+                attachments_list.append(value)
+
+        # Add attachments to data if we have valid files from request.FILES
+        if attachments_list:
+            data["attachments"] = attachments_list
+
+        serializer = JobApplicationUpdateSerializer(
+            application, data=data, context={"request": request}, partial=True
+        )
+
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            application = serializer.save()
+            # Prefetch related objects for serializer
+            application = JobApplication.objects.prefetch_related(
+                "materials", "attachments"
+            ).get(pk=application.pk)
+            response_serializer = JobApplicationDetailSerializer(application)
+            return success_response(
+                response_serializer.data, message="Application updated successfully"
+            )
+        except Exception as e:
+            return validation_error_response({"detail": str(e)})
+
+
 # ========================
 # Job Application Views - Homeowner
 # ========================
@@ -2412,9 +2648,11 @@ class HomeownerApplicationListView(APIView):
     def get(self, request):
         """List all applications for homeowner."""
         # Get all applications for this homeowner's jobs
-        applications = JobApplication.objects.filter(
-            job__homeowner=request.user
-        ).select_related("job__category", "job__city", "handyman__handyman_profile")
+        applications = (
+            JobApplication.objects.filter(job__homeowner=request.user)
+            .select_related("job__category", "job__city", "handyman__handyman_profile")
+            .prefetch_related("materials", "attachments")
+        )
 
         # Filter by job if provided
         job_id = request.query_params.get("job_id")
@@ -2481,7 +2719,7 @@ class HomeownerApplicationDetailView(APIView):
             403: OpenApiTypes.OBJECT,
             404: OpenApiTypes.OBJECT,
         },
-        description="Get details of a specific application. Validates that application belongs to homeowner's job. Requires authentication with verified email.",
+        description="Get details of a specific application including proposal details (predicted hours, estimated price, materials, attachments, negotiation reasoning). Validates that application belongs to homeowner's job. Requires authentication with verified email.",
         summary="Get application detail",
         tags=["Mobile Homeowner Applications"],
         examples=[
@@ -2503,6 +2741,33 @@ class HomeownerApplicationDetailView(APIView):
                             "hourly_rate": 75.0,
                         },
                         "status": "pending",
+                        "predicted_hours": "8.5",
+                        "estimated_total_price": "450.00",
+                        "negotiation_reasoning": "Based on site inspection, need additional materials for proper installation.",
+                        "materials": [
+                            {
+                                "public_id": "423e4567-e89b-12d3-a456-426614174000",
+                                "name": "PVC Pipe 2 inch",
+                                "price": "25.50",
+                                "description": "2m",
+                                "created_at": "2024-01-15T10:30:00Z",
+                            },
+                            {
+                                "public_id": "523e4567-e89b-12d3-a456-426614174000",
+                                "name": "Pipe Fittings",
+                                "price": "15.00",
+                                "description": "4 pieces",
+                                "created_at": "2024-01-15T10:30:00Z",
+                            },
+                        ],
+                        "attachments": [
+                            {
+                                "public_id": "623e4567-e89b-12d3-a456-426614174000",
+                                "file": "https://example.com/media/job-applications/attachments/2024/01/15/quote.pdf",
+                                "file_name": "quote.pdf",
+                                "created_at": "2024-01-15T10:30:00Z",
+                            },
+                        ],
                         "created_at": "2024-01-15T10:30:00Z",
                     },
                     "errors": None,
@@ -2521,7 +2786,7 @@ class HomeownerApplicationDetailView(APIView):
         application = get_object_or_404(
             JobApplication.objects.select_related(
                 "job__category", "job__city", "handyman__handyman_profile"
-            ),
+            ).prefetch_related("materials", "attachments"),
             public_id=public_id,
             job__homeowner=request.user,
         )
