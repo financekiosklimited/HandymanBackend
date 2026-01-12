@@ -1508,6 +1508,7 @@ class ReimbursementServiceTests(TestCase):
 
     def setUp(self):
         """Set up test data."""
+        from apps.jobs.models import JobReimbursementCategory
         from apps.jobs.services import ReimbursementService
 
         self.service = ReimbursementService()
@@ -1540,6 +1541,24 @@ class ReimbursementServiceTests(TestCase):
             is_active=True,
         )
 
+        # Use get_or_create for categories that may already exist from migration
+        self.reimbursement_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Material expenses",
+                "is_active": True,
+            },
+        )
+        self.tools_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="tools",
+            defaults={
+                "name": "Tools",
+                "description": "Tool expenses",
+                "is_active": True,
+            },
+        )
+
         self.job = Job.objects.create(
             homeowner=self.homeowner,
             assigned_handyman=self.handyman,
@@ -1569,7 +1588,7 @@ class ReimbursementServiceTests(TestCase):
             handyman=self.handyman,
             job=self.job,
             name="Plumbing materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             attachments=attachments,
             notes="Required for repair",
@@ -1578,7 +1597,7 @@ class ReimbursementServiceTests(TestCase):
         self.assertEqual(reimbursement.job, self.job)
         self.assertEqual(reimbursement.handyman, self.handyman)
         self.assertEqual(reimbursement.name, "Plumbing materials")
-        self.assertEqual(reimbursement.category, "materials")
+        self.assertEqual(reimbursement.category, self.reimbursement_category)
         self.assertEqual(reimbursement.amount, Decimal("50.00"))
         self.assertEqual(reimbursement.status, "pending")
         self.assertEqual(reimbursement.attachments.count(), 1)
@@ -1607,7 +1626,7 @@ class ReimbursementServiceTests(TestCase):
                 handyman=other_handyman,
                 job=self.job,
                 name="Materials",
-                category="materials",
+                category=self.reimbursement_category,
                 amount=50,
                 attachments=attachments,
             )
@@ -1628,7 +1647,7 @@ class ReimbursementServiceTests(TestCase):
                 handyman=self.handyman,
                 job=self.job,
                 name="Materials",
-                category="materials",
+                category=self.reimbursement_category,
                 amount=50,
                 attachments=attachments,
             )
@@ -1653,7 +1672,7 @@ class ReimbursementServiceTests(TestCase):
             handyman=self.handyman,
             job=self.job,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             attachments=attachments,
         )
@@ -1673,7 +1692,7 @@ class ReimbursementServiceTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             status="pending",
         )
@@ -1704,7 +1723,7 @@ class ReimbursementServiceTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             status="pending",
         )
@@ -1736,7 +1755,7 @@ class ReimbursementServiceTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             status="pending",
         )
@@ -1758,7 +1777,7 @@ class ReimbursementServiceTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             status="approved",
             reviewed_by=self.homeowner,
@@ -1782,7 +1801,7 @@ class ReimbursementServiceTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             status="pending",
         )
@@ -1804,7 +1823,7 @@ class ReimbursementServiceTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             status="pending",
         )
@@ -1819,13 +1838,13 @@ class ReimbursementServiceTests(TestCase):
             handyman=self.handyman,
             reimbursement=reimbursement,
             name="Updated Materials",
-            category="tools",
+            category=self.tools_category,
             amount=Decimal("75.00"),
             notes="Updated notes",
         )
 
         self.assertEqual(result.name, "Updated Materials")
-        self.assertEqual(result.category, "tools")
+        self.assertEqual(result.category, self.tools_category)
         self.assertEqual(result.amount, Decimal("75.00"))
         self.assertEqual(result.notes, "Updated notes")
 
@@ -1843,7 +1862,7 @@ class ReimbursementServiceTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             status="pending",
         )
@@ -1870,7 +1889,7 @@ class ReimbursementServiceTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             status="approved",
         )
@@ -1897,7 +1916,7 @@ class ReimbursementServiceTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             status="pending",
         )
@@ -1928,7 +1947,7 @@ class ReimbursementServiceTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             status="pending",
         )
@@ -1965,7 +1984,7 @@ class ReimbursementServiceTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             status="pending",
         )

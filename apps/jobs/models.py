@@ -720,6 +720,32 @@ class Review(BaseModel):
         super().save(*args, **kwargs)
 
 
+class JobReimbursementCategory(BaseModel):
+    """
+    Category for job reimbursement requests.
+    Dynamically managed categories for reimbursement types.
+    """
+
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(unique=True, max_length=100)
+    description = models.TextField(blank=True)
+    icon = models.CharField(max_length=50, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "job_reimbursement_categories"
+        ordering = ["name"]
+        verbose_name = "Job Reimbursement Category"
+        verbose_name_plural = "Job Reimbursement Categories"
+        indexes = [
+            models.Index(fields=["is_active"]),
+            models.Index(fields=["slug"]),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class JobReimbursement(BaseModel):
     """
     Reimbursement request submitted by handyman for job-related expenses.
@@ -729,14 +755,6 @@ class JobReimbursement(BaseModel):
         ("pending", "Pending Review"),
         ("approved", "Approved"),
         ("rejected", "Rejected"),
-    ]
-
-    CATEGORY_CHOICES = [
-        ("materials", "Materials"),
-        ("tools", "Tools"),
-        ("transport", "Transportation"),
-        ("equipment", "Equipment Rental"),
-        ("other", "Other"),
     ]
 
     job = models.ForeignKey(
@@ -750,7 +768,11 @@ class JobReimbursement(BaseModel):
 
     # Content
     name = models.CharField(max_length=255, help_text="Name/title of the expense")
-    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES)
+    category = models.ForeignKey(
+        "JobReimbursementCategory",
+        on_delete=models.PROTECT,
+        related_name="reimbursements",
+    )
     amount = models.DecimalField(
         max_digits=10, decimal_places=2, help_text="Reimbursement amount"
     )

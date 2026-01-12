@@ -34,6 +34,7 @@ from apps.jobs.models import (
     Job,
     JobApplication,
     JobCategory,
+    JobReimbursementCategory,
     WorkSession,
 )
 from apps.jobs.serializers import (
@@ -80,6 +81,8 @@ from apps.jobs.serializers import (
     JobDisputeSerializer,
     JobListResponseSerializer,
     JobListSerializer,
+    JobReimbursementCategoryListResponseSerializer,
+    JobReimbursementCategorySerializer,
     JobTaskSerializer,
     JobTaskStatusSerializer,
     JobUpdateResponseSerializer,
@@ -215,6 +218,61 @@ class CityListView(APIView):
         serializer = CitySerializer(cities, many=True)
         return success_response(
             serializer.data, message="Cities retrieved successfully"
+        )
+
+
+class JobReimbursementCategoryListView(APIView):
+    """
+    View for listing all active job reimbursement categories.
+    No authentication required - accessible by guests.
+    """
+
+    authentication_classes = []
+    permission_classes = [
+        GuestPlatformGuardPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_job_reimbursement_categories_list",
+        responses={200: JobReimbursementCategoryListResponseSerializer},
+        description="List all active job reimbursement categories for mobile app. No authentication required.",
+        summary="List reimbursement categories",
+        tags=["Mobile Reimbursement Categories"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Reimbursement categories retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                            "name": "Materials",
+                            "slug": "materials",
+                            "description": "Building materials and supplies",
+                            "icon": "materials",
+                        },
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                            "name": "Tools",
+                            "slug": "tools",
+                            "description": "Tools and equipment",
+                            "icon": "tools",
+                        },
+                    ],
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    def get(self, request):
+        """List all active job reimbursement categories."""
+        categories = JobReimbursementCategory.objects.filter(is_active=True)
+        serializer = JobReimbursementCategorySerializer(categories, many=True)
+        return success_response(
+            serializer.data, message="Reimbursement categories retrieved successfully"
         )
 
 
@@ -5623,11 +5681,15 @@ class HandymanReimbursementListCreateView(APIView):
         if not serializer.is_valid():
             return validation_error_response(serializer.errors)
 
+        # Extract validated data and rename category_id to category
+        validated_data = serializer.validated_data.copy()
+        validated_data["category"] = validated_data.pop("category_id")
+
         try:
             reimbursement = reimbursement_service.submit_reimbursement(
                 handyman=request.user,
                 job=job,
-                **serializer.validated_data,
+                **validated_data,
             )
             return created_response(
                 JobReimbursementSerializer(reimbursement).data,
@@ -5818,11 +5880,16 @@ class HandymanReimbursementEditView(APIView):
         if not serializer.is_valid():
             return validation_error_response(serializer.errors)
 
+        # Extract validated data and rename category_id to category if present
+        validated_data = serializer.validated_data.copy()
+        if "category_id" in validated_data:
+            validated_data["category"] = validated_data.pop("category_id")
+
         try:
             reimbursement = reimbursement_service.update_reimbursement(
                 handyman=request.user,
                 reimbursement=reimbursement,
-                **serializer.validated_data,
+                **validated_data,
             )
             return success_response(
                 JobReimbursementSerializer(reimbursement).data,

@@ -2365,6 +2365,17 @@ HomeownerJobDashboardResponseSerializer = create_response_serializer(
 # ========================
 
 
+class JobReimbursementCategorySerializer(serializers.ModelSerializer):
+    """Serializer for job reimbursement category (read-only)."""
+
+    class Meta:
+        from apps.jobs.models import JobReimbursementCategory
+
+        model = JobReimbursementCategory
+        fields = ["public_id", "name", "slug", "description", "icon"]
+        read_only_fields = fields
+
+
 class JobReimbursementAttachmentSerializer(serializers.ModelSerializer):
     """Serializer for reimbursement attachment (read-only)."""
 
@@ -2383,6 +2394,7 @@ class JobReimbursementSerializer(serializers.ModelSerializer):
 
     from apps.jobs.models import JobReimbursement
 
+    category = JobReimbursementCategorySerializer(read_only=True)
     attachments = JobReimbursementAttachmentSerializer(many=True, read_only=True)
 
     class Meta:
@@ -2408,10 +2420,8 @@ class JobReimbursementSerializer(serializers.ModelSerializer):
 class JobReimbursementCreateSerializer(serializers.Serializer):
     """Serializer for creating a reimbursement (handyman)."""
 
-    from apps.jobs.models import JobReimbursement
-
     name = serializers.CharField(max_length=255)
-    category = serializers.ChoiceField(choices=JobReimbursement.CATEGORY_CHOICES)
+    category_id = serializers.UUIDField(help_text="Category public_id")
     amount = serializers.DecimalField(max_digits=10, decimal_places=2)
     notes = serializers.CharField(required=False, allow_blank=True, default="")
     attachments = serializers.ListField(
@@ -2419,6 +2429,18 @@ class JobReimbursementCreateSerializer(serializers.Serializer):
         min_length=1,
         help_text="At least one attachment required",
     )
+
+    def validate_category_id(self, value):
+        """Validate category exists and is active."""
+        from apps.jobs.models import JobReimbursementCategory
+
+        try:
+            category = JobReimbursementCategory.objects.get(public_id=value)
+            if not category.is_active:
+                raise serializers.ValidationError("Selected category is not active.")
+            return category
+        except JobReimbursementCategory.DoesNotExist:
+            raise serializers.ValidationError("Invalid category.")
 
     def validate_amount(self, value):
         if value <= 0:
@@ -2429,12 +2451,8 @@ class JobReimbursementCreateSerializer(serializers.Serializer):
 class JobReimbursementUpdateSerializer(serializers.Serializer):
     """Serializer for updating a reimbursement (handyman). All fields optional."""
 
-    from apps.jobs.models import JobReimbursement
-
     name = serializers.CharField(max_length=255, required=False)
-    category = serializers.ChoiceField(
-        choices=JobReimbursement.CATEGORY_CHOICES, required=False
-    )
+    category_id = serializers.UUIDField(required=False, help_text="Category public_id")
     amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     notes = serializers.CharField(required=False, allow_blank=True)
     attachments = serializers.ListField(
@@ -2447,6 +2465,18 @@ class JobReimbursementUpdateSerializer(serializers.Serializer):
         required=False,
         help_text="List of attachment public_ids to remove",
     )
+
+    def validate_category_id(self, value):
+        """Validate category exists and is active."""
+        from apps.jobs.models import JobReimbursementCategory
+
+        try:
+            category = JobReimbursementCategory.objects.get(public_id=value)
+            if not category.is_active:
+                raise serializers.ValidationError("Selected category is not active.")
+            return category
+        except JobReimbursementCategory.DoesNotExist:
+            raise serializers.ValidationError("Invalid category.")
 
     def validate_amount(self, value):
         if value is not None and value <= 0:
@@ -2462,6 +2492,11 @@ class JobReimbursementReviewSerializer(serializers.Serializer):
     )
     comment = serializers.CharField(required=False, allow_blank=True, default="")
 
+
+# Response serializers for reimbursement category
+JobReimbursementCategoryListResponseSerializer = create_list_response_serializer(
+    JobReimbursementCategorySerializer, "JobReimbursementCategoryListResponse"
+)
 
 # Response serializers for reimbursement
 JobReimbursementListResponseSerializer = create_list_response_serializer(

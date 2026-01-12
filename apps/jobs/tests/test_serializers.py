@@ -2828,7 +2828,7 @@ class JobReimbursementSerializerTests(TestCase):
 
     def setUp(self):
         """Set up test data."""
-        from apps.jobs.models import JobReimbursement
+        from apps.jobs.models import JobReimbursement, JobReimbursementCategory
 
         self.homeowner = User.objects.create_user(
             email="homeowner@example.com", password="password123"
@@ -2846,6 +2846,14 @@ class JobReimbursementSerializerTests(TestCase):
             slug="toronto",
             is_active=True,
         )
+        self.reimbursement_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Material expenses",
+                "is_active": True,
+            },
+        )
         self.job = Job.objects.create(
             homeowner=self.homeowner,
             assigned_handyman=self.handyman,
@@ -2861,7 +2869,7 @@ class JobReimbursementSerializerTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Plumbing materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             notes="Required for repair",
         )
@@ -2893,7 +2901,10 @@ class JobReimbursementSerializerTests(TestCase):
         data = serializer.data
 
         self.assertEqual(data["name"], "Plumbing materials")
-        self.assertEqual(data["category"], "materials")
+        # Category is now a nested object
+        self.assertIn("public_id", data["category"])
+        self.assertEqual(data["category"]["name"], "Materials")
+        self.assertEqual(data["category"]["slug"], "materials")
         self.assertEqual(data["amount"], "50.00")
         self.assertEqual(data["notes"], "Required for repair")
         self.assertEqual(data["status"], "pending")
@@ -2901,6 +2912,30 @@ class JobReimbursementSerializerTests(TestCase):
 
 class JobReimbursementCreateSerializerTests(TestCase):
     """Test cases for JobReimbursementCreateSerializer."""
+
+    def setUp(self):
+        """Set up test data."""
+        from apps.jobs.models import JobReimbursementCategory
+
+        self.reimbursement_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Material expenses",
+                "is_active": True,
+            },
+        )
+        self.inactive_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="test-inactive-create",
+            defaults={
+                "name": "Test Inactive Create",
+                "description": "Inactive category for create serializer test",
+                "is_active": False,
+            },
+        )
+        # Ensure inactive status
+        self.inactive_category.is_active = False
+        self.inactive_category.save()
 
     def test_valid_data(self):
         """Test serializer with valid data."""
@@ -2911,7 +2946,7 @@ class JobReimbursementCreateSerializerTests(TestCase):
         )
         data = {
             "name": "Plumbing materials",
-            "category": "materials",
+            "category_id": str(self.reimbursement_category.public_id),
             "amount": "50.00",
             "notes": "Required for repair",
             "attachments": [image],
@@ -2928,7 +2963,7 @@ class JobReimbursementCreateSerializerTests(TestCase):
         )
         data = {
             "name": "Materials",
-            "category": "materials",
+            "category_id": str(self.reimbursement_category.public_id),
             "amount": "0",
             "attachments": [image],
         }
@@ -2945,7 +2980,7 @@ class JobReimbursementCreateSerializerTests(TestCase):
         )
         data = {
             "name": "Materials",
-            "category": "materials",
+            "category_id": str(self.reimbursement_category.public_id),
             "amount": "-10.00",
             "attachments": [image],
         }
@@ -2958,15 +2993,15 @@ class JobReimbursementCreateSerializerTests(TestCase):
 
         data = {
             "name": "Materials",
-            "category": "materials",
+            "category_id": str(self.reimbursement_category.public_id),
             "amount": "50.00",
         }
         serializer = JobReimbursementCreateSerializer(data=data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("attachments", serializer.errors)
 
-    def test_invalid_category(self):
-        """Test invalid category fails."""
+    def test_invalid_category_id(self):
+        """Test invalid category_id fails."""
         from apps.jobs.serializers import JobReimbursementCreateSerializer
 
         image = SimpleUploadedFile(
@@ -2974,13 +3009,30 @@ class JobReimbursementCreateSerializerTests(TestCase):
         )
         data = {
             "name": "Materials",
-            "category": "invalid_category",
+            "category_id": "00000000-0000-0000-0000-000000000000",
             "amount": "50.00",
             "attachments": [image],
         }
         serializer = JobReimbursementCreateSerializer(data=data)
         self.assertFalse(serializer.is_valid())
-        self.assertIn("category", serializer.errors)
+        self.assertIn("category_id", serializer.errors)
+
+    def test_inactive_category_fails(self):
+        """Test inactive category_id fails."""
+        from apps.jobs.serializers import JobReimbursementCreateSerializer
+
+        image = SimpleUploadedFile(
+            "receipt.jpg", b"file content", content_type="image/jpeg"
+        )
+        data = {
+            "name": "Materials",
+            "category_id": str(self.inactive_category.public_id),
+            "amount": "50.00",
+            "attachments": [image],
+        }
+        serializer = JobReimbursementCreateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("category_id", serializer.errors)
 
 
 class JobReimbursementReviewSerializerTests(TestCase):
@@ -3025,6 +3077,38 @@ class JobReimbursementReviewSerializerTests(TestCase):
 class JobReimbursementUpdateSerializerTests(TestCase):
     """Test cases for JobReimbursementUpdateSerializer."""
 
+    def setUp(self):
+        """Set up test data."""
+        from apps.jobs.models import JobReimbursementCategory
+
+        self.reimbursement_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Material expenses",
+                "is_active": True,
+            },
+        )
+        self.tools_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="tools",
+            defaults={
+                "name": "Tools",
+                "description": "Tool expenses",
+                "is_active": True,
+            },
+        )
+        self.inactive_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="test-inactive-update",
+            defaults={
+                "name": "Test Inactive Update",
+                "description": "Inactive category for update serializer test",
+                "is_active": False,
+            },
+        )
+        # Ensure inactive status
+        self.inactive_category.is_active = False
+        self.inactive_category.save()
+
     def test_valid_partial_update(self):
         """Test valid partial update."""
         from apps.jobs.serializers import JobReimbursementUpdateSerializer
@@ -3059,20 +3143,29 @@ class JobReimbursementUpdateSerializerTests(TestCase):
         serializer = JobReimbursementUpdateSerializer(data=data)
         self.assertFalse(serializer.is_valid())
 
-    def test_invalid_category(self):
-        """Test invalid category fails."""
+    def test_invalid_category_id(self):
+        """Test invalid category_id fails."""
         from apps.jobs.serializers import JobReimbursementUpdateSerializer
 
-        data = {"category": "invalid_category"}
+        data = {"category_id": "00000000-0000-0000-0000-000000000000"}
         serializer = JobReimbursementUpdateSerializer(data=data)
         self.assertFalse(serializer.is_valid())
-        self.assertIn("category", serializer.errors)
+        self.assertIn("category_id", serializer.errors)
 
-    def test_valid_category(self):
-        """Test valid category."""
+    def test_valid_category_id(self):
+        """Test valid category_id."""
         from apps.jobs.serializers import JobReimbursementUpdateSerializer
 
-        data = {"category": "tools"}
+        data = {"category_id": str(self.tools_category.public_id)}
         serializer = JobReimbursementUpdateSerializer(data=data)
         self.assertTrue(serializer.is_valid())
-        self.assertEqual(serializer.validated_data["category"], "tools")
+        self.assertEqual(serializer.validated_data["category_id"], self.tools_category)
+
+    def test_inactive_category_id_fails(self):
+        """Test inactive category_id fails."""
+        from apps.jobs.serializers import JobReimbursementUpdateSerializer
+
+        data = {"category_id": str(self.inactive_category.public_id)}
+        serializer = JobReimbursementUpdateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("category_id", serializer.errors)

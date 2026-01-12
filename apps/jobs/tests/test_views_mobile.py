@@ -7906,6 +7906,8 @@ class HandymanReimbursementListCreateViewTests(APITestCase):
         """Set up test data."""
         from datetime import UTC, datetime
 
+        from apps.jobs.models import JobReimbursementCategory
+
         self.homeowner = User.objects.create_user(
             email="homeowner@example.com", password="password123"
         )
@@ -7933,6 +7935,16 @@ class HandymanReimbursementListCreateViewTests(APITestCase):
             province_code="ON",
             slug="toronto",
             is_active=True,
+        )
+
+        # Create reimbursement category
+        self.reimbursement_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Building materials",
+                "is_active": True,
+            },
         )
 
         self.job = Job.objects.create(
@@ -7965,7 +7977,7 @@ class HandymanReimbursementListCreateViewTests(APITestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
         )
 
@@ -7986,7 +7998,7 @@ class HandymanReimbursementListCreateViewTests(APITestCase):
         image = create_test_image()
         data = {
             "name": "Plumbing materials",
-            "category": "materials",
+            "category_id": str(self.reimbursement_category.public_id),
             "amount": "50.00",
             "notes": "Required for repair",
             "attachments": [image],
@@ -8005,7 +8017,7 @@ class HandymanReimbursementListCreateViewTests(APITestCase):
 
         data = {
             "name": "Plumbing materials",
-            "category": "materials",
+            "category_id": str(self.reimbursement_category.public_id),
             "amount": "50.00",
         }
 
@@ -8039,7 +8051,7 @@ class HandymanReimbursementListCreateViewTests(APITestCase):
         image = create_test_image()
         data = {
             "name": "Materials",
-            "category": "materials",
+            "category_id": str(self.reimbursement_category.public_id),
             "amount": "50.00",
             "attachments": [image],
         }
@@ -8059,7 +8071,52 @@ class HandymanReimbursementListCreateViewTests(APITestCase):
         image = create_test_image()
         data = {
             "name": "Materials",
-            "category": "materials",
+            "category_id": str(self.reimbursement_category.public_id),
+            "amount": "50.00",
+            "attachments": [image],
+        }
+
+        response = self.client.post(self.url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_reimbursement_invalid_category(self):
+        """Test creating reimbursement with invalid category fails."""
+        self.client.force_authenticate(user=self.handyman)
+
+        image = create_test_image()
+        data = {
+            "name": "Materials",
+            "category_id": "00000000-0000-0000-0000-000000000000",
+            "amount": "50.00",
+            "attachments": [image],
+        }
+
+        response = self.client.post(self.url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_reimbursement_inactive_category(self):
+        """Test creating reimbursement with inactive category fails."""
+        from apps.jobs.models import JobReimbursementCategory
+
+        inactive_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="test-inactive-reimbursement",
+            defaults={
+                "name": "Test Inactive Reimbursement",
+                "is_active": False,
+            },
+        )
+        # Ensure inactive status
+        inactive_category.is_active = False
+        inactive_category.save()
+
+        self.client.force_authenticate(user=self.handyman)
+
+        image = create_test_image()
+        data = {
+            "name": "Materials",
+            "category_id": str(inactive_category.public_id),
             "amount": "50.00",
             "attachments": [image],
         }
@@ -8076,7 +8133,7 @@ class HandymanReimbursementDetailViewTests(APITestCase):
         """Set up test data."""
         from datetime import UTC, datetime
 
-        from apps.jobs.models import JobReimbursement
+        from apps.jobs.models import JobReimbursement, JobReimbursementCategory
 
         self.homeowner = User.objects.create_user(
             email="homeowner@example.com", password="password123"
@@ -8105,6 +8162,15 @@ class HandymanReimbursementDetailViewTests(APITestCase):
             is_active=True,
         )
 
+        self.reimbursement_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Material expenses",
+                "is_active": True,
+            },
+        )
+
         self.job = Job.objects.create(
             homeowner=self.homeowner,
             assigned_handyman=self.handyman,
@@ -8121,7 +8187,7 @@ class HandymanReimbursementDetailViewTests(APITestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
         )
 
@@ -8152,7 +8218,11 @@ class HandymanReimbursementEditViewTests(APITestCase):
         """Set up test data."""
         from datetime import UTC, datetime
 
-        from apps.jobs.models import JobReimbursement, JobReimbursementAttachment
+        from apps.jobs.models import (
+            JobReimbursement,
+            JobReimbursementAttachment,
+            JobReimbursementCategory,
+        )
 
         self.homeowner = User.objects.create_user(
             email="homeowner@example.com", password="password123"
@@ -8181,6 +8251,15 @@ class HandymanReimbursementEditViewTests(APITestCase):
             is_active=True,
         )
 
+        self.reimbursement_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Material expenses",
+                "is_active": True,
+            },
+        )
+
         self.job = Job.objects.create(
             homeowner=self.homeowner,
             assigned_handyman=self.handyman,
@@ -8197,7 +8276,7 @@ class HandymanReimbursementEditViewTests(APITestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
         )
         # Add required attachment
@@ -8265,6 +8344,34 @@ class HandymanReimbursementEditViewTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_edit_reimbursement_with_category_id(self):
+        """Test editing a reimbursement with category_id."""
+        from apps.jobs.models import JobReimbursementCategory
+
+        self.client.force_authenticate(user=self.handyman)
+
+        # Get or create a different category for update
+        tools_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="tools",
+            defaults={
+                "name": "Tools",
+                "description": "Tool expenses",
+                "is_active": True,
+            },
+        )
+
+        data = {
+            "name": "Updated Materials",
+            "amount": "75.00",
+            "category_id": str(tools_category.public_id),
+        }
+        response = self.client.put(self.url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["name"], "Updated Materials")
+        self.assertEqual(response.data["data"]["amount"], "75.00")
+        self.assertEqual(response.data["data"]["category"]["slug"], "tools")
+
 
 class HomeownerReimbursementListViewTests(APITestCase):
     """Test cases for homeowner viewing reimbursements."""
@@ -8273,7 +8380,7 @@ class HomeownerReimbursementListViewTests(APITestCase):
         """Set up test data."""
         from datetime import UTC, datetime
 
-        from apps.jobs.models import JobReimbursement
+        from apps.jobs.models import JobReimbursement, JobReimbursementCategory
 
         self.homeowner = User.objects.create_user(
             email="homeowner@example.com", password="password123"
@@ -8306,6 +8413,15 @@ class HomeownerReimbursementListViewTests(APITestCase):
             is_active=True,
         )
 
+        self.reimbursement_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Material expenses",
+                "is_active": True,
+            },
+        )
+
         self.job = Job.objects.create(
             homeowner=self.homeowner,
             assigned_handyman=self.handyman,
@@ -8322,7 +8438,7 @@ class HomeownerReimbursementListViewTests(APITestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
         )
 
@@ -8353,7 +8469,7 @@ class HomeownerReimbursementDetailViewTests(APITestCase):
         """Set up test data."""
         from datetime import UTC, datetime
 
-        from apps.jobs.models import JobReimbursement
+        from apps.jobs.models import JobReimbursement, JobReimbursementCategory
 
         self.homeowner = User.objects.create_user(
             email="homeowner@example.com", password="password123"
@@ -8386,6 +8502,15 @@ class HomeownerReimbursementDetailViewTests(APITestCase):
             is_active=True,
         )
 
+        self.reimbursement_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Material expenses",
+                "is_active": True,
+            },
+        )
+
         self.job = Job.objects.create(
             homeowner=self.homeowner,
             assigned_handyman=self.handyman,
@@ -8402,7 +8527,7 @@ class HomeownerReimbursementDetailViewTests(APITestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
         )
 
@@ -8433,7 +8558,7 @@ class HomeownerReimbursementReviewViewTests(APITestCase):
         """Set up test data."""
         from datetime import UTC, datetime
 
-        from apps.jobs.models import JobReimbursement
+        from apps.jobs.models import JobReimbursement, JobReimbursementCategory
 
         self.homeowner = User.objects.create_user(
             email="homeowner@example.com", password="password123"
@@ -8466,6 +8591,15 @@ class HomeownerReimbursementReviewViewTests(APITestCase):
             is_active=True,
         )
 
+        self.reimbursement_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Material expenses",
+                "is_active": True,
+            },
+        )
+
         self.job = Job.objects.create(
             homeowner=self.homeowner,
             assigned_handyman=self.handyman,
@@ -8482,7 +8616,7 @@ class HomeownerReimbursementReviewViewTests(APITestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
         )
 
@@ -8574,3 +8708,134 @@ class HomeownerReimbursementReviewViewTests(APITestCase):
         response = self.client.post(self.url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class JobReimbursementCategoryListViewTests(APITestCase):
+    """Test cases for reimbursement category list endpoint."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        from apps.jobs.models import JobReimbursementCategory
+
+        self.user = User.objects.create_user(
+            email="user@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.user, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.user,
+            display_name="Handy",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Use get_or_create for categories that may already exist from migration
+        self.category1, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Material expenses",
+                "icon": "wrench",
+                "is_active": True,
+            },
+        )
+        self.category2, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="tools",
+            defaults={
+                "name": "Tools",
+                "description": "Tool expenses",
+                "icon": "tools",
+                "is_active": True,
+            },
+        )
+        # Create an inactive category for testing
+        self.inactive_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="test-inactive",
+            defaults={
+                "name": "Test Inactive Category",
+                "description": "Inactive category for testing",
+                "is_active": False,
+            },
+        )
+        # Ensure inactive status
+        self.inactive_category.is_active = False
+        self.inactive_category.save()
+
+        self.user.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.url = "/api/v1/mobile/reimbursement-categories/"
+
+    def test_list_categories_success(self):
+        """Test listing active reimbursement categories."""
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Migration seeds 5 categories, we shouldn't expect exactly 2
+        self.assertGreaterEqual(len(response.data["data"]), 2)
+
+        # Check response structure
+        category_data = response.data["data"][0]
+        self.assertIn("public_id", category_data)
+        self.assertIn("name", category_data)
+        self.assertIn("slug", category_data)
+        self.assertIn("description", category_data)
+        self.assertIn("icon", category_data)
+
+    def test_inactive_categories_not_returned(self):
+        """Test that inactive categories are not returned."""
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        slugs = [cat["slug"] for cat in response.data["data"]]
+        self.assertNotIn("test-inactive", slugs)
+        self.assertIn("materials", slugs)
+        self.assertIn("tools", slugs)
+
+    def test_unauthenticated_allowed(self):
+        """Test unauthenticated request is allowed (guest access)."""
+        response = self.client.get(self.url)
+        # This endpoint allows guest access (no authentication required)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_categories_ordered_by_name(self):
+        """Test categories are returned ordered by name."""
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        names = [cat["name"] for cat in response.data["data"]]
+        self.assertEqual(names, sorted(names))
+
+    def test_homeowner_can_access(self):
+        """Test homeowner role can access categories."""
+        from datetime import UTC, datetime
+
+        homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=homeowner,
+            display_name="Owner",
+            phone_verified_at=datetime.now(UTC),
+        )
+        homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.client.force_authenticate(user=homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)

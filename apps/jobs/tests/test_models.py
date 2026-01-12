@@ -1192,6 +1192,8 @@ class JobReimbursementModelTests(TestCase):
 
     def setUp(self):
         """Set up test data."""
+        from apps.jobs.models import JobReimbursementCategory
+
         self.homeowner = User.objects.create_user(
             email="homeowner@example.com", password="testpass123"
         )
@@ -1207,6 +1209,22 @@ class JobReimbursementModelTests(TestCase):
             province_code="ON",
             slug="toronto-on",
             is_active=True,
+        )
+        self.reimbursement_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Material expenses",
+                "is_active": True,
+            },
+        )
+        self.tools_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="tools",
+            defaults={
+                "name": "Tools",
+                "description": "Tool expenses",
+                "is_active": True,
+            },
         )
         self.job = Job.objects.create(
             homeowner=self.homeowner,
@@ -1228,12 +1246,12 @@ class JobReimbursementModelTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Plumbing materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
             notes="Required for repair",
         )
         self.assertEqual(reimbursement.name, "Plumbing materials")
-        self.assertEqual(reimbursement.category, "materials")
+        self.assertEqual(reimbursement.category, self.reimbursement_category)
         self.assertEqual(reimbursement.amount, Decimal("50.00"))
         self.assertEqual(reimbursement.status, "pending")
         self.assertIsNotNone(reimbursement.public_id)
@@ -1246,7 +1264,7 @@ class JobReimbursementModelTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Pipe fittings",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("25.00"),
         )
         self.assertEqual(str(reimbursement), "Pipe fittings - 25.00 (pending)")
@@ -1259,14 +1277,14 @@ class JobReimbursementModelTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Item 1",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("10.00"),
         )
         r2 = JobReimbursement.objects.create(
             job=self.job,
             handyman=self.handyman,
             name="Item 2",
-            category="tools",
+            category=self.tools_category,
             amount=Decimal("20.00"),
         )
         reimbursements = list(JobReimbursement.objects.all())
@@ -1281,7 +1299,7 @@ class JobReimbursementModelTests(TestCase):
             job=self.job,
             handyman=self.handyman,
             name="Materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("30.00"),
         )
         reimbursement_id = reimbursement.id
@@ -1294,7 +1312,7 @@ class JobReimbursementAttachmentModelTests(TestCase):
 
     def setUp(self):
         """Set up test data."""
-        from apps.jobs.models import JobReimbursement
+        from apps.jobs.models import JobReimbursement, JobReimbursementCategory
 
         self.homeowner = User.objects.create_user(
             email="homeowner@example.com", password="testpass123"
@@ -1323,11 +1341,20 @@ class JobReimbursementAttachmentModelTests(TestCase):
             address="123 Main St",
             status="in_progress",
         )
+        # Get or create the materials category (seeded by migration)
+        self.reimbursement_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Building materials and supplies",
+                "is_active": True,
+            },
+        )
         self.reimbursement = JobReimbursement.objects.create(
             job=self.job,
             handyman=self.handyman,
             name="Plumbing materials",
-            category="materials",
+            category=self.reimbursement_category,
             amount=Decimal("50.00"),
         )
 
