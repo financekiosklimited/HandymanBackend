@@ -73,11 +73,6 @@ urlpatterns = [
         mobile_views.HandymanJobApplicationWithdrawView.as_view(),
         name="mobile_handyman_application_withdraw",
     ),
-    path(
-        "handyman/applications/<uuid:public_id>/edit/",
-        mobile_views.HandymanJobApplicationEditView.as_view(),
-        name="mobile_handyman_application_edit",
-    ),
     # Homeowner application management endpoints (global)
     path(
         "homeowner/applications/",
@@ -178,11 +173,6 @@ urlpatterns = [
         name="mobile_handyman_jobs_reports_detail",
     ),
     path(
-        "handyman/jobs/<uuid:public_id>/reports/<uuid:report_id>/edit/",
-        mobile_views.HandymanDailyReportEditView.as_view(),
-        name="mobile_handyman_jobs_reports_update",
-    ),
-    path(
         "handyman/jobs/<uuid:public_id>/disputes/",
         mobile_views.HandymanJobDisputeListView.as_view(),
         name="mobile_handyman_jobs_disputes_list",
@@ -245,11 +235,6 @@ urlpatterns = [
         "handyman/jobs/<uuid:public_id>/reimbursements/<uuid:reimbursement_id>/",
         mobile_views.HandymanReimbursementDetailView.as_view(),
         name="mobile_handyman_jobs_reimbursement_detail",
-    ),
-    path(
-        "handyman/jobs/<uuid:public_id>/reimbursements/<uuid:reimbursement_id>/edit/",
-        mobile_views.HandymanReimbursementEditView.as_view(),
-        name="mobile_handyman_jobs_reimbursement_edit",
     ),
     # Homeowner Reimbursement Endpoints
     path(

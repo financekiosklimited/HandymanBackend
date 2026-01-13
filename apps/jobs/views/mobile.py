@@ -2297,6 +2297,144 @@ class HandymanJobApplicationDetailView(APIView):
             serializer.data, message="Application retrieved successfully"
         )
 
+    @extend_schema(
+        operation_id="mobile_handyman_applications_edit",
+        request=JobApplicationUpdateSerializer,
+        responses={
+            200: JobApplicationDetailResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Update a pending job application with new proposal details. "
+            "Only pending applications can be edited. "
+            "Supports multipart/form-data for file attachments. "
+            "All fields are optional - only provided fields will be updated. "
+            "Materials and attachments will completely replace existing ones if provided. "
+            "Requires authentication with verified email."
+        ),
+        summary="Edit application",
+        tags=["Mobile Handyman Applications"],
+        examples=[
+            OpenApiExample(
+                "Request Example - Partial Update",
+                value={
+                    "predicted_hours": "10.0",
+                    "estimated_total_price": "500.00",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Request Example - Full Update with Materials",
+                value={
+                    "predicted_hours": "10.0",
+                    "estimated_total_price": "500.00",
+                    "negotiation_reasoning": "Updated estimate after further inspection.",
+                    "materials": [
+                        {
+                            "name": "PVC Pipe 3 inch",
+                            "price": "30.00",
+                            "description": "3m",
+                        }
+                    ],
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Application updated successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "job": {
+                            "public_id": "223e4567-e89b-12d3-a456-426614174000",
+                            "title": "Fix Kitchen Sink",
+                        },
+                        "status": "pending",
+                        "status_at": "2024-01-15T10:30:00Z",
+                        "predicted_hours": "10.00",
+                        "estimated_total_price": "500.00",
+                        "negotiation_reasoning": "Updated estimate after further inspection.",
+                        "materials": [
+                            {
+                                "public_id": "323e4567-e89b-12d3-a456-426614174000",
+                                "name": "PVC Pipe 3 inch",
+                                "price": "30.00",
+                                "description": "3m",
+                                "created_at": "2024-01-15T11:00:00Z",
+                            }
+                        ],
+                        "attachments": [],
+                        "created_at": "2024-01-15T10:30:00Z",
+                        "updated_at": "2024-01-15T11:00:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def put(self, request, public_id):
+        """Update a job application."""
+        import json
+
+        application = get_object_or_404(
+            JobApplication, public_id=public_id, handyman=request.user
+        )
+
+        # Handle multipart/form-data similar to create
+        data = {}
+        for key in request.data.keys():
+            if key != "attachments":  # Skip attachments, handle separately
+                data[key] = request.data[key]
+
+        # Parse materials if provided as JSON string
+        if "materials" in data and isinstance(data["materials"], str):
+            try:
+                data["materials"] = json.loads(data["materials"])
+            except json.JSONDecodeError:
+                return validation_error_response(
+                    {"materials": "Invalid JSON format for materials."}
+                )
+
+        # Handle attachments from request.FILES
+        attachments_list = []
+        for key, value in request.FILES.items():
+            if key.startswith("attachments") or key == "attachments":
+                attachments_list.append(value)
+
+        # Add attachments to data if we have valid files from request.FILES
+        if attachments_list:
+            data["attachments"] = attachments_list
+
+        serializer = JobApplicationUpdateSerializer(
+            application, data=data, context={"request": request}, partial=True
+        )
+
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            application = serializer.save()
+            # Prefetch related objects for serializer
+            application = JobApplication.objects.prefetch_related(
+                "materials", "attachments"
+            ).get(pk=application.pk)
+            response_serializer = JobApplicationDetailSerializer(application)
+            return success_response(
+                response_serializer.data, message="Application updated successfully"
+            )
+        except Exception as e:
+            return validation_error_response({"detail": str(e)})
+
 
 class HandymanJobApplicationWithdrawView(APIView):
     """
@@ -2459,157 +2597,6 @@ class HandymanJobApplicationWithdrawView(APIView):
             serializer = JobApplicationDetailSerializer(application)
             return success_response(
                 serializer.data, message="Application withdrawn successfully"
-            )
-        except Exception as e:
-            return validation_error_response({"detail": str(e)})
-
-
-class HandymanJobApplicationEditView(APIView):
-    """
-    View for editing a job application (only pending applications).
-    """
-
-    permission_classes = [
-        IsAuthenticated,
-        PlatformGuardPermission,
-        RoleGuardPermission,
-        EmailVerifiedPermission,
-    ]
-
-    @extend_schema(
-        operation_id="mobile_handyman_applications_edit",
-        request=JobApplicationUpdateSerializer,
-        responses={
-            200: JobApplicationDetailResponseSerializer,
-            400: OpenApiTypes.OBJECT,
-            401: OpenApiTypes.OBJECT,
-            403: OpenApiTypes.OBJECT,
-            404: OpenApiTypes.OBJECT,
-        },
-        description=(
-            "Update a pending job application with new proposal details. "
-            "Only pending applications can be edited. "
-            "Supports multipart/form-data for file attachments. "
-            "All fields are optional - only provided fields will be updated. "
-            "Materials and attachments will completely replace existing ones if provided. "
-            "Requires authentication with verified email."
-        ),
-        summary="Edit application",
-        tags=["Mobile Handyman Applications"],
-        examples=[
-            OpenApiExample(
-                "Request Example - Partial Update",
-                value={
-                    "predicted_hours": "10.0",
-                    "estimated_total_price": "500.00",
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                "Request Example - Full Update with Materials",
-                value={
-                    "predicted_hours": "10.0",
-                    "estimated_total_price": "500.00",
-                    "negotiation_reasoning": "Updated estimate after further inspection.",
-                    "materials": [
-                        {
-                            "name": "PVC Pipe 3 inch",
-                            "price": "30.00",
-                            "description": "3m",
-                        }
-                    ],
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                "Success Response",
-                value={
-                    "message": "Application updated successfully",
-                    "data": {
-                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
-                        "job": {
-                            "public_id": "223e4567-e89b-12d3-a456-426614174000",
-                            "title": "Fix Kitchen Sink",
-                        },
-                        "status": "pending",
-                        "status_at": "2024-01-15T10:30:00Z",
-                        "predicted_hours": "10.00",
-                        "estimated_total_price": "500.00",
-                        "negotiation_reasoning": "Updated estimate after further inspection.",
-                        "materials": [
-                            {
-                                "public_id": "323e4567-e89b-12d3-a456-426614174000",
-                                "name": "PVC Pipe 3 inch",
-                                "price": "30.00",
-                                "description": "3m",
-                                "created_at": "2024-01-15T11:00:00Z",
-                            }
-                        ],
-                        "attachments": [],
-                        "created_at": "2024-01-15T10:30:00Z",
-                        "updated_at": "2024-01-15T11:00:00Z",
-                    },
-                    "errors": None,
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-            VALIDATION_ERROR_EXAMPLE,
-            UNAUTHORIZED_EXAMPLE,
-            FORBIDDEN_EXAMPLE,
-            NOT_FOUND_EXAMPLE,
-        ],
-    )
-    def put(self, request, public_id):
-        """Update a job application."""
-        import json
-
-        application = get_object_or_404(
-            JobApplication, public_id=public_id, handyman=request.user
-        )
-
-        # Handle multipart/form-data similar to create
-        data = {}
-        for key in request.data.keys():
-            if key != "attachments":  # Skip attachments, handle separately
-                data[key] = request.data[key]
-
-        # Parse materials if provided as JSON string
-        if "materials" in data and isinstance(data["materials"], str):
-            try:
-                data["materials"] = json.loads(data["materials"])
-            except json.JSONDecodeError:
-                return validation_error_response(
-                    {"materials": "Invalid JSON format for materials."}
-                )
-
-        # Handle attachments from request.FILES
-        attachments_list = []
-        for key, value in request.FILES.items():
-            if key.startswith("attachments") or key == "attachments":
-                attachments_list.append(value)
-
-        # Add attachments to data if we have valid files from request.FILES
-        if attachments_list:
-            data["attachments"] = attachments_list
-
-        serializer = JobApplicationUpdateSerializer(
-            application, data=data, context={"request": request}, partial=True
-        )
-
-        if not serializer.is_valid():
-            return validation_error_response(serializer.errors)
-
-        try:
-            application = serializer.save()
-            # Prefetch related objects for serializer
-            application = JobApplication.objects.prefetch_related(
-                "materials", "attachments"
-            ).get(pk=application.pk)
-            response_serializer = JobApplicationDetailSerializer(application)
-            return success_response(
-                response_serializer.data, message="Application updated successfully"
             )
         except Exception as e:
             return validation_error_response({"detail": str(e)})
@@ -4114,6 +4101,125 @@ class HandymanDailyReportDetailView(BaseHandymanOngoingView):
             serializer.data, message="Daily report retrieved successfully"
         )
 
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_reports_update",
+        request=DailyReportUpdateSerializer,
+        responses={
+            200: DailyReportDetailResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Edit an existing daily report for a job. "
+            "Only reports with 'pending' or 'rejected' status can be edited. "
+            "If a rejected report is edited, its status will be reset to 'pending' for re-review."
+        ),
+        summary="Edit daily report",
+        tags=["Mobile Handyman Ongoing Jobs"],
+        examples=[
+            OpenApiExample(
+                "Edit Report Request",
+                value={
+                    "summary": "Updated summary of work done today.",
+                    "total_work_duration_seconds": 32400,
+                    "tasks": [
+                        {
+                            "task_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "notes": "Finished remaining tiles",
+                            "marked_complete": True,
+                        }
+                    ],
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Daily report updated successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "report_date": "2024-01-15",
+                        "summary": "Updated summary of work done today.",
+                        "total_work_duration_seconds": 32400,
+                        "status": "pending",
+                        "homeowner_comment": "",
+                        "reviewed_at": None,
+                        "review_deadline": "2024-01-18T12:00:00Z",
+                        "tasks_worked": [
+                            {
+                                "public_id": "234e5678-e89b-12d3-a456-426614174001",
+                                "task": {
+                                    "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                                    "title": "Tile bathroom floor",
+                                    "description": "Install new tiles",
+                                    "is_completed": True,
+                                },
+                                "notes": "Finished remaining tiles",
+                                "marked_complete": True,
+                            }
+                        ],
+                        "created_at": "2024-01-15T10:00:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def put(self, request, public_id, report_id):
+        from datetime import timedelta
+
+        from django.core.exceptions import ValidationError
+
+        job = self.get_job(public_id)
+        report = get_object_or_404(job.daily_reports.all(), public_id=report_id)
+
+        serializer = DailyReportUpdateSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        duration = None
+        if serializer.validated_data.get("total_work_duration_seconds") is not None:
+            duration = timedelta(
+                seconds=serializer.validated_data["total_work_duration_seconds"]
+            )
+
+        task_entries = None
+        if serializer.validated_data.get("tasks") is not None:
+            task_entries = []
+            for task_data in serializer.validated_data["tasks"]:
+                task_entries.append(
+                    {
+                        "task": task_data["task_id"],
+                        "notes": task_data.get("notes", ""),
+                        "marked_complete": task_data.get("marked_complete", False),
+                    }
+                )
+
+        try:
+            report = daily_report_service.update_report(
+                handyman=request.user,
+                report=report,
+                summary=serializer.validated_data.get("summary"),
+                total_work_duration=duration,
+                task_entries=task_entries,
+            )
+            return success_response(
+                DailyReportSerializer(report).data,
+                message="Daily report updated successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
 
 class HandymanJobDisputeListView(BaseHandymanOngoingView):
     """
@@ -4419,132 +4525,6 @@ class HandymanDailyReportCreateView(BaseHandymanOngoingView):
             return created_response(
                 DailyReportSerializer(report).data,
                 message="Daily report submitted successfully",
-            )
-        except ValidationError as e:
-            return validation_error_response({"detail": str(e.message)})
-
-
-class HandymanDailyReportEditView(BaseHandymanOngoingView):
-    """
-    View for handyman to edit an existing daily report.
-    Only pending or rejected reports can be edited.
-    """
-
-    @extend_schema(
-        operation_id="mobile_handyman_jobs_reports_update",
-        request=DailyReportUpdateSerializer,
-        responses={
-            200: DailyReportDetailResponseSerializer,
-            400: OpenApiTypes.OBJECT,
-            401: OpenApiTypes.OBJECT,
-            403: OpenApiTypes.OBJECT,
-            404: OpenApiTypes.OBJECT,
-        },
-        description=(
-            "Edit an existing daily report for a job. "
-            "Only reports with 'pending' or 'rejected' status can be edited. "
-            "If a rejected report is edited, its status will be reset to 'pending' for re-review."
-        ),
-        summary="Edit daily report",
-        tags=["Mobile Handyman Ongoing Jobs"],
-        examples=[
-            OpenApiExample(
-                "Edit Report Request",
-                value={
-                    "summary": "Updated summary of work done today.",
-                    "total_work_duration_seconds": 32400,
-                    "tasks": [
-                        {
-                            "task_id": "123e4567-e89b-12d3-a456-426614174000",
-                            "notes": "Finished remaining tiles",
-                            "marked_complete": True,
-                        }
-                    ],
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                "Success Response",
-                value={
-                    "message": "Daily report updated successfully",
-                    "data": {
-                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
-                        "report_date": "2024-01-15",
-                        "summary": "Updated summary of work done today.",
-                        "total_work_duration_seconds": 32400,
-                        "status": "pending",
-                        "homeowner_comment": "",
-                        "reviewed_at": None,
-                        "review_deadline": "2024-01-18T12:00:00Z",
-                        "tasks_worked": [
-                            {
-                                "public_id": "234e5678-e89b-12d3-a456-426614174001",
-                                "task": {
-                                    "public_id": "123e4567-e89b-12d3-a456-426614174000",
-                                    "title": "Tile bathroom floor",
-                                    "description": "Install new tiles",
-                                    "is_completed": True,
-                                },
-                                "notes": "Finished remaining tiles",
-                                "marked_complete": True,
-                            }
-                        ],
-                        "created_at": "2024-01-15T10:00:00Z",
-                    },
-                    "errors": None,
-                    "meta": None,
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-            VALIDATION_ERROR_EXAMPLE,
-            UNAUTHORIZED_EXAMPLE,
-            FORBIDDEN_EXAMPLE,
-            NOT_FOUND_EXAMPLE,
-        ],
-    )
-    def put(self, request, public_id, report_id):
-        from datetime import timedelta
-
-        from django.core.exceptions import ValidationError
-
-        job = self.get_job(public_id)
-        report = get_object_or_404(job.daily_reports.all(), public_id=report_id)
-
-        serializer = DailyReportUpdateSerializer(data=request.data)
-
-        if not serializer.is_valid():
-            return validation_error_response(serializer.errors)
-
-        duration = None
-        if serializer.validated_data.get("total_work_duration_seconds") is not None:
-            duration = timedelta(
-                seconds=serializer.validated_data["total_work_duration_seconds"]
-            )
-
-        task_entries = None
-        if serializer.validated_data.get("tasks") is not None:
-            task_entries = []
-            for task_data in serializer.validated_data["tasks"]:
-                task_entries.append(
-                    {
-                        "task": task_data["task_id"],
-                        "notes": task_data.get("notes", ""),
-                        "marked_complete": task_data.get("marked_complete", False),
-                    }
-                )
-
-        try:
-            report = daily_report_service.update_report(
-                handyman=request.user,
-                report=report,
-                summary=serializer.validated_data.get("summary"),
-                total_work_duration=duration,
-                task_entries=task_entries,
-            )
-            return success_response(
-                DailyReportSerializer(report).data,
-                message="Daily report updated successfully",
             )
         except ValidationError as e:
             return validation_error_response({"detail": str(e.message)})
@@ -5771,17 +5751,6 @@ class HandymanReimbursementDetailView(APIView):
         return success_response(
             serializer.data, message="Reimbursement retrieved successfully"
         )
-
-
-class HandymanReimbursementEditView(APIView):
-    """Edit a pending reimbursement (handyman)."""
-
-    permission_classes = [
-        IsAuthenticated,
-        PlatformGuardPermission,
-        RoleGuardPermission,
-        PhoneVerifiedPermission,
-    ]
 
     @extend_schema(
         operation_id="mobile_handyman_reimbursement_edit",

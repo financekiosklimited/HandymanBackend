@@ -2893,9 +2893,7 @@ class HandymanJobApplicationEditViewTests(APITestCase):
             description="Old description",
         )
 
-        self.url = (
-            f"/api/v1/mobile/handyman/applications/{self.application.public_id}/edit/"
-        )
+        self.url = f"/api/v1/mobile/handyman/applications/{self.application.public_id}/"
         self.client.force_authenticate(user=self.handyman)
 
     def test_edit_application_success_partial_update(self):
@@ -4533,7 +4531,7 @@ class HandymanDailyReportEditViewTests(APITestCase):
     )
     def test_edit_report_summary_success(self, mock_notify):
         """Test successfully editing report summary."""
-        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/"
         self.client.force_authenticate(user=self.handyman)
 
         data = {"summary": "Updated summary"}
@@ -4548,7 +4546,7 @@ class HandymanDailyReportEditViewTests(APITestCase):
     )
     def test_edit_report_duration_success(self, mock_notify):
         """Test successfully editing report duration."""
-        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/"
         self.client.force_authenticate(user=self.handyman)
 
         data = {"total_work_duration_seconds": 32400}
@@ -4562,7 +4560,7 @@ class HandymanDailyReportEditViewTests(APITestCase):
     )
     def test_edit_report_tasks_success(self, mock_notify):
         """Test successfully editing report tasks."""
-        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/"
         self.client.force_authenticate(user=self.handyman)
 
         data = {
@@ -4595,7 +4593,7 @@ class HandymanDailyReportEditViewTests(APITestCase):
         self.report.homeowner_comment = "Not detailed enough"
         self.report.save()
 
-        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/"
         self.client.force_authenticate(user=self.handyman)
 
         data = {"summary": "More detailed summary"}
@@ -4612,7 +4610,7 @@ class HandymanDailyReportEditViewTests(APITestCase):
         self.report.status = "approved"
         self.report.save()
 
-        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/"
         self.client.force_authenticate(user=self.handyman)
 
         data = {"summary": "New summary"}
@@ -4639,7 +4637,7 @@ class HandymanDailyReportEditViewTests(APITestCase):
             "phone_verified": True,
         }
 
-        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/"
         self.client.force_authenticate(user=other_handyman)
 
         data = {"summary": "Hacked summary"}
@@ -4651,7 +4649,7 @@ class HandymanDailyReportEditViewTests(APITestCase):
     )
     def test_edit_report_remove_tasks(self, mock_notify):
         """Test successfully removing tasks from a report."""
-        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/"
         self.client.force_authenticate(user=self.handyman)
 
         data = {"tasks": []}
@@ -4664,7 +4662,7 @@ class HandymanDailyReportEditViewTests(APITestCase):
 
     def test_edit_report_validation_error(self):
         """Test editing report with invalid data."""
-        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/"
         self.client.force_authenticate(user=self.handyman)
 
         data = {"total_work_duration_seconds": -100}
@@ -4676,7 +4674,7 @@ class HandymanDailyReportEditViewTests(APITestCase):
     )
     def test_edit_report_with_same_task_values(self, mock_notify):
         """Test editing report with same task values doesn't recreate tasks."""
-        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/edit/"
+        url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reports/{self.report.public_id}/"
         self.client.force_authenticate(user=self.handyman)
 
         initial_task_count = DailyReportTask.objects.count()
@@ -8294,7 +8292,7 @@ class HandymanReimbursementEditViewTests(APITestCase):
             "phone_verified": True,
         }
 
-        self.url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reimbursements/{self.reimbursement.public_id}/edit/"
+        self.url = f"/api/v1/mobile/handyman/jobs/{self.job.public_id}/reimbursements/{self.reimbursement.public_id}/"
 
     def test_edit_reimbursement_success(self):
         """Test editing a pending reimbursement."""
