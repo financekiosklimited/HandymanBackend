@@ -307,7 +307,7 @@ class HandymanConversationMessagesView(APIView):
         },
         parameters=[
             OpenApiParameter(
-                name="before",
+                name="before_id",
                 type=OpenApiTypes.UUID,
                 location=OpenApiParameter.QUERY,
                 description="Get messages before this message public_id (for pagination)",
@@ -324,7 +324,7 @@ class HandymanConversationMessagesView(APIView):
         description=(
             "List messages in a conversation with cursor-based pagination. "
             "Messages are returned in chronological order (oldest first). "
-            "Use 'before' parameter to load older messages. "
+            "Use 'before_id' parameter to load older messages. "
             "Requires handyman role and phone verification."
         ),
         summary="List messages",
@@ -378,13 +378,13 @@ class HandymanConversationMessagesView(APIView):
         except ChatConversation.DoesNotExist:
             return not_found_response("Conversation not found")
 
-        before = request.query_params.get("before")
+        before_id = request.query_params.get("before_id")
         limit = min(int(request.query_params.get("limit", 50)), 100)
 
         messages = chat_service.get_messages_for_conversation(
             conversation=conversation,
             limit=limit + 1,  # Get one extra to check if there are more
-            before=before,
+            before=before_id,
         )
 
         messages_list = list(messages)

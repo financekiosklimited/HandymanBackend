@@ -238,7 +238,7 @@ class MobileJobListCreateViewTests(APITestCase):
             address="123 Main St",
         )
         self.client.force_authenticate(user=self.user)
-        response = self.client.get(self.url, {"city": str(self.city.public_id)})
+        response = self.client.get(self.url, {"city_id": str(self.city.public_id)})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
         self.assertEqual(response.data["data"][0]["title"], "Toronto job")
@@ -269,7 +269,9 @@ class MobileJobListCreateViewTests(APITestCase):
         )
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.get(self.url, {"category": str(self.category.public_id)})
+        response = self.client.get(
+            self.url, {"category_id": str(self.category.public_id)}
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
         self.assertEqual(response.data["data"][0]["title"], "Plumbing job")
@@ -1538,7 +1540,7 @@ class MobileForYouJobListViewTests(APITestCase):
 
         self.client.force_authenticate(user=self.user)
         response = self.client.get(
-            self.url, {"category": str(self.category_plumbing.public_id)}
+            self.url, {"category_id": str(self.category_plumbing.public_id)}
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1569,7 +1571,9 @@ class MobileForYouJobListViewTests(APITestCase):
         )
 
         self.client.force_authenticate(user=self.user)
-        response = self.client.get(self.url, {"city": str(self.city_toronto.public_id)})
+        response = self.client.get(
+            self.url, {"city_id": str(self.city_toronto.public_id)}
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
@@ -1879,7 +1883,7 @@ class MobileGuestJobListViewTests(APITestCase):
 
         response = self.client.get(
             self.url,
-            {"category": str(self.category_plumbing.public_id)},
+            {"category_id": str(self.category_plumbing.public_id)},
             HTTP_X_PLATFORM="mobile",
         )
 
@@ -1912,7 +1916,7 @@ class MobileGuestJobListViewTests(APITestCase):
 
         response = self.client.get(
             self.url,
-            {"city": str(self.city_toronto.public_id)},
+            {"city_id": str(self.city_toronto.public_id)},
             HTTP_X_PLATFORM="mobile",
         )
 
@@ -2242,7 +2246,7 @@ class HandymanForYouJobListViewTests(APITestCase):
             {
                 "latitude": "43.651070",
                 "longitude": "-79.347015",
-                "category": str(self.category.public_id),
+                "category_id": str(self.category.public_id),
             },
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -2255,7 +2259,7 @@ class HandymanForYouJobListViewTests(APITestCase):
             {
                 "latitude": "43.651070",
                 "longitude": "-79.347015",
-                "city": str(self.city.public_id),
+                "city_id": str(self.city.public_id),
             },
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)

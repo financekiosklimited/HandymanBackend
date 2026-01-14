@@ -321,14 +321,14 @@ class JobListCreateView(APIView):
                 required=False,
             ),
             OpenApiParameter(
-                name="category",
+                name="category_id",
                 type=OpenApiTypes.UUID,
                 location=OpenApiParameter.QUERY,
                 description="Filter by category public_id",
                 required=False,
             ),
             OpenApiParameter(
-                name="city",
+                name="city_id",
                 type=OpenApiTypes.UUID,
                 location=OpenApiParameter.QUERY,
                 description="Filter by city public_id",
@@ -399,8 +399,8 @@ class JobListCreateView(APIView):
         jobs = Job.objects.filter(homeowner=request.user).exclude(status="deleted")
 
         # Apply filters
-        category_id = request.query_params.get("category")
-        city_id = request.query_params.get("city")
+        category_id = request.query_params.get("category_id")
+        city_id = request.query_params.get("city_id")
         status = request.query_params.get("status")
 
         if category_id:
@@ -1002,14 +1002,14 @@ class ForYouJobListView(APIView):
                 ],
             ),
             OpenApiParameter(
-                name="category",
+                name="category_id",
                 type=OpenApiTypes.UUID,
                 location=OpenApiParameter.QUERY,
                 description="Filter by category public_id",
                 required=False,
             ),
             OpenApiParameter(
-                name="city",
+                name="city_id",
                 type=OpenApiTypes.UUID,
                 location=OpenApiParameter.QUERY,
                 description="Filter by city public_id",
@@ -1121,8 +1121,8 @@ class ForYouJobListView(APIView):
         jobs = Job.objects.filter(status="open").exclude(homeowner=request.user)
 
         # Apply filters
-        category_id = request.query_params.get("category")
-        city_id = request.query_params.get("city")
+        category_id = request.query_params.get("category_id")
+        city_id = request.query_params.get("city_id")
 
         if category_id:
             jobs = jobs.filter(category__public_id=category_id)
@@ -1294,14 +1294,14 @@ class GuestJobListView(APIView):
                 ],
             ),
             OpenApiParameter(
-                name="category",
+                name="category_id",
                 type=OpenApiTypes.UUID,
                 location=OpenApiParameter.QUERY,
                 description="Filter by category public_id",
                 required=False,
             ),
             OpenApiParameter(
-                name="city",
+                name="city_id",
                 type=OpenApiTypes.UUID,
                 location=OpenApiParameter.QUERY,
                 description="Filter by city public_id",
@@ -1410,8 +1410,8 @@ class GuestJobListView(APIView):
         jobs = Job.objects.filter(status="open")
 
         # Apply filters
-        category_id = request.query_params.get("category")
-        city_id = request.query_params.get("city")
+        category_id = request.query_params.get("category_id")
+        city_id = request.query_params.get("city_id")
 
         if category_id:
             jobs = jobs.filter(category__public_id=category_id)
@@ -1674,14 +1674,14 @@ class HandymanForYouJobListView(APIView):
                 required=False,
             ),
             OpenApiParameter(
-                name="category",
+                name="category_id",
                 type=OpenApiTypes.UUID,
                 location=OpenApiParameter.QUERY,
                 description="Filter by category public_id",
                 required=False,
             ),
             OpenApiParameter(
-                name="city",
+                name="city_id",
                 type=OpenApiTypes.UUID,
                 location=OpenApiParameter.QUERY,
                 description="Filter by city public_id",
@@ -1768,12 +1768,12 @@ class HandymanForYouJobListView(APIView):
         )
 
         # Filter by category if provided
-        category_id = request.query_params.get("category")
+        category_id = request.query_params.get("category_id")
         if category_id:
             jobs = jobs.filter(category__public_id=category_id)
 
         # Filter by city if provided
-        city_id = request.query_params.get("city")
+        city_id = request.query_params.get("city_id")
         if city_id:
             jobs = jobs.filter(city__public_id=city_id)
 

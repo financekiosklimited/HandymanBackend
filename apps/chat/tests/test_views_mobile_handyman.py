@@ -473,10 +473,12 @@ class HandymanConversationMessagesViewTests(APITestCase):
         self.assertEqual(len(response.data["data"]), 1)
         self.assertTrue(response.data["meta"]["has_more"])
 
-    def test_list_messages_with_before(self):
-        """Test listing messages with before parameter."""
+    def test_list_messages_with_before_id(self):
+        """Test listing messages with before_id parameter."""
         self.client.force_authenticate(user=self.handyman)
-        response = self.client.get(f"{self.list_url}?before={self.message2.public_id}")
+        response = self.client.get(
+            f"{self.list_url}?before_id={self.message2.public_id}"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
