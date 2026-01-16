@@ -2028,3 +2028,933 @@ class ReimbursementServiceTests(TestCase):
                 reimbursement=reimbursement,
                 attachments_to_remove=[att.public_id],
             )
+
+
+class DirectOfferServiceTests(TestCase):
+    """Test cases for DirectOfferService."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        from apps.jobs.services import DirectOfferService
+
+        self.service = DirectOfferService()
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create target handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto",
+            is_active=True,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_success(self, mock_notify):
+        """Test successful direct offer creation."""
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Need to fix a leaky faucet in kitchen",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        self.assertEqual(job.homeowner, self.homeowner)
+        self.assertEqual(job.target_handyman, self.handyman)
+        self.assertEqual(job.title, "Fix leaky faucet")
+        self.assertTrue(job.is_direct_offer)
+        self.assertEqual(job.offer_status, "pending")
+        self.assertEqual(job.status, "draft")
+        self.assertIsNotNone(job.offer_expires_at)
+
+        # Verify notification was sent
+        mock_notify.assert_called_once()
+        call_kwargs = mock_notify.call_args.kwargs
+        self.assertEqual(call_kwargs["user"], self.handyman)
+        self.assertEqual(call_kwargs["notification_type"], "direct_offer_received")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_with_custom_expiry(self, mock_notify):
+        """Test direct offer creation with custom expiry days."""
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Need to fix a leaky faucet",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            offer_expires_in_days=14,
+        )
+
+        # Check expiry is approximately 14 days from now
+        expected_expiry = timezone.now() + timedelta(days=14)
+        self.assertAlmostEqual(
+            job.offer_expires_at.timestamp(),
+            expected_expiry.timestamp(),
+            delta=60,  # Allow 60 seconds difference
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_with_tasks(self, mock_notify):
+        """Test direct offer creation with tasks."""
+        tasks_data = [
+            {"title": "Turn off water", "description": "Turn off the main valve"},
+            {"title": "Replace faucet", "description": "Install new faucet"},
+        ]
+
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Need to fix a leaky faucet",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            tasks_data=tasks_data,
+        )
+
+        self.assertEqual(job.tasks.count(), 2)
+        self.assertEqual(job.tasks.first().title, "Turn off water")
+
+    def test_create_direct_offer_no_homeowner_role(self):
+        """Test direct offer creation without homeowner role."""
+        user = User.objects.create_user(
+            email="notrole@example.com", password="password123"
+        )
+
+        with self.assertRaisesRegex(ValidationError, "homeowner role"):
+            self.service.create_direct_offer(
+                homeowner=user,
+                target_handyman=self.handyman,
+                title="Fix faucet",
+                description="Test",
+                estimated_budget=100,
+                category=self.category,
+                city=self.city,
+                address="123 Main St",
+            )
+
+    def test_create_direct_offer_no_homeowner_profile(self):
+        """Test direct offer creation without homeowner profile."""
+        user = User.objects.create_user(
+            email="noprofile@example.com", password="password123"
+        )
+        UserRole.objects.create(user=user, role="homeowner")
+        # No profile created
+
+        with self.assertRaisesRegex(ValidationError, "complete your homeowner profile"):
+            self.service.create_direct_offer(
+                homeowner=user,
+                target_handyman=self.handyman,
+                title="Fix faucet",
+                description="Test",
+                estimated_budget=100,
+                category=self.category,
+                city=self.city,
+                address="123 Main St",
+            )
+
+    def test_create_direct_offer_unverified_phone(self):
+        """Test direct offer creation with unverified phone."""
+        self.homeowner_profile.phone_verified_at = None
+        self.homeowner_profile.save()
+
+        with self.assertRaisesRegex(ValidationError, "verify your phone number"):
+            self.service.create_direct_offer(
+                homeowner=self.homeowner,
+                target_handyman=self.handyman,
+                title="Fix faucet",
+                description="Test",
+                estimated_budget=100,
+                category=self.category,
+                city=self.city,
+                address="123 Main St",
+            )
+
+    def test_create_direct_offer_target_not_handyman(self):
+        """Test direct offer to non-handyman user."""
+        other_user = User.objects.create_user(
+            email="other@example.com", password="password123"
+        )
+
+        with self.assertRaisesRegex(ValidationError, "handyman role"):
+            self.service.create_direct_offer(
+                homeowner=self.homeowner,
+                target_handyman=other_user,
+                title="Fix faucet",
+                description="Test",
+                estimated_budget=100,
+                category=self.category,
+                city=self.city,
+                address="123 Main St",
+            )
+
+    def test_create_direct_offer_target_no_profile(self):
+        """Test direct offer to handyman without profile."""
+        other_handy = User.objects.create_user(
+            email="otherhandy@example.com", password="password123"
+        )
+        UserRole.objects.create(user=other_handy, role="handyman")
+        # No profile created
+
+        with self.assertRaisesRegex(ValidationError, "not completed their profile"):
+            self.service.create_direct_offer(
+                homeowner=self.homeowner,
+                target_handyman=other_handy,
+                title="Fix faucet",
+                description="Test",
+                estimated_budget=100,
+                category=self.category,
+                city=self.city,
+                address="123 Main St",
+            )
+
+    def test_create_direct_offer_to_self(self):
+        """Test direct offer to self."""
+        # Add handyman role to homeowner
+        UserRole.objects.create(user=self.homeowner, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.homeowner,
+            display_name="Self",
+            phone_verified_at=timezone.now(),
+        )
+
+        with self.assertRaisesRegex(ValidationError, "cannot send.*yourself"):
+            self.service.create_direct_offer(
+                homeowner=self.homeowner,
+                target_handyman=self.homeowner,
+                title="Fix faucet",
+                description="Test",
+                estimated_budget=100,
+                category=self.category,
+                city=self.city,
+                address="123 Main St",
+            )
+
+    def test_create_direct_offer_invalid_expiry_days(self):
+        """Test direct offer with invalid expiry days."""
+        with self.assertRaisesRegex(ValidationError, "between 1 and 30"):
+            self.service.create_direct_offer(
+                homeowner=self.homeowner,
+                target_handyman=self.handyman,
+                title="Fix faucet",
+                description="Test",
+                estimated_budget=100,
+                category=self.category,
+                city=self.city,
+                address="123 Main St",
+                offer_expires_in_days=0,
+            )
+
+        with self.assertRaisesRegex(ValidationError, "between 1 and 30"):
+            self.service.create_direct_offer(
+                homeowner=self.homeowner,
+                target_handyman=self.handyman,
+                title="Fix faucet",
+                description="Test",
+                estimated_budget=100,
+                category=self.category,
+                city=self.city,
+                address="123 Main St",
+                offer_expires_in_days=31,
+            )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_accept_offer_success(self, mock_notify):
+        """Test successful offer acceptance."""
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+        mock_notify.reset_mock()
+
+        updated_job = self.service.accept_offer(self.handyman, job)
+
+        self.assertEqual(updated_job.offer_status, "accepted")
+        self.assertEqual(updated_job.status, "in_progress")
+        self.assertEqual(updated_job.assigned_handyman, self.handyman)
+        self.assertIsNotNone(updated_job.offer_responded_at)
+
+        # Verify notification was sent to homeowner
+        mock_notify.assert_called_once()
+        call_kwargs = mock_notify.call_args.kwargs
+        self.assertEqual(call_kwargs["user"], self.homeowner)
+        self.assertEqual(call_kwargs["notification_type"], "direct_offer_accepted")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_accept_offer_not_direct_offer(self, mock_notify):
+        """Test accepting non-direct offer job."""
+        job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Regular job",
+            description="Test",
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+            estimated_budget=100,
+            is_direct_offer=False,
+        )
+
+        with self.assertRaisesRegex(ValidationError, "not a direct offer"):
+            self.service.accept_offer(self.handyman, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_accept_offer_wrong_handyman(self, mock_notify):
+        """Test accepting offer by wrong handyman."""
+        from datetime import UTC, datetime
+
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        other_handy = User.objects.create_user(
+            email="other_handy@example.com", password="password123"
+        )
+        UserRole.objects.create(user=other_handy, role="handyman")
+        HandymanProfile.objects.create(
+            user=other_handy,
+            display_name="Other Handy",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        with self.assertRaisesRegex(ValidationError, "not the target"):
+            self.service.accept_offer(other_handy, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_accept_offer_not_pending(self, mock_notify):
+        """Test accepting already accepted offer."""
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Accept first time
+        self.service.accept_offer(self.handyman, job)
+
+        # Try to accept again
+        job.refresh_from_db()
+        with self.assertRaisesRegex(ValidationError, "cannot be accepted"):
+            self.service.accept_offer(self.handyman, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_accept_offer_expired(self, mock_notify):
+        """Test accepting expired offer."""
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Set offer to expired
+        job.offer_expires_at = timezone.now() - timedelta(days=1)
+        job.save()
+
+        with self.assertRaisesRegex(ValidationError, "expired"):
+            self.service.accept_offer(self.handyman, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_reject_offer_success(self, mock_notify):
+        """Test successful offer rejection."""
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+        mock_notify.reset_mock()
+
+        updated_job = self.service.reject_offer(
+            self.handyman, job, rejection_reason="Too busy right now"
+        )
+
+        self.assertEqual(updated_job.offer_status, "rejected")
+        self.assertEqual(updated_job.offer_rejection_reason, "Too busy right now")
+        self.assertIsNotNone(updated_job.offer_responded_at)
+
+        # Verify notification was sent to homeowner
+        mock_notify.assert_called_once()
+        call_kwargs = mock_notify.call_args.kwargs
+        self.assertEqual(call_kwargs["user"], self.homeowner)
+        self.assertEqual(call_kwargs["notification_type"], "direct_offer_rejected")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_reject_offer_not_direct_offer(self, mock_notify):
+        """Test rejecting non-direct offer job."""
+        job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Regular job",
+            description="Test",
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+            estimated_budget=100,
+            is_direct_offer=False,
+        )
+
+        with self.assertRaisesRegex(ValidationError, "not a direct offer"):
+            self.service.reject_offer(self.handyman, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_reject_offer_wrong_handyman(self, mock_notify):
+        """Test rejecting offer by wrong handyman."""
+        from datetime import UTC, datetime
+
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        other_handy = User.objects.create_user(
+            email="other_handy@example.com", password="password123"
+        )
+        UserRole.objects.create(user=other_handy, role="handyman")
+        HandymanProfile.objects.create(
+            user=other_handy,
+            display_name="Other Handy",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        with self.assertRaisesRegex(ValidationError, "not the target"):
+            self.service.reject_offer(other_handy, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_reject_offer_not_pending(self, mock_notify):
+        """Test rejecting already rejected offer."""
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Reject first time
+        self.service.reject_offer(self.handyman, job)
+
+        # Try to reject again
+        job.refresh_from_db()
+        with self.assertRaisesRegex(ValidationError, "cannot be rejected"):
+            self.service.reject_offer(self.handyman, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_cancel_offer_success(self, mock_notify):
+        """Test successful offer cancellation by homeowner."""
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+        mock_notify.reset_mock()
+
+        updated_job = self.service.cancel_offer(self.homeowner, job)
+
+        self.assertEqual(updated_job.offer_status, "expired")
+        self.assertEqual(updated_job.status, "cancelled")
+
+        # Verify notification was sent to handyman
+        mock_notify.assert_called_once()
+        call_kwargs = mock_notify.call_args.kwargs
+        self.assertEqual(call_kwargs["user"], self.handyman)
+        self.assertEqual(call_kwargs["notification_type"], "direct_offer_cancelled")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_cancel_offer_not_direct_offer(self, mock_notify):
+        """Test cancelling non-direct offer job."""
+        job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Regular job",
+            description="Test",
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+            estimated_budget=100,
+            is_direct_offer=False,
+        )
+
+        with self.assertRaisesRegex(ValidationError, "not a direct offer"):
+            self.service.cancel_offer(self.homeowner, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_cancel_offer_wrong_homeowner(self, mock_notify):
+        """Test cancelling offer by wrong homeowner."""
+        from datetime import UTC, datetime
+
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        other_homeowner = User.objects.create_user(
+            email="other_homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=other_homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=other_homeowner,
+            display_name="Other Owner",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        with self.assertRaisesRegex(ValidationError, "only cancel your own"):
+            self.service.cancel_offer(other_homeowner, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_cancel_offer_not_pending(self, mock_notify):
+        """Test cancelling already accepted offer."""
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Accept the offer first
+        self.service.accept_offer(self.handyman, job)
+
+        # Try to cancel
+        job.refresh_from_db()
+        with self.assertRaisesRegex(ValidationError, "cannot be cancelled"):
+            self.service.cancel_offer(self.homeowner, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_convert_to_public_from_rejected(self, mock_notify):
+        """Test converting rejected offer to public listing."""
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Reject the offer
+        self.service.reject_offer(self.handyman, job)
+
+        # Convert to public
+        job.refresh_from_db()
+        updated_job = self.service.convert_to_public(self.homeowner, job)
+
+        self.assertFalse(updated_job.is_direct_offer)
+        self.assertEqual(updated_job.offer_status, "converted")
+        self.assertEqual(updated_job.status, "open")
+        self.assertIsNone(updated_job.assigned_handyman)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_convert_to_public_from_expired(self, mock_notify):
+        """Test converting expired offer to public listing."""
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Set to expired status
+        job.offer_status = "expired"
+        job.save()
+
+        updated_job = self.service.convert_to_public(self.homeowner, job)
+
+        self.assertFalse(updated_job.is_direct_offer)
+        self.assertEqual(updated_job.offer_status, "converted")
+        self.assertEqual(updated_job.status, "open")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_convert_to_public_not_direct_offer(self, mock_notify):
+        """Test converting non-direct offer job."""
+        job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Regular job",
+            description="Test",
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+            estimated_budget=100,
+            is_direct_offer=False,
+        )
+
+        with self.assertRaisesRegex(ValidationError, "not a direct offer"):
+            self.service.convert_to_public(self.homeowner, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_convert_to_public_wrong_homeowner(self, mock_notify):
+        """Test converting offer by wrong homeowner."""
+        from datetime import UTC, datetime
+
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Reject the offer
+        self.service.reject_offer(self.handyman, job)
+        job.refresh_from_db()
+
+        other_homeowner = User.objects.create_user(
+            email="other_homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=other_homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=other_homeowner,
+            display_name="Other Owner",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        with self.assertRaisesRegex(ValidationError, "only convert your own"):
+            self.service.convert_to_public(other_homeowner, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_convert_to_public_pending_status(self, mock_notify):
+        """Test converting pending offer fails."""
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        with self.assertRaisesRegex(
+            ValidationError, "rejected or expired offers can be converted"
+        ):
+            self.service.convert_to_public(self.homeowner, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_convert_to_public_accepted_status(self, mock_notify):
+        """Test converting accepted offer fails."""
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Accept the offer
+        self.service.accept_offer(self.handyman, job)
+        job.refresh_from_db()
+
+        with self.assertRaisesRegex(
+            ValidationError, "rejected or expired offers can be converted"
+        ):
+            self.service.convert_to_public(self.homeowner, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_expire_pending_offers(self, mock_notify):
+        """Test expiring pending offers."""
+        # Create an expired offer
+        job1 = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Expired offer",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+        job1.offer_expires_at = timezone.now() - timedelta(days=1)
+        job1.save()
+
+        # Create a non-expired offer
+        job2 = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Valid offer",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            offer_expires_in_days=7,
+        )
+
+        mock_notify.reset_mock()
+
+        count = self.service.expire_pending_offers()
+
+        self.assertEqual(count, 1)
+
+        job1.refresh_from_db()
+        job2.refresh_from_db()
+
+        self.assertEqual(job1.offer_status, "expired")
+        self.assertEqual(job2.offer_status, "pending")
+
+        # Verify notifications were sent for expired offer
+        self.assertEqual(mock_notify.call_count, 2)  # One for homeowner, one for handy
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_with_attachment_dict(self, mock_notify):
+        """Test creating direct offer with attachment as dict (with metadata)."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        # Create a test image
+        img = Image.new("RGB", (100, 100), color="red")
+        img_io = BytesIO()
+        img.save(img_io, format="JPEG")
+        img_io.seek(0)
+
+        attachment_file = SimpleUploadedFile(
+            "test.jpg", img_io.read(), content_type="image/jpeg"
+        )
+
+        # Attachment as dict with metadata
+        attachments = [
+            {
+                "file": attachment_file,
+                "file_type": "image",
+                "thumbnail": None,
+                "duration_seconds": None,
+            }
+        ]
+
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            attachments=attachments,
+        )
+
+        self.assertEqual(job.attachments.count(), 1)
+        attachment = job.attachments.first()
+        self.assertEqual(attachment.file_type, "image")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_with_attachment_file_directly(self, mock_notify):
+        """Test creating direct offer with attachment as file directly."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        # Create a test image
+        img = Image.new("RGB", (100, 100), color="blue")
+        img_io = BytesIO()
+        img.save(img_io, format="JPEG")
+        img_io.seek(0)
+
+        attachment_file = SimpleUploadedFile(
+            "test_direct.jpg", img_io.read(), content_type="image/jpeg"
+        )
+
+        # Attachment as file directly (not dict)
+        attachments = [attachment_file]
+
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            attachments=attachments,
+        )
+
+        self.assertEqual(job.attachments.count(), 1)
+        attachment = job.attachments.first()
+        self.assertEqual(attachment.file_type, "image")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_expire_pending_offers_no_expired(self, mock_notify):
+        """Test expire_pending_offers returns 0 when no offers need expiring."""
+        # Create only non-expired offers
+        self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Valid offer 1",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            offer_expires_in_days=7,
+        )
+
+        self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Valid offer 2",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="456 Main St",
+            offer_expires_in_days=14,
+        )
+
+        mock_notify.reset_mock()
+
+        # Run expire - should return 0
+        count = self.service.expire_pending_offers()
+
+        self.assertEqual(count, 0)
+        # No notifications should be sent
+        mock_notify.assert_not_called()

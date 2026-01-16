@@ -2664,3 +2664,441 @@ JobReimbursementListResponseSerializer = create_list_response_serializer(
 JobReimbursementDetailResponseSerializer = create_response_serializer(
     JobReimbursementSerializer, "JobReimbursementDetailResponse"
 )
+
+
+# ========================
+# Direct Offer Serializers
+# ========================
+
+
+class TargetHandymanInfoSerializer(serializers.Serializer):
+    """
+    Nested serializer for target handyman info in direct offers.
+    """
+
+    public_id = serializers.UUIDField(help_text="Handyman's public ID")
+    display_name = serializers.CharField(
+        allow_null=True, help_text="Handyman's display name"
+    )
+    avatar_url = serializers.URLField(
+        allow_null=True, help_text="Handyman's avatar URL"
+    )
+    rating = serializers.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        allow_null=True,
+        coerce_to_string=False,
+        help_text="Handyman's rating (1-5)",
+    )
+    review_count = serializers.IntegerField(help_text="Number of reviews received")
+    job_title = serializers.CharField(allow_null=True, help_text="Handyman's job title")
+
+
+class DirectOfferCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating a direct job offer (write-only).
+    Similar to JobCreateSerializer but with target_handyman field.
+    """
+
+    target_handyman_id = serializers.UUIDField(
+        required=True,
+        help_text="Target handyman's public_id to send the offer to",
+    )
+    title = serializers.CharField(
+        max_length=200,
+        required=True,
+        help_text="Job title",
+    )
+    description = serializers.CharField(
+        required=True,
+        help_text="Job description",
+    )
+    estimated_budget = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=True,
+        coerce_to_string=False,
+        help_text="Budget homeowner is willing to pay",
+    )
+    category_id = serializers.UUIDField(
+        required=True,
+        help_text="Category public_id",
+    )
+    city_id = serializers.UUIDField(
+        required=True,
+        help_text="City public_id",
+    )
+    address = serializers.CharField(
+        required=True,
+        help_text="Street address",
+    )
+    postal_code = serializers.CharField(
+        max_length=7,
+        required=False,
+        allow_blank=True,
+        help_text="Postal code (e.g., A1A 1A1)",
+    )
+    latitude = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        required=False,
+        allow_null=True,
+        coerce_to_string=False,
+        help_text="Latitude coordinate (optional, must provide both lat/lng)",
+    )
+    longitude = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        required=False,
+        allow_null=True,
+        coerce_to_string=False,
+        help_text="Longitude coordinate (optional, must provide both lat/lng)",
+    )
+    offer_expires_in_days = serializers.IntegerField(
+        required=False,
+        default=7,
+        min_value=1,
+        max_value=30,
+        help_text="Days until offer expires (default: 7, min: 1, max: 30)",
+    )
+    attachments = AttachmentInputSerializer(
+        many=True,
+        required=False,
+        help_text=f"Job attachments (max {MAX_JOB_ATTACHMENTS} files). "
+        "Use indexed format: attachments[0].file, attachments[0].thumbnail, "
+        "attachments[0].duration_seconds. For videos, thumbnail and duration_seconds are required.",
+    )
+    tasks = serializers.ListField(
+        child=JobTaskInputSerializer(),
+        required=False,
+        allow_empty=True,
+        max_length=MAX_JOB_ITEMS,
+        help_text=f"List of tasks to be done (max {MAX_JOB_ITEMS} tasks)",
+    )
+
+    def validate_estimated_budget(self, value):
+        """Validate budget is positive."""
+        if value <= Decimal("0"):
+            raise serializers.ValidationError("Budget must be greater than 0.")
+        return value
+
+    def validate_target_handyman_id(self, value):
+        """Validate target handyman exists and has handyman role."""
+        from apps.accounts.models import User
+
+        try:
+            user = User.objects.get(public_id=value)
+            if not user.has_role("handyman"):
+                raise serializers.ValidationError("Target user is not a handyman.")
+            if not hasattr(user, "handyman_profile"):
+                raise serializers.ValidationError(
+                    "Target handyman has not completed their profile."
+                )
+            return user
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Target handyman not found.")
+
+    def validate_category_id(self, value):
+        """Validate category exists and is active."""
+        try:
+            category = JobCategory.objects.get(public_id=value)
+            if not category.is_active:
+                raise serializers.ValidationError("Selected category is not active.")
+            return category
+        except JobCategory.DoesNotExist:
+            raise serializers.ValidationError("Invalid category.")
+
+    def validate_city_id(self, value):
+        """Validate city exists and is active."""
+        try:
+            city = City.objects.get(public_id=value)
+            if not city.is_active:
+                raise serializers.ValidationError("Selected city is not active.")
+            return city
+        except City.DoesNotExist:
+            raise serializers.ValidationError("Invalid city.")
+
+    def validate_attachments(self, value):
+        """Validate attachments list count."""
+        if not value:
+            return []
+
+        if len(value) > MAX_JOB_ATTACHMENTS:
+            raise serializers.ValidationError(
+                f"Maximum {MAX_JOB_ATTACHMENTS} attachments allowed."
+            )
+
+        return value
+
+    def validate_tasks(self, value):
+        """Validate and clean tasks."""
+        if not value:
+            return []
+
+        # Filter out tasks with empty titles after stripping whitespace
+        cleaned_tasks = []
+        for task in value:
+            title = task.get("title", "").strip()
+            if title:
+                cleaned_tasks.append(
+                    {"title": title, "description": task.get("description", "")}
+                )
+
+        return cleaned_tasks
+
+    def validate_postal_code(self, value):
+        """Validate Canadian postal code format."""
+        if value:
+            import re
+
+            # Remove spaces and convert to uppercase
+            cleaned = value.replace(" ", "").upper()
+            # Canadian postal code format: A1A1A1 (letter-number-letter-number-letter-number)
+            if len(cleaned) != 6:
+                raise serializers.ValidationError(
+                    "Postal code must be 6 characters (e.g., A1A 1A1)."
+                )
+            # Check format: letter-number-letter-number-letter-number
+            pattern = r"^[A-Z]\d[A-Z]\d[A-Z]\d$"
+            if not re.match(pattern, cleaned):
+                raise serializers.ValidationError(
+                    "Invalid postal code format. Must be like A1A 1A1."
+                )
+            # Return formatted value with space
+            return f"{cleaned[:3]} {cleaned[3:]}"
+        return value
+
+    def validate(self, attrs):
+        """Cross-field validation."""
+        latitude = attrs.get("latitude")
+        longitude = attrs.get("longitude")
+
+        # If one coordinate is provided, both must be provided
+        if (latitude is None) != (longitude is None):
+            raise serializers.ValidationError(
+                "Both latitude and longitude must be provided together."
+            )
+
+        # Validate coordinate ranges
+        if latitude is not None:
+            if not (-90 <= latitude <= 90):
+                raise serializers.ValidationError(
+                    {"latitude": "Latitude must be between -90 and 90."}
+                )
+        if longitude is not None:
+            if not (-180 <= longitude <= 180):
+                raise serializers.ValidationError(
+                    {"longitude": "Longitude must be between -180 and 180."}
+                )
+
+        # Validate homeowner cannot send offer to themselves
+        request = self.context.get("request")
+        target_handyman = attrs.get("target_handyman_id")
+        if request and target_handyman and request.user == target_handyman:
+            raise serializers.ValidationError(
+                {"target_handyman_id": "You cannot send a direct offer to yourself."}
+            )
+
+        return attrs
+
+
+class DirectOfferListSerializer(serializers.ModelSerializer):
+    """
+    Serializer for direct offer listing (read-only).
+    Used for homeowner's list of sent offers.
+    """
+
+    category = JobCategorySerializer(read_only=True)
+    city = CitySerializer(read_only=True)
+    estimated_budget = serializers.DecimalField(
+        max_digits=10, decimal_places=2, coerce_to_string=False
+    )
+    target_handyman = serializers.SerializerMethodField(
+        help_text="Target handyman information"
+    )
+    time_remaining = serializers.SerializerMethodField(
+        help_text="Time remaining until offer expires (in seconds, null if expired/responded)"
+    )
+
+    class Meta:
+        model = Job
+        fields = [
+            "public_id",
+            "title",
+            "description",
+            "estimated_budget",
+            "category",
+            "city",
+            "address",
+            "offer_status",
+            "offer_expires_at",
+            "offer_responded_at",
+            "time_remaining",
+            "target_handyman",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_target_handyman(self, obj):
+        """Get target handyman info."""
+        if obj.target_handyman and hasattr(obj.target_handyman, "handyman_profile"):
+            profile = obj.target_handyman.handyman_profile
+            return {
+                "public_id": obj.target_handyman.public_id,
+                "display_name": profile.display_name,
+                "avatar_url": profile.avatar_url,
+                "rating": profile.rating,
+                "review_count": profile.review_count,
+                "job_title": profile.job_title,
+            }
+        return None
+
+    def get_time_remaining(self, obj):
+        """Get time remaining in seconds until offer expires."""
+        from django.utils import timezone
+
+        if obj.offer_status != "pending" or not obj.offer_expires_at:
+            return None
+
+        remaining = obj.offer_expires_at - timezone.now()
+        if remaining.total_seconds() <= 0:
+            return 0
+
+        return int(remaining.total_seconds())
+
+
+class DirectOfferDetailSerializer(DirectOfferListSerializer):
+    """
+    Serializer for direct offer detail (read-only).
+    Includes tasks and attachments.
+    """
+
+    attachments = JobAttachmentSerializer(many=True, read_only=True)
+    tasks = JobTaskListSerializer(many=True, read_only=True)
+
+    class Meta(DirectOfferListSerializer.Meta):
+        fields = DirectOfferListSerializer.Meta.fields + [
+            "postal_code",
+            "latitude",
+            "longitude",
+            "tasks",
+            "attachments",
+            "offer_rejection_reason",
+        ]
+
+
+class HandymanDirectOfferListSerializer(serializers.ModelSerializer):
+    """
+    Serializer for direct offers received by handyman (read-only).
+    """
+
+    category = JobCategorySerializer(read_only=True)
+    city = CitySerializer(read_only=True)
+    estimated_budget = serializers.DecimalField(
+        max_digits=10, decimal_places=2, coerce_to_string=False
+    )
+    homeowner = serializers.SerializerMethodField(help_text="Homeowner information")
+    time_remaining = serializers.SerializerMethodField(
+        help_text="Time remaining until offer expires (in seconds, null if expired/responded)"
+    )
+
+    class Meta:
+        model = Job
+        fields = [
+            "public_id",
+            "title",
+            "description",
+            "estimated_budget",
+            "category",
+            "city",
+            "address",
+            "offer_status",
+            "offer_expires_at",
+            "time_remaining",
+            "homeowner",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_homeowner(self, obj):
+        """Get homeowner info with rating."""
+        if hasattr(obj.homeowner, "homeowner_profile"):
+            profile = obj.homeowner.homeowner_profile
+            return {
+                "public_id": obj.homeowner.public_id,
+                "display_name": profile.display_name,
+                "avatar_url": profile.avatar_url,
+                "rating": profile.rating,
+                "review_count": profile.review_count,
+            }
+        return {
+            "public_id": obj.homeowner.public_id,
+            "display_name": None,
+            "avatar_url": None,
+            "rating": None,
+            "review_count": 0,
+        }
+
+    def get_time_remaining(self, obj):
+        """Get time remaining in seconds until offer expires."""
+        from django.utils import timezone
+
+        if obj.offer_status != "pending" or not obj.offer_expires_at:
+            return None
+
+        remaining = obj.offer_expires_at - timezone.now()
+        if remaining.total_seconds() <= 0:
+            return 0
+
+        return int(remaining.total_seconds())
+
+
+class HandymanDirectOfferDetailSerializer(HandymanDirectOfferListSerializer):
+    """
+    Serializer for direct offer detail for handyman (read-only).
+    Includes tasks and attachments.
+    """
+
+    attachments = JobAttachmentSerializer(many=True, read_only=True)
+    tasks = JobTaskListSerializer(many=True, read_only=True)
+
+    class Meta(HandymanDirectOfferListSerializer.Meta):
+        fields = HandymanDirectOfferListSerializer.Meta.fields + [
+            "postal_code",
+            "latitude",
+            "longitude",
+            "tasks",
+            "attachments",
+        ]
+
+
+class DirectOfferRejectSerializer(serializers.Serializer):
+    """
+    Serializer for rejecting a direct offer (handyman).
+    """
+
+    rejection_reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=1000,
+        help_text="Optional reason for declining the offer",
+    )
+
+
+# Response serializers for direct offers
+DirectOfferListResponseSerializer = create_list_response_serializer(
+    DirectOfferListSerializer, "DirectOfferListResponse"
+)
+
+DirectOfferDetailResponseSerializer = create_response_serializer(
+    DirectOfferDetailSerializer, "DirectOfferDetailResponse"
+)
+
+HandymanDirectOfferListResponseSerializer = create_list_response_serializer(
+    HandymanDirectOfferListSerializer, "HandymanDirectOfferListResponse"
+)
+
+HandymanDirectOfferDetailResponseSerializer = create_response_serializer(
+    HandymanDirectOfferDetailSerializer, "HandymanDirectOfferDetailResponse"
+)

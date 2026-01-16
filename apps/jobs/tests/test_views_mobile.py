@@ -6,6 +6,7 @@ from io import BytesIO
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase
 from django.utils import timezone
 from PIL import Image as PILImage
 from rest_framework import status
@@ -9027,3 +9028,2320 @@ class JobReimbursementCategoryListViewTests(APITestCase):
         response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+class HomeownerDirectOfferListCreateViewTests(APITestCase):
+    """Test cases for HomeownerDirectOfferListCreateView."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        self.list_url = "/api/v1/mobile/homeowner/direct-offers/"
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create target handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_success(self, mock_notify):
+        """Test successfully creating a direct offer."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix leaky faucet",
+            "description": "Need to fix a leaky faucet in kitchen",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "offer_expires_in_days": 7,
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["message"], "Direct offer created successfully")
+        self.assertEqual(response.data["data"]["offer_status"], "pending")
+        self.assertEqual(
+            str(response.data["data"]["target_handyman"]["public_id"]),
+            str(self.handyman.public_id),
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_with_tasks(self, mock_notify):
+        """Test creating direct offer with tasks."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix leaky faucet",
+            "description": "Need to fix a leaky faucet",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "tasks": [
+                {"title": "Turn off water", "description": "Turn off main valve"},
+                {"title": "Replace faucet", "description": "Install new faucet"},
+            ],
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data["data"]["tasks"]), 2)
+
+    def test_create_direct_offer_unauthenticated(self):
+        """Test creating direct offer without authentication."""
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix leaky faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_create_direct_offer_as_handyman(self):
+        """Test creating direct offer as handyman fails."""
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+        self.client.force_authenticate(user=self.handyman)
+
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix leaky faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_list_direct_offers_success(self, mock_notify):
+        """Test successfully listing direct offers."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+
+        # Create a direct offer
+        service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.list_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"], "Direct offers retrieved successfully"
+        )
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Fix leaky faucet")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_list_direct_offers_filters_by_status(self, mock_notify):
+        """Test listing direct offers with status filter."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+
+        # Create pending offer
+        service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Pending offer",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Create and accept another offer
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Accepted offer",
+            description="Test",
+            estimated_budget=200,
+            category=self.category,
+            city=self.city,
+            address="456 Main St",
+        )
+        service.accept_offer(self.handyman, job)
+
+        self.client.force_authenticate(user=self.homeowner)
+
+        # Filter by pending
+        response = self.client.get(self.list_url, {"offer_status": "pending"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Pending offer")
+
+        # Filter by accepted
+        response = self.client.get(self.list_url, {"offer_status": "accepted"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Accepted offer")
+
+
+class HomeownerDirectOfferDetailViewTests(APITestCase):
+    """Test cases for HomeownerDirectOfferDetailView."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create target handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_get_direct_offer_detail_success(self, mock_notify):
+        """Test successfully getting direct offer detail."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test description",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+        url = f"/api/v1/mobile/homeowner/direct-offers/{job.public_id}/"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"], "Direct offer retrieved successfully"
+        )
+        self.assertEqual(response.data["data"]["title"], "Fix leaky faucet")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_get_direct_offer_not_found(self, mock_notify):
+        """Test getting non-existent direct offer."""
+        import uuid
+
+        self.client.force_authenticate(user=self.homeowner)
+        url = f"/api/v1/mobile/homeowner/direct-offers/{uuid.uuid4()}/"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_get_direct_offer_other_homeowner(self, mock_notify):
+        """Test getting another homeowner's direct offer."""
+        from datetime import UTC, datetime
+
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Create other homeowner
+        other_homeowner = User.objects.create_user(
+            email="other@example.com", password="password123"
+        )
+        UserRole.objects.create(user=other_homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=other_homeowner,
+            display_name="Other",
+            phone_verified_at=datetime.now(UTC),
+        )
+        other_homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        self.client.force_authenticate(user=other_homeowner)
+        url = f"/api/v1/mobile/homeowner/direct-offers/{job.public_id}/"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_delete_direct_offer_success(self, mock_notify):
+        """Test successfully cancelling direct offer."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+        url = f"/api/v1/mobile/homeowner/direct-offers/{job.public_id}/"
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"], "Direct offer cancelled successfully"
+        )
+
+        # Verify job was cancelled
+        job.refresh_from_db()
+        self.assertEqual(job.offer_status, "expired")
+        self.assertEqual(job.status, "cancelled")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_delete_direct_offer_already_accepted(self, mock_notify):
+        """Test cancelling already accepted direct offer fails."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Accept the offer
+        service.accept_offer(self.handyman, job)
+
+        self.client.force_authenticate(user=self.homeowner)
+        url = f"/api/v1/mobile/homeowner/direct-offers/{job.public_id}/"
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class HomeownerDirectOfferConvertViewTests(APITestCase):
+    """Test cases for HomeownerDirectOfferConvertView."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create target handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_convert_rejected_offer_success(self, mock_notify):
+        """Test successfully converting rejected offer to public."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Reject the offer
+        service.reject_offer(self.handyman, job)
+
+        self.client.force_authenticate(user=self.homeowner)
+        url = (
+            f"/api/v1/mobile/homeowner/direct-offers/{job.public_id}/convert-to-public/"
+        )
+        response = self.client.post(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"],
+            "Direct offer converted to public job successfully",
+        )
+        # Response uses JobDetailSerializer which doesn't include direct offer fields
+        self.assertEqual(response.data["data"]["status"], "open")
+
+        # Verify the job was updated in the database
+        job.refresh_from_db()
+        self.assertFalse(job.is_direct_offer)
+        self.assertEqual(job.offer_status, "converted")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_convert_pending_offer_fails(self, mock_notify):
+        """Test converting pending offer fails."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+        url = (
+            f"/api/v1/mobile/homeowner/direct-offers/{job.public_id}/convert-to-public/"
+        )
+        response = self.client.post(url)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class HandymanDirectOfferListViewTests(APITestCase):
+    """Test cases for HandymanDirectOfferListView."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        self.list_url = "/api/v1/mobile/handyman/direct-offers/"
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create target handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_list_received_offers_success(self, mock_notify):
+        """Test successfully listing received direct offers."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+
+        # Create a direct offer for this handyman
+        service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.list_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"], "Direct offers retrieved successfully"
+        )
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Fix leaky faucet")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_list_offers_only_for_this_handyman(self, mock_notify):
+        """Test handyman only sees offers intended for them."""
+        from datetime import UTC, datetime
+
+        from apps.jobs.services import DirectOfferService
+
+        # Create another handyman
+        other_handyman = User.objects.create_user(
+            email="other_handy@example.com", password="password123"
+        )
+        UserRole.objects.create(user=other_handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=other_handyman,
+            display_name="Other Handy",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        service = DirectOfferService()
+
+        # Create offer for this handyman
+        service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="For this handyman",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Create offer for other handyman
+        service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=other_handyman,
+            title="For other handyman",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="456 Main St",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.list_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "For this handyman")
+
+    def test_list_offers_as_homeowner_fails(self):
+        """Test homeowner cannot access handyman offers endpoint."""
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.list_url)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class HandymanDirectOfferDetailViewTests(APITestCase):
+    """Test cases for HandymanDirectOfferDetailView."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create target handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_get_offer_detail_success(self, mock_notify):
+        """Test successfully getting offer detail."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test description",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        url = f"/api/v1/mobile/handyman/direct-offers/{job.public_id}/"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["message"], "Direct offer retrieved successfully"
+        )
+        self.assertEqual(response.data["data"]["title"], "Fix leaky faucet")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_get_offer_detail_not_target(self, mock_notify):
+        """Test getting offer detail when not target handyman."""
+        from datetime import UTC, datetime
+
+        from apps.jobs.services import DirectOfferService
+
+        # Create another handyman
+        other_handyman = User.objects.create_user(
+            email="other_handy@example.com", password="password123"
+        )
+        UserRole.objects.create(user=other_handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=other_handyman,
+            display_name="Other Handy",
+            phone_verified_at=datetime.now(UTC),
+        )
+        other_handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        self.client.force_authenticate(user=other_handyman)
+        url = f"/api/v1/mobile/handyman/direct-offers/{job.public_id}/"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class HandymanDirectOfferAcceptViewTests(APITestCase):
+    """Test cases for HandymanDirectOfferAcceptView."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create target handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_accept_offer_success(self, mock_notify):
+        """Test successfully accepting an offer."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        url = f"/api/v1/mobile/handyman/direct-offers/{job.public_id}/accept/"
+        response = self.client.post(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Direct offer accepted successfully")
+        self.assertEqual(response.data["data"]["offer_status"], "accepted")
+
+        # Verify the job status was updated to in_progress in the database
+        job.refresh_from_db()
+        self.assertEqual(job.status, "in_progress")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_accept_offer_already_accepted(self, mock_notify):
+        """Test accepting already accepted offer fails."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Accept first
+        service.accept_offer(self.handyman, job)
+
+        self.client.force_authenticate(user=self.handyman)
+        url = f"/api/v1/mobile/handyman/direct-offers/{job.public_id}/accept/"
+        response = self.client.post(url)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class HandymanDirectOfferRejectViewTests(APITestCase):
+    """Test cases for HandymanDirectOfferRejectView."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create target handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_reject_offer_success(self, mock_notify):
+        """Test successfully rejecting an offer."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        url = f"/api/v1/mobile/handyman/direct-offers/{job.public_id}/reject/"
+        response = self.client.post(
+            url, {"rejection_reason": "Too busy"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Direct offer declined successfully")
+        self.assertEqual(response.data["data"]["offer_status"], "rejected")
+
+        # Verify rejection reason
+        job.refresh_from_db()
+        self.assertEqual(job.offer_rejection_reason, "Too busy")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_reject_offer_without_reason(self, mock_notify):
+        """Test rejecting offer without reason succeeds."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        url = f"/api/v1/mobile/handyman/direct-offers/{job.public_id}/reject/"
+        response = self.client.post(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["offer_status"], "rejected")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_reject_offer_already_rejected(self, mock_notify):
+        """Test rejecting already rejected offer fails."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Reject first
+        service.reject_offer(self.handyman, job)
+
+        self.client.force_authenticate(user=self.handyman)
+        url = f"/api/v1/mobile/handyman/direct-offers/{job.public_id}/reject/"
+        response = self.client.post(url)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class DirectOfferExclusionFromPublicListingsTests(APITestCase):
+    """Test that direct offers are excluded from public job listings."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_direct_offers_excluded_from_for_you_list(self, mock_notify):
+        """Test direct offers don't appear in For You job list."""
+        from apps.jobs.services import DirectOfferService
+
+        # Create a public job
+        Job.objects.create(
+            homeowner=self.homeowner,
+            title="Public Job",
+            description="A public job",
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+            estimated_budget=100,
+            is_direct_offer=False,
+        )
+
+        # Create a direct offer
+        service = DirectOfferService()
+        service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Direct Offer Job",
+            description="A direct offer",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="456 Main St",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get("/api/v1/mobile/handyman/jobs/for-you/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should only see the public job
+        titles = [job["title"] for job in response.data["data"]]
+        self.assertIn("Public Job", titles)
+        self.assertNotIn("Direct Offer Job", titles)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_direct_offers_excluded_from_guest_list(self, mock_notify):
+        """Test direct offers don't appear in guest job list."""
+        from apps.jobs.services import DirectOfferService
+
+        # Create a public job
+        Job.objects.create(
+            homeowner=self.homeowner,
+            title="Public Job",
+            description="A public job",
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+            estimated_budget=100,
+            is_direct_offer=False,
+        )
+
+        # Create a direct offer
+        service = DirectOfferService()
+        service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Direct Offer Job",
+            description="A direct offer",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="456 Main St",
+        )
+
+        # Access as unauthenticated guest
+        response = self.client.get("/api/v1/mobile/guest/jobs/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should only see the public job
+        titles = [job["title"] for job in response.data["data"]]
+        self.assertIn("Public Job", titles)
+        self.assertNotIn("Direct Offer Job", titles)
+
+
+class DirectOfferSerializerValidationTests(APITestCase):
+    """Test cases for DirectOfferCreateSerializer validation."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        self.list_url = "/api/v1/mobile/homeowner/direct-offers/"
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create target handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+    def test_create_direct_offer_zero_budget(self):
+        """Test validation error for zero budget."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "0.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("estimated_budget", response.data["errors"])
+
+    def test_create_direct_offer_negative_budget(self):
+        """Test validation error for negative budget."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "-50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("estimated_budget", response.data["errors"])
+
+    def test_create_direct_offer_target_not_handyman(self):
+        """Test validation error when target user is not a handyman."""
+        # Create user without handyman role
+        non_handyman = User.objects.create_user(
+            email="nonhandyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=non_handyman, role="homeowner")
+
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(non_handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("target_handyman_id", response.data["errors"])
+
+    def test_create_direct_offer_target_no_profile(self):
+        """Test validation error when target handyman has no profile."""
+
+        # Create handyman without profile
+        handyman_no_profile = User.objects.create_user(
+            email="noprofile@example.com", password="password123"
+        )
+        UserRole.objects.create(user=handyman_no_profile, role="handyman")
+
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(handyman_no_profile.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("target_handyman_id", response.data["errors"])
+
+    def test_create_direct_offer_target_not_found(self):
+        """Test validation error when target handyman doesn't exist."""
+        import uuid
+
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(uuid.uuid4()),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("target_handyman_id", response.data["errors"])
+
+    def test_create_direct_offer_inactive_category(self):
+        """Test validation error when category is inactive."""
+        inactive_category = JobCategory.objects.create(
+            name="Inactive", slug="inactive", is_active=False
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(inactive_category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("category_id", response.data["errors"])
+
+    def test_create_direct_offer_category_not_found(self):
+        """Test validation error when category doesn't exist."""
+        import uuid
+
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(uuid.uuid4()),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("category_id", response.data["errors"])
+
+    def test_create_direct_offer_inactive_city(self):
+        """Test validation error when city is inactive."""
+        inactive_city = City.objects.create(
+            name="Inactive",
+            province="Ontario",
+            province_code="ON",
+            slug="inactive-on",
+            is_active=False,
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(inactive_city.public_id),
+            "address": "123 Main St",
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("city_id", response.data["errors"])
+
+    def test_create_direct_offer_city_not_found(self):
+        """Test validation error when city doesn't exist."""
+        import uuid
+
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(uuid.uuid4()),
+            "address": "123 Main St",
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("city_id", response.data["errors"])
+
+    def test_create_direct_offer_too_many_attachments(self):
+        """Test validation error for too many attachments."""
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        self.client.force_authenticate(user=self.homeowner)
+
+        # Create 11 attachments (max is 10)
+        attachments = []
+        for i in range(11):
+            img = Image.new("RGB", (100, 100), color="red")
+            img_io = BytesIO()
+            img.save(img_io, format="JPEG")
+            img_io.seek(0)
+            attachments.append(
+                SimpleUploadedFile(
+                    f"test{i}.jpg", img_io.read(), content_type="image/jpeg"
+                )
+            )
+
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "attachments": attachments,
+        }
+
+        response = self.client.post(self.list_url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("attachments", response.data["errors"])
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_with_empty_tasks(self, mock_notify):
+        """Test creating direct offer with empty tasks list."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "tasks": [],
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data["data"]["tasks"]), 0)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_tasks_with_empty_titles_filtered(self, mock_notify):
+        """Test tasks with empty titles are filtered out."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "tasks": [
+                {"title": "Valid task", "description": "desc"},
+                {"title": "   ", "description": "empty title"},
+                {"title": "", "description": "also empty"},
+            ],
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        # Only the task with valid title should be created
+        self.assertEqual(len(response.data["data"]["tasks"]), 1)
+        self.assertEqual(response.data["data"]["tasks"][0]["title"], "Valid task")
+
+    def test_create_direct_offer_invalid_postal_code_length(self):
+        """Test validation error for invalid postal code length."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "postal_code": "ABC",  # Too short
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("postal_code", response.data["errors"])
+
+    def test_create_direct_offer_invalid_postal_code_format(self):
+        """Test validation error for invalid postal code format."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "postal_code": "123456",  # Invalid format (should be A1A1A1)
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("postal_code", response.data["errors"])
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_valid_postal_code(self, mock_notify):
+        """Test valid postal code is accepted and formatted."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "postal_code": "m5v2h1",  # lowercase, no space
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["data"]["postal_code"], "M5V 2H1")
+
+    def test_create_direct_offer_latitude_only(self):
+        """Test validation error when only latitude is provided."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "latitude": 43.6532,
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("non_field_errors", response.data["errors"])
+
+    def test_create_direct_offer_longitude_only(self):
+        """Test validation error when only longitude is provided."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "longitude": -79.3832,
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("non_field_errors", response.data["errors"])
+
+    def test_create_direct_offer_latitude_out_of_range(self):
+        """Test validation error for latitude out of range."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "latitude": 95.0,  # > 90
+            "longitude": -79.3832,
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("latitude", response.data["errors"])
+
+    def test_create_direct_offer_longitude_out_of_range(self):
+        """Test validation error for longitude out of range."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "latitude": 43.6532,
+            "longitude": -200.0,  # < -180
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("longitude", response.data["errors"])
+
+    def test_create_direct_offer_to_self(self):
+        """Test validation error when sending offer to yourself."""
+        from datetime import UTC, datetime
+
+        # Make homeowner also a handyman
+        UserRole.objects.create(user=self.homeowner, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.homeowner.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("target_handyman_id", response.data["errors"])
+
+
+class DirectOfferSerializerEdgeCaseTests(APITestCase):
+    """Test edge cases for DirectOffer serializers."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create target handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_offer_time_remaining_expired(self, mock_notify):
+        """Test time_remaining returns 0 when offer is expired."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            offer_expires_in_days=1,
+        )
+
+        # Manually set expiration to past
+        job.offer_expires_at = timezone.now() - timedelta(hours=1)
+        job.save()
+
+        self.client.force_authenticate(user=self.homeowner)
+        url = f"/api/v1/mobile/homeowner/direct-offers/{job.public_id}/"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["time_remaining"], 0)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_offer_time_remaining_not_pending(self, mock_notify):
+        """Test time_remaining returns None when offer is not pending."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Accept the offer
+        service.accept_offer(self.handyman, job)
+
+        self.client.force_authenticate(user=self.homeowner)
+        url = f"/api/v1/mobile/homeowner/direct-offers/{job.public_id}/"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["data"]["time_remaining"])
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_target_handyman_without_profile_in_list(self, mock_notify):
+        """Test serializer handles target handyman without profile."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Delete handyman profile
+        self.handyman_profile.delete()
+
+        self.client.force_authenticate(user=self.homeowner)
+        url = "/api/v1/mobile/homeowner/direct-offers/"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertIsNone(response.data["data"][0]["target_handyman"])
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_handyman_offer_time_remaining_expired(self, mock_notify):
+        """Test handyman serializer time_remaining returns 0 when expired."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            offer_expires_in_days=1,
+        )
+
+        # Manually set expiration to past
+        job.offer_expires_at = timezone.now() - timedelta(hours=1)
+        job.save()
+
+        self.client.force_authenticate(user=self.handyman)
+        url = f"/api/v1/mobile/handyman/direct-offers/{job.public_id}/"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["time_remaining"], 0)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_handyman_homeowner_without_profile(self, mock_notify):
+        """Test handyman serializer handles homeowner without profile."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Delete homeowner profile
+        self.homeowner_profile.delete()
+
+        self.client.force_authenticate(user=self.handyman)
+        url = f"/api/v1/mobile/handyman/direct-offers/{job.public_id}/"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return fallback values
+        homeowner_data = response.data["data"]["homeowner"]
+        self.assertEqual(
+            str(homeowner_data["public_id"]), str(self.homeowner.public_id)
+        )
+        self.assertIsNone(homeowner_data["display_name"])
+        self.assertIsNone(homeowner_data["avatar_url"])
+        self.assertIsNone(homeowner_data["rating"])
+
+
+class HandymanDirectOfferFilterTests(APITestCase):
+    """Test cases for handyman direct offer list filtering."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create target handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_handyman_list_filter_by_offer_status(self, mock_notify):
+        """Test handyman can filter offers by status."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+
+        # Create pending offer
+        service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Pending offer",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        # Create and accept another offer
+        job2 = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Accepted offer",
+            description="Test",
+            estimated_budget=200,
+            category=self.category,
+            city=self.city,
+            address="456 Main St",
+        )
+        service.accept_offer(self.handyman, job2)
+
+        self.client.force_authenticate(user=self.handyman)
+
+        # Filter by pending
+        response = self.client.get(
+            "/api/v1/mobile/handyman/direct-offers/", {"offer_status": "pending"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Pending offer")
+
+        # Filter by accepted
+        response = self.client.get(
+            "/api/v1/mobile/handyman/direct-offers/", {"offer_status": "accepted"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Accepted offer")
+
+
+class DirectOfferRejectSerializerTests(APITestCase):
+    """Test cases for DirectOfferRejectSerializer validation."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create target handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_reject_offer_invalid_rejection_reason(self, mock_notify):
+        """Test reject with invalid rejection reason length."""
+        from apps.jobs.services import DirectOfferService
+
+        service = DirectOfferService()
+        job = service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        url = f"/api/v1/mobile/handyman/direct-offers/{job.public_id}/reject/"
+
+        # Send rejection reason that exceeds max length (1000 chars)
+        response = self.client.post(
+            url, {"rejection_reason": "A" * 1001}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("rejection_reason", response.data["errors"])
+
+
+class DirectOfferSerializerAttachmentTests(APITestCase):
+    """Test cases for attachment validation in DirectOfferCreateSerializer."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        self.list_url = "/api/v1/mobile/homeowner/direct-offers/"
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        self.homeowner_profile = HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+        self.homeowner.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+            "phone_verified": True,
+        }
+
+        # Create target handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        self.handyman_profile = HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_with_empty_attachments(self, mock_notify):
+        """Test creating direct offer with empty attachments list."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "attachments": [],
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data["data"]["attachments"]), 0)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_with_valid_attachments(self, mock_notify):
+        """Test creating direct offer with valid attachments."""
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        self.client.force_authenticate(user=self.homeowner)
+
+        # Create 2 valid attachments
+        attachments = []
+        for i in range(2):
+            img = Image.new("RGB", (100, 100), color="red")
+            img_io = BytesIO()
+            img.save(img_io, format="JPEG")
+            img_io.seek(0)
+            attachments.append(
+                SimpleUploadedFile(
+                    f"test{i}.jpg", img_io.read(), content_type="image/jpeg"
+                )
+            )
+
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "attachments": attachments,
+        }
+
+        response = self.client.post(self.list_url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data["data"]["attachments"]), 2)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_without_postal_code(self, mock_notify):
+        """Test creating direct offer without postal code."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            # No postal_code field
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        # postal_code should be empty string or None
+        self.assertIn(response.data["data"]["postal_code"], ["", None])
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_with_empty_postal_code(self, mock_notify):
+        """Test creating direct offer with empty postal code."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "postal_code": "",
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_with_valid_coordinates(self, mock_notify):
+        """Test creating direct offer with valid coordinates."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "latitude": 43.6532,
+            "longitude": -79.3832,
+        }
+
+        response = self.client.post(self.list_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(float(response.data["data"]["latitude"]), 43.6532)
+        self.assertEqual(float(response.data["data"]["longitude"]), -79.3832)
+
+
+class DirectOfferCreateSerializerUnitTests(TestCase):
+    """Unit tests for DirectOfferCreateSerializer validate_attachments method."""
+
+    def setUp(self):
+        """Set up test data."""
+        from datetime import UTC, datetime
+
+        # Create homeowner
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Homeowner",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create target handyman
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="password123"
+        )
+        UserRole.objects.create(user=self.handyman, role="handyman")
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Handyman",
+            phone_verified_at=datetime.now(UTC),
+        )
+
+        # Create category and city
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+    def test_validate_attachments_with_none(self):
+        """Test validate_attachments returns empty list for None input."""
+        from apps.jobs.serializers import DirectOfferCreateSerializer
+
+        serializer = DirectOfferCreateSerializer()
+        result = serializer.validate_attachments(None)
+        self.assertEqual(result, [])

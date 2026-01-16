@@ -1171,8 +1171,11 @@ class ForYouJobListView(APIView):
         latitude = request.query_params.get("latitude")
         longitude = request.query_params.get("longitude")
 
-        # Base queryset: open jobs from other users
-        jobs = Job.objects.filter(status="open").exclude(homeowner=request.user)
+        # Base queryset: open jobs from other users (exclude direct offers)
+        jobs = Job.objects.filter(
+            status="open",
+            is_direct_offer=False,
+        ).exclude(homeowner=request.user)
 
         # Apply filters
         category_id = request.query_params.get("category_id")
@@ -1460,8 +1463,8 @@ class GuestJobListView(APIView):
         latitude = request.query_params.get("latitude")
         longitude = request.query_params.get("longitude")
 
-        # Base queryset: only open jobs
-        jobs = Job.objects.filter(status="open")
+        # Base queryset: only open public jobs (exclude direct offers)
+        jobs = Job.objects.filter(status="open", is_direct_offer=False)
 
         # Apply filters
         category_id = request.query_params.get("category_id")
@@ -1663,13 +1666,14 @@ class GuestJobDetailView(APIView):
         ],
     )
     def get(self, request, public_id):
-        """Get job detail for guest users (only open jobs)."""
+        """Get job detail for guest users (only open public jobs)."""
         job = get_object_or_404(
             Job.objects.select_related("category", "city").prefetch_related(
                 "attachments"
             ),
             public_id=public_id,
             status="open",
+            is_direct_offer=False,
         )
 
         serializer = GuestJobDetailSerializer(job)
@@ -1805,7 +1809,7 @@ class HandymanForYouJobListView(APIView):
 
         # Get all open jobs (exclude jobs created by this user if they're also a homeowner)
         jobs = (
-            Job.objects.filter(status="open")
+            Job.objects.filter(status="open", is_direct_offer=False)
             .select_related("category", "city", "homeowner__homeowner_profile")
             .prefetch_related("attachments")
         )
@@ -6234,6 +6238,879 @@ class HomeownerReimbursementReviewView(APIView):
             return success_response(
                 JobReimbursementSerializer(reimbursement).data,
                 message=f"Reimbursement {serializer.validated_data['decision']} successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+# ========================
+# Direct Offer Views
+# ========================
+
+
+class HomeownerDirectOfferListCreateView(APIView):
+    """
+    View for listing homeowner's direct offers and creating new ones.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+        PhoneVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_homeowner_direct_offers_list",
+        responses={
+            200: "DirectOfferListResponseSerializer",
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+        },
+        parameters=[
+            OpenApiParameter(
+                name="page",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Page number",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="page_size",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Items per page (max 100)",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="offer_status",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Filter by offer status (pending, accepted, rejected, expired, converted)",
+                required=False,
+            ),
+        ],
+        description=(
+            "List all direct offers sent by the authenticated homeowner. "
+            "Requires homeowner role and phone verification."
+        ),
+        summary="List homeowner direct offers",
+        tags=["Mobile Homeowner Direct Offers"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Direct offers retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "title": "Fix leaking kitchen faucet",
+                            "description": "Kitchen faucet has been leaking.",
+                            "estimated_budget": 150.0,
+                            "category": {"public_id": "...", "name": "Plumbing"},
+                            "city": {"public_id": "...", "name": "Toronto"},
+                            "address": "123 Main St",
+                            "offer_status": "pending",
+                            "offer_expires_at": "2024-01-23T10:30:00Z",
+                            "time_remaining": 432000,
+                            "target_handyman": {
+                                "public_id": "...",
+                                "display_name": "John Doe",
+                                "avatar_url": "https://...",
+                                "rating": 4.8,
+                                "review_count": 25,
+                                "job_title": "Professional Plumber",
+                            },
+                            "created_at": "2024-01-16T10:30:00Z",
+                        }
+                    ],
+                    "errors": None,
+                    "meta": pagination_meta_example(total_count=1),
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+        ],
+    )
+    def get(self, request):
+        """List all direct offers sent by this homeowner."""
+        from apps.jobs.serializers import DirectOfferListSerializer
+
+        # Get direct offers by this homeowner
+        queryset = (
+            Job.objects.filter(
+                homeowner=request.user,
+                is_direct_offer=True,
+            )
+            .exclude(status="deleted")
+            .select_related(
+                "category",
+                "city",
+                "target_handyman__handyman_profile",
+            )
+            .order_by("-created_at")
+        )
+
+        # Filter by offer_status
+        offer_status = request.query_params.get("offer_status")
+        if offer_status:
+            queryset = queryset.filter(offer_status=offer_status)
+
+        # Pagination
+        page = int(request.query_params.get("page", 1))
+        page_size = min(int(request.query_params.get("page_size", 20)), 100)
+
+        # Count total
+        total_count = queryset.count()
+        total_pages = (
+            (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        )
+
+        # Slice queryset
+        start = (page - 1) * page_size
+        end = start + page_size
+        results = queryset[start:end]
+
+        serializer = DirectOfferListSerializer(
+            results, many=True, context={"request": request}
+        )
+
+        meta = {
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "total_count": total_count,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+            }
+        }
+
+        return success_response(
+            serializer.data,
+            message="Direct offers retrieved successfully",
+            meta=meta,
+        )
+
+    @extend_schema(
+        operation_id="mobile_homeowner_direct_offers_create",
+        request="DirectOfferCreateSerializer",
+        responses={
+            201: "DirectOfferDetailResponseSerializer",
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Create a direct job offer to a specific handyman. "
+            "The offer will be sent to the target handyman who can accept or reject it. "
+            "Requires homeowner role and phone verification."
+        ),
+        summary="Create direct offer",
+        tags=["Mobile Homeowner Direct Offers"],
+        examples=[
+            OpenApiExample(
+                "Create Direct Offer",
+                value={
+                    "target_handyman_id": "123e4567-e89b-12d3-a456-426614174001",
+                    "title": "Fix leaking kitchen faucet",
+                    "description": "Kitchen faucet has been leaking for a few days.",
+                    "estimated_budget": 150.0,
+                    "category_id": "123e4567-e89b-12d3-a456-426614174002",
+                    "city_id": "123e4567-e89b-12d3-a456-426614174003",
+                    "address": "123 Main St, Toronto",
+                    "postal_code": "M5V 3A1",
+                    "offer_expires_in_days": 7,
+                    "tasks": [
+                        {"title": "Diagnose the leak"},
+                        {"title": "Replace faucet if needed"},
+                    ],
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Direct offer created successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "title": "Fix leaking kitchen faucet",
+                        "description": "Kitchen faucet has been leaking.",
+                        "estimated_budget": 150.0,
+                        "offer_status": "pending",
+                        "offer_expires_at": "2024-01-23T10:30:00Z",
+                        "target_handyman": {
+                            "public_id": "...",
+                            "display_name": "John Doe",
+                        },
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["201"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+        ],
+    )
+    def post(self, request):
+        """Create a new direct offer."""
+        from django.core.exceptions import ValidationError
+
+        from apps.jobs.serializers import (
+            DirectOfferCreateSerializer,
+            DirectOfferDetailSerializer,
+        )
+        from apps.jobs.services import direct_offer_service
+
+        # Normalize attachments from request
+        data = normalize_attachments_payload(request)
+
+        serializer = DirectOfferCreateSerializer(
+            data=data, context={"request": request}
+        )
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            job = direct_offer_service.create_direct_offer(
+                homeowner=request.user,
+                target_handyman=serializer.validated_data["target_handyman_id"],
+                title=serializer.validated_data["title"],
+                description=serializer.validated_data["description"],
+                estimated_budget=serializer.validated_data["estimated_budget"],
+                category=serializer.validated_data["category_id"],
+                city=serializer.validated_data["city_id"],
+                address=serializer.validated_data["address"],
+                postal_code=serializer.validated_data.get("postal_code", ""),
+                latitude=serializer.validated_data.get("latitude"),
+                longitude=serializer.validated_data.get("longitude"),
+                tasks_data=serializer.validated_data.get("tasks", []),
+                attachments=serializer.validated_data.get("attachments", []),
+                offer_expires_in_days=serializer.validated_data.get(
+                    "offer_expires_in_days", 7
+                ),
+            )
+
+            return created_response(
+                DirectOfferDetailSerializer(job, context={"request": request}).data,
+                message="Direct offer created successfully",
+            )
+        except ValidationError as e:  # pragma: no cover
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HomeownerDirectOfferDetailView(APIView):
+    """
+    View for getting, cancelling a specific direct offer.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_homeowner_direct_offers_detail",
+        responses={
+            200: "DirectOfferDetailResponseSerializer",
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Get details of a specific direct offer. "
+            "Requires homeowner role and the offer must belong to the authenticated user."
+        ),
+        summary="Get direct offer detail",
+        tags=["Mobile Homeowner Direct Offers"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Direct offer retrieved successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "title": "Fix leaking kitchen faucet",
+                        "description": "Kitchen faucet has been leaking.",
+                        "estimated_budget": 150.0,
+                        "offer_status": "pending",
+                        "offer_expires_at": "2024-01-23T10:30:00Z",
+                        "time_remaining": 432000,
+                        "target_handyman": {
+                            "public_id": "...",
+                            "display_name": "John Doe",
+                            "rating": 4.8,
+                        },
+                        "tasks": [{"public_id": "...", "title": "Diagnose the leak"}],
+                        "attachments": [],
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def get(self, request, public_id):
+        """Get direct offer detail."""
+        from apps.jobs.serializers import DirectOfferDetailSerializer
+
+        job = get_object_or_404(
+            Job.objects.select_related(
+                "category",
+                "city",
+                "target_handyman__handyman_profile",
+            ).prefetch_related("tasks", "attachments"),
+            public_id=public_id,
+            homeowner=request.user,
+            is_direct_offer=True,
+        )
+
+        return success_response(
+            DirectOfferDetailSerializer(job, context={"request": request}).data,
+            message="Direct offer retrieved successfully",
+        )
+
+    @extend_schema(
+        operation_id="mobile_homeowner_direct_offers_cancel",
+        responses={
+            204: None,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Cancel a pending direct offer. "
+            "Only pending offers can be cancelled. "
+            "Requires homeowner role."
+        ),
+        summary="Cancel direct offer",
+        tags=["Mobile Homeowner Direct Offers"],
+        examples=[
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def delete(self, request, public_id):
+        """Cancel a pending direct offer."""
+        from django.core.exceptions import ValidationError
+
+        from apps.jobs.services import direct_offer_service
+
+        job = get_object_or_404(
+            Job,
+            public_id=public_id,
+            homeowner=request.user,
+            is_direct_offer=True,
+        )
+
+        try:
+            direct_offer_service.cancel_offer(
+                homeowner=request.user,
+                job=job,
+            )
+            return no_content_response(message="Direct offer cancelled successfully")
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HomeownerDirectOfferConvertView(APIView):
+    """
+    View for converting a rejected/expired direct offer to a public job listing.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_homeowner_direct_offers_convert",
+        responses={
+            200: "DirectOfferDetailResponseSerializer",
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Convert a rejected or expired direct offer to a public job listing. "
+            "Only rejected or expired offers can be converted. "
+            "After conversion, the job will appear in public job listings."
+        ),
+        summary="Convert direct offer to public job",
+        tags=["Mobile Homeowner Direct Offers"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Direct offer converted to public job successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "title": "Fix leaking kitchen faucet",
+                        "status": "open",
+                        "is_direct_offer": False,
+                        "offer_status": "converted",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id):
+        """Convert a rejected/expired direct offer to public job."""
+        from django.core.exceptions import ValidationError
+
+        from apps.jobs.serializers import JobDetailSerializer
+        from apps.jobs.services import direct_offer_service
+
+        job = get_object_or_404(
+            Job,
+            public_id=public_id,
+            homeowner=request.user,
+            is_direct_offer=True,
+        )
+
+        try:
+            job = direct_offer_service.convert_to_public(
+                homeowner=request.user,
+                job=job,
+            )
+            return success_response(
+                JobDetailSerializer(job, context={"request": request}).data,
+                message="Direct offer converted to public job successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HandymanDirectOfferListView(APIView):
+    """
+    View for listing direct offers received by handyman.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_direct_offers_list",
+        responses={
+            200: "HandymanDirectOfferListResponseSerializer",
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+        },
+        parameters=[
+            OpenApiParameter(
+                name="page",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Page number",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="page_size",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Items per page (max 100)",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="offer_status",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Filter by offer status (pending, accepted, rejected, expired)",
+                required=False,
+            ),
+        ],
+        description=(
+            "List all direct offers received by the authenticated handyman. "
+            "Requires handyman role."
+        ),
+        summary="List handyman direct offers",
+        tags=["Mobile Handyman Direct Offers"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Direct offers retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "title": "Fix leaking kitchen faucet",
+                            "description": "Kitchen faucet has been leaking.",
+                            "estimated_budget": 150.0,
+                            "category": {"public_id": "...", "name": "Plumbing"},
+                            "city": {"public_id": "...", "name": "Toronto"},
+                            "address": "123 Main St",
+                            "offer_status": "pending",
+                            "offer_expires_at": "2024-01-23T10:30:00Z",
+                            "time_remaining": 432000,
+                            "homeowner": {
+                                "public_id": "...",
+                                "display_name": "Jane Smith",
+                                "avatar_url": "https://...",
+                                "rating": 4.5,
+                                "review_count": 10,
+                            },
+                            "created_at": "2024-01-16T10:30:00Z",
+                        }
+                    ],
+                    "errors": None,
+                    "meta": pagination_meta_example(total_count=1),
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+        ],
+    )
+    def get(self, request):
+        """List all direct offers received by this handyman."""
+        from apps.jobs.serializers import HandymanDirectOfferListSerializer
+
+        # Get direct offers for this handyman
+        queryset = (
+            Job.objects.filter(
+                target_handyman=request.user,
+                is_direct_offer=True,
+            )
+            .exclude(status="deleted")
+            .select_related(
+                "category",
+                "city",
+                "homeowner__homeowner_profile",
+            )
+            .order_by("-created_at")
+        )
+
+        # Filter by offer_status
+        offer_status = request.query_params.get("offer_status")
+        if offer_status:
+            queryset = queryset.filter(offer_status=offer_status)
+
+        # Pagination
+        page = int(request.query_params.get("page", 1))
+        page_size = min(int(request.query_params.get("page_size", 20)), 100)
+
+        # Count total
+        total_count = queryset.count()
+        total_pages = (
+            (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        )
+
+        # Slice queryset
+        start = (page - 1) * page_size
+        end = start + page_size
+        results = queryset[start:end]
+
+        serializer = HandymanDirectOfferListSerializer(
+            results, many=True, context={"request": request}
+        )
+
+        meta = {
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "total_count": total_count,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+            }
+        }
+
+        return success_response(
+            serializer.data,
+            message="Direct offers retrieved successfully",
+            meta=meta,
+        )
+
+
+class HandymanDirectOfferDetailView(APIView):
+    """
+    View for getting details of a specific direct offer received by handyman.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_direct_offers_detail",
+        responses={
+            200: "HandymanDirectOfferDetailResponseSerializer",
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Get details of a specific direct offer. "
+            "Requires handyman role and the offer must be addressed to the authenticated user."
+        ),
+        summary="Get direct offer detail",
+        tags=["Mobile Handyman Direct Offers"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Direct offer retrieved successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "title": "Fix leaking kitchen faucet",
+                        "description": "Kitchen faucet has been leaking.",
+                        "estimated_budget": 150.0,
+                        "offer_status": "pending",
+                        "offer_expires_at": "2024-01-23T10:30:00Z",
+                        "time_remaining": 432000,
+                        "homeowner": {
+                            "public_id": "...",
+                            "display_name": "Jane Smith",
+                            "rating": 4.5,
+                        },
+                        "tasks": [{"public_id": "...", "title": "Diagnose the leak"}],
+                        "attachments": [],
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def get(self, request, public_id):
+        """Get direct offer detail."""
+        from apps.jobs.serializers import HandymanDirectOfferDetailSerializer
+
+        job = get_object_or_404(
+            Job.objects.select_related(
+                "category",
+                "city",
+                "homeowner__homeowner_profile",
+            ).prefetch_related("tasks", "attachments"),
+            public_id=public_id,
+            target_handyman=request.user,
+            is_direct_offer=True,
+        )
+
+        return success_response(
+            HandymanDirectOfferDetailSerializer(job, context={"request": request}).data,
+            message="Direct offer retrieved successfully",
+        )
+
+
+class HandymanDirectOfferAcceptView(APIView):
+    """
+    View for accepting a direct offer.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+        PhoneVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_direct_offers_accept",
+        responses={
+            200: "HandymanDirectOfferDetailResponseSerializer",
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Accept a direct job offer. "
+            "Only pending offers can be accepted. "
+            "After accepting, the job transitions to 'in_progress' status. "
+            "Requires handyman role and phone verification."
+        ),
+        summary="Accept direct offer",
+        tags=["Mobile Handyman Direct Offers"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Direct offer accepted successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "title": "Fix leaking kitchen faucet",
+                        "offer_status": "accepted",
+                        "status": "in_progress",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id):
+        """Accept a direct offer."""
+        from django.core.exceptions import ValidationError
+
+        from apps.jobs.serializers import HandymanDirectOfferDetailSerializer
+        from apps.jobs.services import direct_offer_service
+
+        job = get_object_or_404(
+            Job,
+            public_id=public_id,
+            target_handyman=request.user,
+            is_direct_offer=True,
+        )
+
+        try:
+            job = direct_offer_service.accept_offer(
+                handyman=request.user,
+                job=job,
+            )
+            return success_response(
+                HandymanDirectOfferDetailSerializer(
+                    job, context={"request": request}
+                ).data,
+                message="Direct offer accepted successfully",
+            )
+        except ValidationError as e:
+            return validation_error_response({"detail": str(e.message)})
+
+
+class HandymanDirectOfferRejectView(APIView):
+    """
+    View for rejecting a direct offer.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_direct_offers_reject",
+        request="DirectOfferRejectSerializer",
+        responses={
+            200: "HandymanDirectOfferDetailResponseSerializer",
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Reject (decline) a direct job offer. "
+            "Only pending offers can be rejected. "
+            "Optionally include a reason for rejection. "
+            "Requires handyman role."
+        ),
+        summary="Reject direct offer",
+        tags=["Mobile Handyman Direct Offers"],
+        examples=[
+            OpenApiExample(
+                "Reject with Reason",
+                value={
+                    "rejection_reason": "Sorry, I'm fully booked for the next 2 weeks.",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Reject without Reason",
+                value={},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Direct offer declined successfully",
+                    "data": {
+                        "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "title": "Fix leaking kitchen faucet",
+                        "offer_status": "rejected",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request, public_id):
+        """Reject a direct offer."""
+        from django.core.exceptions import ValidationError
+
+        from apps.jobs.serializers import (
+            DirectOfferRejectSerializer,
+            HandymanDirectOfferDetailSerializer,
+        )
+        from apps.jobs.services import direct_offer_service
+
+        job = get_object_or_404(
+            Job,
+            public_id=public_id,
+            target_handyman=request.user,
+            is_direct_offer=True,
+        )
+
+        serializer = DirectOfferRejectSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            job = direct_offer_service.reject_offer(
+                handyman=request.user,
+                job=job,
+                rejection_reason=serializer.validated_data.get("rejection_reason", ""),
+            )
+            return success_response(
+                HandymanDirectOfferDetailSerializer(
+                    job, context={"request": request}
+                ).data,
+                message="Direct offer declined successfully",
             )
         except ValidationError as e:
             return validation_error_response({"detail": str(e.message)})

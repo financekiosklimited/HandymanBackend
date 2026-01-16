@@ -84,6 +84,14 @@ class Job(BaseModel):
         ("deleted", "Deleted"),
     ]
 
+    OFFER_STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("accepted", "Accepted"),
+        ("rejected", "Rejected"),
+        ("expired", "Expired"),
+        ("converted", "Converted to Public"),
+    ]
+
     homeowner = models.ForeignKey(
         "accounts.User", on_delete=models.CASCADE, related_name="jobs"
     )
@@ -123,6 +131,42 @@ class Job(BaseModel):
     # Dummy data flag for demo purposes
     is_dummy = models.BooleanField(default=False, db_index=True)
 
+    # Direct Offer fields
+    is_direct_offer = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="True if this job is a direct offer to a specific handyman",
+    )
+    target_handyman = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="direct_job_offers",
+        help_text="Target handyman for direct offers",
+    )
+    offer_status = models.CharField(
+        max_length=20,
+        choices=OFFER_STATUS_CHOICES,
+        null=True,
+        blank=True,
+        help_text="Status of the direct offer",
+    )
+    offer_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the direct offer expires",
+    )
+    offer_responded_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the handyman responded to the offer",
+    )
+    offer_rejection_reason = models.TextField(
+        blank=True,
+        help_text="Reason for rejection (optional, from handyman)",
+    )
+
     class Meta:
         db_table = "jobs"
         ordering = ["-created_at"]
@@ -134,6 +178,10 @@ class Job(BaseModel):
             models.Index(fields=["city"]),
             models.Index(fields=["status"]),
             models.Index(fields=["-created_at"]),
+            models.Index(fields=["is_direct_offer"]),
+            models.Index(fields=["target_handyman"]),
+            models.Index(fields=["offer_status"]),
+            models.Index(fields=["offer_expires_at"]),
         ]
 
     def __str__(self):

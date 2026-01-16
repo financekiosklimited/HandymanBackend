@@ -1506,3 +1506,472 @@ class ReimbursementService:
 
 
 reimbursement_service = ReimbursementService()
+
+
+class DirectOfferService:
+    """
+    Service for handling direct job offer business logic.
+    Direct offers are private job listings sent to a specific handyman.
+    """
+
+    DEFAULT_OFFER_EXPIRY_DAYS = 7
+    MIN_OFFER_EXPIRY_DAYS = 1
+    MAX_OFFER_EXPIRY_DAYS = 30
+
+    @transaction.atomic
+    def create_direct_offer(
+        self,
+        homeowner,
+        target_handyman,
+        title: str,
+        description: str,
+        estimated_budget,
+        category,
+        city,
+        address: str,
+        postal_code: str = "",
+        latitude=None,
+        longitude=None,
+        tasks_data=None,
+        attachments=None,
+        offer_expires_in_days: int = None,
+    ) -> Job:
+        """
+        Create a direct job offer to a specific handyman.
+
+        Args:
+            homeowner: User creating the offer
+            target_handyman: User (handyman) to receive the offer
+            title: Job title
+            description: Job description
+            estimated_budget: Estimated budget
+            category: JobCategory instance
+            city: City instance
+            address: Job address
+            postal_code: Postal code (optional)
+            latitude: Latitude (optional)
+            longitude: Longitude (optional)
+            tasks_data: List of task dicts with title, description (optional)
+            attachments: List of attachment data (optional)
+            offer_expires_in_days: Days until offer expires (default: 7)
+
+        Returns:
+            Job: Created direct offer job
+
+        Raises:
+            ValidationError: If creation is invalid
+        """
+        from apps.common.validators import get_file_type_from_mime
+
+        # Validate homeowner has homeowner role
+        if not homeowner.has_role("homeowner"):
+            raise ValidationError("You must have a homeowner role to create offers.")
+
+        # Validate homeowner has verified phone
+        if not hasattr(homeowner, "homeowner_profile"):
+            raise ValidationError("You must complete your homeowner profile first.")
+
+        homeowner_profile = homeowner.homeowner_profile
+        if not homeowner_profile.is_phone_verified:
+            raise ValidationError(
+                "You must verify your phone number to create direct offers."
+            )
+
+        # Validate target handyman
+        if not target_handyman.has_role("handyman"):
+            raise ValidationError("Target user must have a handyman role.")
+
+        if not hasattr(target_handyman, "handyman_profile"):
+            raise ValidationError("Target handyman has not completed their profile.")
+
+        # Cannot send offer to yourself
+        if homeowner == target_handyman:
+            raise ValidationError("You cannot send a direct offer to yourself.")
+
+        # Calculate expiration
+        if offer_expires_in_days is None:
+            offer_expires_in_days = self.DEFAULT_OFFER_EXPIRY_DAYS
+
+        if not (
+            self.MIN_OFFER_EXPIRY_DAYS
+            <= offer_expires_in_days
+            <= self.MAX_OFFER_EXPIRY_DAYS
+        ):
+            raise ValidationError(
+                f"Offer expiry must be between {self.MIN_OFFER_EXPIRY_DAYS} "
+                f"and {self.MAX_OFFER_EXPIRY_DAYS} days."
+            )
+
+        offer_expires_at = timezone.now() + timedelta(days=offer_expires_in_days)
+
+        # Create the job as a direct offer
+        job = Job.objects.create(
+            homeowner=homeowner,
+            title=title,
+            description=description,
+            estimated_budget=estimated_budget,
+            category=category,
+            city=city,
+            address=address,
+            postal_code=postal_code or "",
+            latitude=latitude,
+            longitude=longitude,
+            status="draft",  # Direct offers start as draft
+            is_direct_offer=True,
+            target_handyman=target_handyman,
+            offer_status="pending",
+            offer_expires_at=offer_expires_at,
+        )
+
+        # Create tasks
+        tasks_data = tasks_data or []
+        for idx, task_data in enumerate(tasks_data):
+            JobTask.objects.create(
+                job=job,
+                title=task_data.get("title", ""),
+                description=task_data.get("description", ""),
+                order=idx,
+            )
+
+        # Create attachments
+        from apps.jobs.models import JobAttachment
+
+        attachments = attachments or []
+        for idx, attachment_data in enumerate(attachments):
+            if isinstance(attachment_data, dict):
+                file = attachment_data.get("file")
+                file_type = attachment_data.get("file_type", "image")
+                thumbnail = attachment_data.get("thumbnail")
+                duration_seconds = attachment_data.get("duration_seconds")
+            else:
+                file = attachment_data
+                content_type = getattr(file, "content_type", "")
+                file_type = get_file_type_from_mime(content_type) or "image"
+                thumbnail = None
+                duration_seconds = None
+
+            JobAttachment.objects.create(
+                job=job,
+                file=file,
+                file_type=file_type,
+                file_name=getattr(file, "name", ""),
+                file_size=getattr(file, "size", 0),
+                thumbnail=thumbnail,
+                duration_seconds=duration_seconds,
+                order=idx,
+            )
+
+        # Send notification to target handyman
+        notification_service.create_and_send_notification(
+            user=target_handyman,
+            notification_type="direct_offer_received",
+            title="New job offer!",
+            body=f"{homeowner_profile.display_name} wants to hire you for: {title}",
+            target_role="handyman",
+            data={
+                "job_id": str(job.public_id),
+                "offer_type": "direct_offer",
+            },
+            triggered_by=homeowner,
+        )
+
+        logger.info(
+            f"Created direct offer {job.public_id} from {homeowner.email} "
+            f"to {target_handyman.email}"
+        )
+
+        return job
+
+    @transaction.atomic
+    def accept_offer(self, handyman, job: Job) -> Job:
+        """
+        Accept a direct job offer.
+
+        Args:
+            handyman: User (handyman) accepting the offer
+            job: Job (direct offer) to accept
+
+        Returns:
+            Job: Updated job with in_progress status
+
+        Raises:
+            ValidationError: If acceptance is invalid
+        """
+        # Validate this is a direct offer
+        if not job.is_direct_offer:
+            raise ValidationError("This job is not a direct offer.")
+
+        # Validate handyman is the target
+        if job.target_handyman != handyman:
+            raise ValidationError("You are not the target of this offer.")
+
+        # Validate offer is pending
+        if job.offer_status != "pending":
+            raise ValidationError(
+                f"This offer cannot be accepted. Current status: {job.offer_status}"
+            )
+
+        # Check if offer has expired
+        if job.offer_expires_at and timezone.now() > job.offer_expires_at:
+            raise ValidationError("This offer has expired.")
+
+        # Accept the offer
+        job.offer_status = "accepted"
+        job.offer_responded_at = timezone.now()
+        job.status = "in_progress"
+        job.assigned_handyman = handyman
+        job.save(
+            update_fields=[
+                "offer_status",
+                "offer_responded_at",
+                "status",
+                "status_at",
+                "assigned_handyman",
+                "updated_at",
+            ]
+        )
+
+        # Notify homeowner
+        handyman_profile = handyman.handyman_profile
+        notification_service.create_and_send_notification(
+            user=job.homeowner,
+            notification_type="direct_offer_accepted",
+            title="Offer accepted!",
+            body=f"{handyman_profile.display_name} has accepted your job offer: {job.title}",
+            target_role="homeowner",
+            data={
+                "job_id": str(job.public_id),
+                "handyman_id": str(handyman.public_id),
+            },
+            triggered_by=handyman,
+        )
+
+        logger.info(f"Direct offer {job.public_id} accepted by {handyman.email}")
+
+        return job
+
+    @transaction.atomic
+    def reject_offer(self, handyman, job: Job, rejection_reason: str = "") -> Job:
+        """
+        Reject a direct job offer.
+
+        Args:
+            handyman: User (handyman) rejecting the offer
+            job: Job (direct offer) to reject
+            rejection_reason: Optional reason for rejection
+
+        Returns:
+            Job: Updated job with rejected status
+
+        Raises:
+            ValidationError: If rejection is invalid
+        """
+        # Validate this is a direct offer
+        if not job.is_direct_offer:
+            raise ValidationError("This job is not a direct offer.")
+
+        # Validate handyman is the target
+        if job.target_handyman != handyman:
+            raise ValidationError("You are not the target of this offer.")
+
+        # Validate offer is pending
+        if job.offer_status != "pending":
+            raise ValidationError(
+                f"This offer cannot be rejected. Current status: {job.offer_status}"
+            )
+
+        # Reject the offer
+        job.offer_status = "rejected"
+        job.offer_responded_at = timezone.now()
+        job.offer_rejection_reason = rejection_reason or ""
+        job.save(
+            update_fields=[
+                "offer_status",
+                "offer_responded_at",
+                "offer_rejection_reason",
+                "updated_at",
+            ]
+        )
+
+        # Notify homeowner
+        handyman_profile = handyman.handyman_profile
+        notification_service.create_and_send_notification(
+            user=job.homeowner,
+            notification_type="direct_offer_rejected",
+            title="Offer declined",
+            body=f"{handyman_profile.display_name} has declined your job offer: {job.title}",
+            target_role="homeowner",
+            data={
+                "job_id": str(job.public_id),
+                "handyman_id": str(handyman.public_id),
+            },
+            triggered_by=handyman,
+        )
+
+        logger.info(f"Direct offer {job.public_id} rejected by {handyman.email}")
+
+        return job
+
+    @transaction.atomic
+    def cancel_offer(self, homeowner, job: Job) -> Job:
+        """
+        Cancel a direct job offer (by homeowner).
+
+        Args:
+            homeowner: User (homeowner) cancelling the offer
+            job: Job (direct offer) to cancel
+
+        Returns:
+            Job: Updated job with cancelled status
+
+        Raises:
+            ValidationError: If cancellation is invalid
+        """
+        # Validate this is a direct offer
+        if not job.is_direct_offer:
+            raise ValidationError("This job is not a direct offer.")
+
+        # Validate homeowner owns the job
+        if job.homeowner != homeowner:
+            raise ValidationError("You can only cancel your own offers.")
+
+        # Validate offer is pending
+        if job.offer_status != "pending":
+            raise ValidationError(
+                f"This offer cannot be cancelled. Current status: {job.offer_status}"
+            )
+
+        # Cancel the offer
+        job.offer_status = "expired"  # Use expired for cancelled by homeowner
+        job.status = "cancelled"
+        job.save(
+            update_fields=[
+                "offer_status",
+                "status",
+                "status_at",
+                "updated_at",
+            ]
+        )
+
+        # Notify target handyman
+        notification_service.create_and_send_notification(
+            user=job.target_handyman,
+            notification_type="direct_offer_cancelled",
+            title="Offer cancelled",
+            body=f"The job offer for '{job.title}' has been cancelled by the homeowner.",
+            target_role="handyman",
+            data={
+                "job_id": str(job.public_id),
+            },
+            triggered_by=homeowner,
+        )
+
+        logger.info(f"Direct offer {job.public_id} cancelled by {homeowner.email}")
+
+        return job
+
+    @transaction.atomic
+    def convert_to_public(self, homeowner, job: Job) -> Job:
+        """
+        Convert a rejected/expired direct offer to a public job listing.
+
+        Args:
+            homeowner: User (homeowner) converting the offer
+            job: Job (direct offer) to convert
+
+        Returns:
+            Job: Updated job as public listing
+
+        Raises:
+            ValidationError: If conversion is invalid
+        """
+        # Validate this is a direct offer
+        if not job.is_direct_offer:
+            raise ValidationError("This job is not a direct offer.")
+
+        # Validate homeowner owns the job
+        if job.homeowner != homeowner:
+            raise ValidationError("You can only convert your own offers.")
+
+        # Validate offer status allows conversion
+        if job.offer_status not in ("rejected", "expired"):
+            raise ValidationError(
+                "Only rejected or expired offers can be converted to public listings."
+            )
+
+        # Convert to public job
+        job.is_direct_offer = False
+        job.offer_status = "converted"
+        job.status = "open"
+        # Keep target_handyman for reference but clear assignment
+        job.assigned_handyman = None
+        job.save(
+            update_fields=[
+                "is_direct_offer",
+                "offer_status",
+                "status",
+                "status_at",
+                "assigned_handyman",
+                "updated_at",
+            ]
+        )
+
+        logger.info(
+            f"Direct offer {job.public_id} converted to public listing by {homeowner.email}"
+        )
+
+        return job
+
+    def expire_pending_offers(self) -> int:
+        """
+        Expire all pending offers that have passed their expiration date.
+        This should be called by a scheduled task/cron job.
+
+        Returns:
+            int: Number of offers expired
+        """
+        expired_offers = Job.objects.filter(
+            is_direct_offer=True,
+            offer_status="pending",
+            offer_expires_at__lt=timezone.now(),
+        )
+
+        count = expired_offers.count()
+
+        for job in expired_offers:
+            job.offer_status = "expired"
+            job.save(update_fields=["offer_status", "updated_at"])
+
+            # Notify homeowner
+            notification_service.create_and_send_notification(
+                user=job.homeowner,
+                notification_type="direct_offer_expired",
+                title="Offer expired",
+                body=f"Your job offer '{job.title}' has expired without a response.",
+                target_role="homeowner",
+                data={
+                    "job_id": str(job.public_id),
+                },
+                triggered_by=None,
+            )
+
+            # Notify handyman
+            notification_service.create_and_send_notification(
+                user=job.target_handyman,
+                notification_type="direct_offer_expired",
+                title="Offer expired",
+                body=f"The job offer '{job.title}' has expired.",
+                target_role="handyman",
+                data={
+                    "job_id": str(job.public_id),
+                },
+                triggered_by=None,
+            )
+
+        if count > 0:
+            logger.info(f"Expired {count} pending direct offers")
+
+        return count
+
+
+direct_offer_service = DirectOfferService()

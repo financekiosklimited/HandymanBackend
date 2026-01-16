@@ -35,6 +35,22 @@ urlpatterns = [
         mobile_views.JobDetailView.as_view(),
         name="mobile_homeowner_job_detail",
     ),
+    # Homeowner Direct Offer endpoints
+    path(
+        "homeowner/direct-offers/",
+        mobile_views.HomeownerDirectOfferListCreateView.as_view(),
+        name="mobile_homeowner_direct_offers",
+    ),
+    path(
+        "homeowner/direct-offers/<uuid:public_id>/",
+        mobile_views.HomeownerDirectOfferDetailView.as_view(),
+        name="mobile_homeowner_direct_offer_detail",
+    ),
+    path(
+        "homeowner/direct-offers/<uuid:public_id>/convert-to-public/",
+        mobile_views.HomeownerDirectOfferConvertView.as_view(),
+        name="mobile_homeowner_direct_offer_convert",
+    ),
     # Guest job endpoints (no authentication required)
     path(
         "guest/jobs/",
@@ -56,6 +72,27 @@ urlpatterns = [
         "handyman/jobs/<uuid:public_id>/",
         mobile_views.HandymanJobDetailView.as_view(),
         name="mobile_handyman_job_detail",
+    ),
+    # Handyman Direct Offer endpoints
+    path(
+        "handyman/direct-offers/",
+        mobile_views.HandymanDirectOfferListView.as_view(),
+        name="mobile_handyman_direct_offers",
+    ),
+    path(
+        "handyman/direct-offers/<uuid:public_id>/",
+        mobile_views.HandymanDirectOfferDetailView.as_view(),
+        name="mobile_handyman_direct_offer_detail",
+    ),
+    path(
+        "handyman/direct-offers/<uuid:public_id>/accept/",
+        mobile_views.HandymanDirectOfferAcceptView.as_view(),
+        name="mobile_handyman_direct_offer_accept",
+    ),
+    path(
+        "handyman/direct-offers/<uuid:public_id>/reject/",
+        mobile_views.HandymanDirectOfferRejectView.as_view(),
+        name="mobile_handyman_direct_offer_reject",
     ),
     # Handyman application endpoints
     path(
