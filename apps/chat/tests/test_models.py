@@ -2,12 +2,16 @@
 Test cases for chat models.
 """
 
+from io import BytesIO
+
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
+from PIL import Image as PILImage
 
 from apps.accounts.models import User, UserRole
-from apps.chat.models import ChatConversation, ChatMessage, ChatMessageImage
+from apps.chat.models import ChatConversation, ChatMessage, ChatMessageAttachment
 from apps.jobs.models import City, Job, JobCategory
 from apps.profiles.models import HandymanProfile, HomeownerProfile
 
@@ -269,17 +273,17 @@ class ChatMessageModelTests(TestCase):
         self.assertIsNone(message.read_at)
         self.assertIsNotNone(message.public_id)
 
-    def test_create_image_message_success(self):
-        """Test creating an image message."""
+    def test_create_attachment_message_success(self):
+        """Test creating an attachment message."""
         message = ChatMessage.objects.create(
             conversation=self.conversation,
             sender=self.handyman,
             sender_role=ChatMessage.SenderRole.HANDYMAN,
-            message_type=ChatMessage.MessageType.IMAGE,
+            message_type=ChatMessage.MessageType.ATTACHMENT,
             content="",
         )
 
-        self.assertEqual(message.message_type, "image")
+        self.assertEqual(message.message_type, "attachment")
         self.assertEqual(message.content, "")
 
     def test_message_string_representation_text(self):
@@ -293,17 +297,17 @@ class ChatMessageModelTests(TestCase):
         self.assertIn("homeowner", str(message))
         self.assertIn("Hello world", str(message))
 
-    def test_message_string_representation_image(self):
-        """Test message string representation for image."""
+    def test_message_string_representation_attachment(self):
+        """Test message string representation for attachment."""
         message = ChatMessage.objects.create(
             conversation=self.conversation,
             sender=self.handyman,
             sender_role=ChatMessage.SenderRole.HANDYMAN,
-            message_type=ChatMessage.MessageType.IMAGE,
+            message_type=ChatMessage.MessageType.ATTACHMENT,
             content="",
         )
         self.assertIn("handyman", str(message))
-        self.assertIn("image", str(message))
+        self.assertIn("attachment", str(message))
 
     def test_message_content_max_length(self):
         """Test message content max length validation."""
@@ -338,8 +342,8 @@ class ChatMessageModelTests(TestCase):
         self.assertEqual(messages[1], msg2)
 
 
-class ChatMessageImageModelTests(TestCase):
-    """Test cases for ChatMessageImage model."""
+class ChatMessageAttachmentModelTests(TestCase):
+    """Test cases for ChatMessageAttachment model."""
 
     def setUp(self):
         """Set up test data."""
@@ -384,36 +388,77 @@ class ChatMessageImageModelTests(TestCase):
             conversation=self.conversation,
             sender=self.homeowner,
             sender_role=ChatMessage.SenderRole.HOMEOWNER,
-            message_type=ChatMessage.MessageType.IMAGE,
+            message_type=ChatMessage.MessageType.ATTACHMENT,
             content="",
         )
 
-    def test_create_message_image_success(self):
-        """Test creating a message image."""
-        image = ChatMessageImage.objects.create(
+    def _create_image_file(self, name="test.jpg"):
+        image_io = BytesIO()
+        pil_image = PILImage.new("RGB", (100, 100), color="red")
+        pil_image.save(image_io, format="JPEG")
+        image_io.seek(0)
+        return SimpleUploadedFile(name, image_io.getvalue(), content_type="image/jpeg")
+
+    def test_create_message_attachment_success(self):
+        """Test creating a message attachment."""
+        image_file = self._create_image_file()
+        attachment = ChatMessageAttachment.objects.create(
             message=self.message,
+            file=image_file,
+            file_type="image",
+            file_name=image_file.name,
+            file_size=image_file.size,
             order=0,
         )
 
-        self.assertEqual(image.message, self.message)
-        self.assertEqual(image.order, 0)
-        self.assertIsNotNone(image.public_id)
+        self.assertEqual(attachment.message, self.message)
+        self.assertEqual(attachment.order, 0)
+        self.assertIsNotNone(attachment.public_id)
 
-    def test_message_image_string_representation(self):
-        """Test message image string representation."""
-        image = ChatMessageImage.objects.create(
+    def test_message_attachment_string_representation(self):
+        """Test message attachment string representation."""
+        image_file = self._create_image_file()
+        attachment = ChatMessageAttachment.objects.create(
             message=self.message,
+            file=image_file,
+            file_type="image",
+            file_name=image_file.name,
+            file_size=image_file.size,
             order=0,
         )
-        self.assertIn("Image 0", str(image))
+        self.assertIn("Image 0 for message", str(attachment))
 
-    def test_message_images_ordering(self):
-        """Test message images are ordered by order field."""
-        img1 = ChatMessageImage.objects.create(message=self.message, order=1)
-        img2 = ChatMessageImage.objects.create(message=self.message, order=0)
-        img3 = ChatMessageImage.objects.create(message=self.message, order=2)
+    def test_message_attachments_ordering(self):
+        """Test message attachments are ordered by order field."""
+        image_file1 = self._create_image_file(name="test1.jpg")
+        image_file2 = self._create_image_file(name="test2.jpg")
+        image_file3 = self._create_image_file(name="test3.jpg")
+        att1 = ChatMessageAttachment.objects.create(
+            message=self.message,
+            file=image_file1,
+            file_type="image",
+            file_name=image_file1.name,
+            file_size=image_file1.size,
+            order=1,
+        )
+        att2 = ChatMessageAttachment.objects.create(
+            message=self.message,
+            file=image_file2,
+            file_type="image",
+            file_name=image_file2.name,
+            file_size=image_file2.size,
+            order=0,
+        )
+        att3 = ChatMessageAttachment.objects.create(
+            message=self.message,
+            file=image_file3,
+            file_type="image",
+            file_name=image_file3.name,
+            file_size=image_file3.size,
+            order=2,
+        )
 
-        images = list(self.message.images.all())
-        self.assertEqual(images[0], img2)  # order 0
-        self.assertEqual(images[1], img1)  # order 1
-        self.assertEqual(images[2], img3)  # order 2
+        attachments = list(self.message.attachments.all())
+        self.assertEqual(attachments[0], att2)  # order 0
+        self.assertEqual(attachments[1], att1)  # order 1
+        self.assertEqual(attachments[2], att3)  # order 2

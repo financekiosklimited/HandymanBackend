@@ -10,9 +10,10 @@ from django.utils import timezone
 from apps.accounts.models import User, UserRole
 from apps.chat.models import ChatConversation, ChatMessage
 from apps.chat.services import (
-    MAX_IMAGE_SIZE_BYTES,
-    MAX_IMAGES_PER_MESSAGE,
+    MAX_CHAT_ATTACHMENTS,
+    MAX_IMAGE_SIZE,
     MAX_MESSAGE_LENGTH,
+    MAX_VIDEO_SIZE,
     ChatService,
     chat_service,
 )
@@ -437,7 +438,7 @@ class ChatServiceSendMessageTests(TestCase):
                 sender_role="homeowner",
                 content="",
             )
-        self.assertIn("content or images", str(context.exception))
+        self.assertIn("content or attachments", str(context.exception))
 
     @patch("apps.chat.services.notification_service")
     def test_send_message_content_too_long_raises_error(self, mock_notification):
@@ -451,18 +452,19 @@ class ChatServiceSendMessageTests(TestCase):
                 sender_role="homeowner",
                 content=long_content,
             )
+
         self.assertIn(str(MAX_MESSAGE_LENGTH), str(context.exception))
 
     @patch("apps.chat.services.notification_service")
-    def test_send_message_too_many_images_raises_error(self, mock_notification):
-        """Test sending message with too many images."""
-        # Create mock images
-        mock_images = []
-        for i in range(MAX_IMAGES_PER_MESSAGE + 1):
-            mock_img = MagicMock()
-            mock_img.size = 1024  # 1KB
-            mock_img.name = f"image_{i}.jpg"
-            mock_images.append(mock_img)
+    def test_send_message_too_many_attachments_raises_error(self, mock_notification):
+        """Test sending message with too many attachments."""
+        # Create mock attachments
+        mock_attachments = []
+        for i in range(MAX_CHAT_ATTACHMENTS + 1):
+            mock_file = MagicMock()
+            mock_file.size = 1024  # 1KB
+            mock_file.name = f"attachment_{i}.jpg"
+            mock_attachments.append(mock_file)
 
         with self.assertRaises(ValueError) as context:
             self.service.send_message(
@@ -470,15 +472,15 @@ class ChatServiceSendMessageTests(TestCase):
                 sender=self.homeowner,
                 sender_role="homeowner",
                 content="",
-                images=mock_images,
+                attachments=mock_attachments,
             )
-        self.assertIn(str(MAX_IMAGES_PER_MESSAGE), str(context.exception))
+        self.assertIn(str(MAX_CHAT_ATTACHMENTS), str(context.exception))
 
     @patch("apps.chat.services.notification_service")
     def test_send_message_image_too_large_raises_error(self, mock_notification):
         """Test sending message with image exceeding max size."""
         mock_img = MagicMock()
-        mock_img.size = MAX_IMAGE_SIZE_BYTES + 1
+        mock_img.size = MAX_IMAGE_SIZE + 1
         mock_img.name = "large_image.jpg"
 
         with self.assertRaises(ValueError) as context:
@@ -487,9 +489,28 @@ class ChatServiceSendMessageTests(TestCase):
                 sender=self.homeowner,
                 sender_role="homeowner",
                 content="",
-                images=[mock_img],
+                attachments=[mock_img],
             )
         self.assertIn("10MB", str(context.exception))
+
+    @patch("apps.chat.services.notification_service")
+    def test_send_message_video_too_large_raises_error(self, mock_notification):
+        """Test sending message with video exceeding max size."""
+        mock_video = MagicMock()
+        mock_video.size = MAX_VIDEO_SIZE + 1
+        mock_video.name = "large_video.mp4"
+        mock_video.content_type = "video/mp4"
+
+        with self.assertRaises(ValueError) as context:
+            self.service.send_message(
+                conversation=self.conversation,
+                sender=self.homeowner,
+                sender_role="homeowner",
+                content="",
+                attachments=[mock_video],
+            )
+
+        self.assertIn("Video size cannot exceed", str(context.exception))
 
     @patch("apps.chat.services.notification_service")
     def test_send_message_archived_conversation_raises_error(self, mock_notification):
@@ -1314,8 +1335,8 @@ class ChatServiceGetJobChatUnreadCountTests(TestCase):
         self.assertEqual(count, 0)
 
 
-class ChatServiceSendMessageWithImagesTests(TestCase):
-    """Test cases for ChatService.send_message with images."""
+class ChatServiceSendMessageWithAttachmentsTests(TestCase):
+    """Test cases for ChatService.send_message with attachments."""
 
     def setUp(self):
         """Set up test data."""
@@ -1384,8 +1405,8 @@ class ChatServiceSendMessageWithImagesTests(TestCase):
         )
 
     @patch("apps.chat.services.notification_service")
-    def test_send_image_only_message(self, mock_notification):
-        """Test sending image-only message sets message_type to image."""
+    def test_send_attachment_only_message(self, mock_notification):
+        """Test sending attachment-only message sets message_type to attachment."""
         image = self._create_test_image()
 
         message = self.service.send_message(
@@ -1393,15 +1414,15 @@ class ChatServiceSendMessageWithImagesTests(TestCase):
             sender=self.homeowner,
             sender_role="homeowner",
             content="",
-            images=[image],
+            attachments=[image],
         )
 
-        self.assertEqual(message.message_type, "image")
-        self.assertEqual(message.images.count(), 1)
+        self.assertEqual(message.message_type, "attachment")
+        self.assertEqual(message.attachments.count(), 1)
 
     @patch("apps.chat.services.notification_service")
-    def test_send_text_with_image_message(self, mock_notification):
-        """Test sending message with text and images sets message_type to text_with_image."""
+    def test_send_text_with_attachment_message(self, mock_notification):
+        """Test sending message with text and attachments sets message_type to text_with_attachment."""
         image = self._create_test_image()
 
         message = self.service.send_message(
@@ -1409,17 +1430,17 @@ class ChatServiceSendMessageWithImagesTests(TestCase):
             sender=self.homeowner,
             sender_role="homeowner",
             content="Check out this image!",
-            images=[image],
+            attachments=[image],
         )
 
-        self.assertEqual(message.message_type, "text_with_image")
+        self.assertEqual(message.message_type, "text_with_attachment")
         self.assertEqual(message.content, "Check out this image!")
-        self.assertEqual(message.images.count(), 1)
+        self.assertEqual(message.attachments.count(), 1)
 
     @patch("apps.chat.services.notification_service")
-    def test_send_multiple_images(self, mock_notification):
-        """Test sending message with multiple images."""
-        images = [
+    def test_send_multiple_attachments(self, mock_notification):
+        """Test sending message with multiple attachments."""
+        attachments = [
             self._create_test_image("image1.jpg"),
             self._create_test_image("image2.jpg"),
             self._create_test_image("image3.jpg"),
@@ -1430,17 +1451,53 @@ class ChatServiceSendMessageWithImagesTests(TestCase):
             sender=self.homeowner,
             sender_role="homeowner",
             content="",
-            images=images,
+            attachments=attachments,
         )
 
-        self.assertEqual(message.images.count(), 3)
+        self.assertEqual(message.attachments.count(), 3)
         # Verify order is preserved
-        orders = list(message.images.values_list("order", flat=True))
+        orders = list(message.attachments.values_list("order", flat=True))
         self.assertEqual(orders, [0, 1, 2])
 
     @patch("apps.chat.services.notification_service")
-    def test_image_notification_body_for_image_only_message(self, mock_notification):
-        """Test notification body is 'Sent an image' for image-only messages."""
+    def test_send_message_with_tuple_attachment(self, mock_notification):
+        """Test sending message with tuple attachments uses file type."""
+        image = self._create_test_image("image1.jpg")
+
+        message = self.service.send_message(
+            conversation=self.conversation,
+            sender=self.homeowner,
+            sender_role="homeowner",
+            content="",
+            attachments=[(image, "image")],
+        )
+
+        self.assertEqual(message.attachments.count(), 1)
+
+    @patch("apps.chat.services.notification_service")
+    def test_send_message_with_video_attachment(self, mock_notification):
+        """Test sending message with video attachment skips thumbnail."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        video = SimpleUploadedFile("clip.mp4", b"video", content_type="video/mp4")
+
+        message = self.service.send_message(
+            conversation=self.conversation,
+            sender=self.homeowner,
+            sender_role="homeowner",
+            content="",
+            attachments=[video],
+        )
+
+        attachment = message.attachments.first()
+        self.assertEqual(attachment.file_type, "video")
+        self.assertFalse(bool(attachment.thumbnail))
+
+    @patch("apps.chat.services.notification_service")
+    def test_attachment_notification_body_for_attachment_only_message(
+        self, mock_notification
+    ):
+        """Test notification body is 'Sent an attachment' for attachment-only messages."""
         image = self._create_test_image()
 
         self.service.send_message(
@@ -1448,12 +1505,12 @@ class ChatServiceSendMessageWithImagesTests(TestCase):
             sender=self.homeowner,
             sender_role="homeowner",
             content="",
-            images=[image],
+            attachments=[image],
         )
 
-        # Check notification was sent with "Sent an image" body
+        # Check notification was sent with "Sent an attachment" body
         call_args = mock_notification.create_and_send_notification.call_args
-        self.assertEqual(call_args.kwargs["body"], "Sent an image")
+        self.assertEqual(call_args.kwargs["body"], "Sent an attachment")
 
     @patch("apps.chat.services.notification_service")
     def test_notification_includes_job_id(self, mock_notification):
@@ -1679,8 +1736,8 @@ class ChatServiceSendMessageInGeneralConversationTests(TestCase):
         self.assertNotIn("job_id", call_args.kwargs["data"])
 
 
-class ChatServiceSaveMessageImageTests(TestCase):
-    """Test cases for _save_message_image method edge cases."""
+class ChatServiceSaveMessageAttachmentTests(TestCase):
+    """Test cases for _save_message_attachment method edge cases."""
 
     def setUp(self):
         """Set up test data."""
@@ -1764,6 +1821,23 @@ class ChatServiceSaveMessageImageTests(TestCase):
             content_type="image/gif",
         )
 
+    def test_save_message_attachment_creates_thumbnail(self):
+        """Test saving image attachment creates thumbnail."""
+        image = self._create_png_with_transparency()
+        message = ChatMessage.objects.create(
+            conversation=self.conversation,
+            sender=self.homeowner,
+            sender_role=ChatMessage.SenderRole.HOMEOWNER,
+            message_type=ChatMessage.MessageType.ATTACHMENT,
+            content="",
+        )
+
+        self.service._save_message_attachment(message, image, "image", 0)
+
+        attachment = message.attachments.first()
+        self.assertIsNotNone(attachment)
+        self.assertTrue(bool(attachment.thumbnail))
+
     @patch("apps.chat.services.notification_service")
     def test_send_rgba_png_image(self, mock_notification):
         """Test sending PNG image with transparency is converted to RGB."""
@@ -1774,12 +1848,12 @@ class ChatServiceSaveMessageImageTests(TestCase):
             sender=self.homeowner,
             sender_role="homeowner",
             content="",
-            images=[image],
+            attachments=[image],
         )
 
-        self.assertEqual(message.images.count(), 1)
+        self.assertEqual(message.attachments.count(), 1)
         # Thumbnail should be created as JPEG
-        chat_image = message.images.first()
+        chat_image = message.attachments.first()
         self.assertTrue(chat_image.thumbnail.name.endswith(".jpg"))
 
     @patch("apps.chat.services.notification_service")
@@ -1792,12 +1866,12 @@ class ChatServiceSaveMessageImageTests(TestCase):
             sender=self.homeowner,
             sender_role="homeowner",
             content="",
-            images=[image],
+            attachments=[image],
         )
 
-        self.assertEqual(message.images.count(), 1)
+        self.assertEqual(message.attachments.count(), 1)
         # Thumbnail should be created as JPEG
-        chat_image = message.images.first()
+        chat_image = message.attachments.first()
         self.assertTrue(chat_image.thumbnail.name.endswith(".jpg"))
 
     @patch("apps.chat.services.notification_service")
@@ -1828,12 +1902,149 @@ class ChatServiceSaveMessageImageTests(TestCase):
             sender=self.homeowner,
             sender_role="homeowner",
             content="",
-            images=[image],
+            attachments=[image],
         )
 
         # Message should still be created
         self.assertIsNotNone(message)
-        self.assertEqual(message.images.count(), 1)
+        self.assertEqual(message.attachments.count(), 1)
         # Thumbnail should not exist
-        chat_image = message.images.first()
+        chat_image = message.attachments.first()
         self.assertFalse(bool(chat_image.thumbnail))
+
+
+class ChatServiceDictFormatAttachmentTests(TestCase):
+    """Test cases for ChatService handling dict format attachments."""
+
+    def setUp(self):
+        """Set up test data."""
+        from apps.profiles.models import HandymanProfile, HomeownerProfile
+
+        self.service = ChatService()
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com",
+            password="testpass123",
+        )
+        HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Test Homeowner",
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com",
+            password="testpass123",
+        )
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Test Job",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            assigned_handyman=self.handyman,
+        )
+        self.conversation = ChatConversation.objects.create(
+            conversation_type=ChatConversation.ConversationType.JOB,
+            job=self.job,
+            homeowner=self.homeowner,
+            handyman=self.handyman,
+        )
+
+    def _create_test_image(self, name="test.jpg"):
+        """Create a test image file."""
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        img = Image.new("RGB", (100, 100), color="red")
+        buffer = BytesIO()
+        img.save(buffer, format="JPEG")
+        buffer.seek(0)
+        return SimpleUploadedFile(
+            name=name,
+            content=buffer.read(),
+            content_type="image/jpeg",
+        )
+
+    def _create_test_video(self, name="test.mp4"):
+        """Create a mock video file."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        return SimpleUploadedFile(
+            name=name,
+            content=b"fake video content",
+            content_type="video/mp4",
+        )
+
+    @patch("apps.chat.services.notification_service")
+    def test_send_message_with_dict_format_attachment(self, mock_notification):
+        """Test sending message with dict format attachment (file + file_type)."""
+        image = self._create_test_image()
+
+        # Dict format with file and file_type
+        attachment_data = {
+            "file": image,
+            "file_type": "image",
+            "thumbnail": None,
+            "duration_seconds": None,
+        }
+
+        message = self.service.send_message(
+            conversation=self.conversation,
+            sender=self.homeowner,
+            sender_role="homeowner",
+            content="",
+            attachments=[attachment_data],
+        )
+
+        self.assertIsNotNone(message)
+        self.assertEqual(message.attachments.count(), 1)
+        attachment = message.attachments.first()
+        self.assertEqual(attachment.file_type, "image")
+
+    @patch("apps.chat.services.notification_service")
+    def test_send_message_with_video_dict_format_attachment(self, mock_notification):
+        """Test sending message with video dict format attachment includes thumbnail."""
+        video = self._create_test_video()
+        thumbnail = self._create_test_image(name="thumb.jpg")
+
+        # Dict format with video, thumbnail, and duration
+        attachment_data = {
+            "file": video,
+            "file_type": "video",
+            "thumbnail": thumbnail,
+            "duration_seconds": 30,
+        }
+
+        message = self.service.send_message(
+            conversation=self.conversation,
+            sender=self.homeowner,
+            sender_role="homeowner",
+            content="",
+            attachments=[attachment_data],
+        )
+
+        self.assertIsNotNone(message)
+        self.assertEqual(message.attachments.count(), 1)
+        attachment = message.attachments.first()
+        self.assertEqual(attachment.file_type, "video")
+        self.assertEqual(attachment.duration_seconds, 30)
+        # Video thumbnail should be saved
+        self.assertTrue(bool(attachment.thumbnail))

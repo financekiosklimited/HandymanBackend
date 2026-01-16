@@ -4,8 +4,10 @@ Serializers for chat API.
 
 from rest_framework import serializers
 
-from apps.chat.models import ChatConversation, ChatMessage, ChatMessageImage
+from apps.chat.models import ChatConversation, ChatMessage, ChatMessageAttachment
+from apps.common.constants import MAX_CHAT_ATTACHMENTS
 from apps.common.serializers import (
+    AttachmentInputSerializer,
     create_list_response_serializer,
     create_response_serializer,
 )
@@ -38,37 +40,41 @@ class ChatJobSerializer(serializers.Serializer):
 
 
 # ========================
-# Image Serializers
+# Attachment Serializers
 # ========================
 
 
-class ChatMessageImageSerializer(serializers.ModelSerializer):
+class ChatMessageAttachmentSerializer(serializers.ModelSerializer):
     """
-    Serializer for chat message images.
+    Serializer for chat message attachments (images/videos).
     """
 
-    image_url = serializers.SerializerMethodField(help_text="Full image URL")
-    thumbnail_url = serializers.SerializerMethodField(help_text="Thumbnail URL")
+    file_url = serializers.SerializerMethodField(help_text="Full file URL")
+    thumbnail_url = serializers.SerializerMethodField(
+        help_text="Thumbnail URL (video thumbnail or image itself)"
+    )
 
     class Meta:
-        model = ChatMessageImage
-        fields = ["public_id", "image_url", "thumbnail_url", "order"]
+        model = ChatMessageAttachment
+        fields = [
+            "public_id",
+            "file_url",
+            "file_type",
+            "file_name",
+            "file_size",
+            "thumbnail_url",
+            "duration_seconds",
+            "order",
+        ]
         read_only_fields = fields
 
-    def get_image_url(self, obj):
-        """Get the full image URL."""
-        if obj.image:
-            return obj.image.url
-        return None
+    def get_file_url(self, obj):
+        """Get the full file URL."""
+        return obj.file_url
 
     def get_thumbnail_url(self, obj):
         """Get the thumbnail URL."""
-        if obj.thumbnail:
-            return obj.thumbnail.url
-        # Fallback to full image if no thumbnail
-        if obj.image:
-            return obj.image.url
-        return None
+        return obj.thumbnail_url
 
 
 # ========================
@@ -81,7 +87,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     Serializer for chat messages (response).
     """
 
-    images = ChatMessageImageSerializer(many=True, read_only=True)
+    attachments = ChatMessageAttachmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = ChatMessage
@@ -90,7 +96,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
             "sender_role",
             "message_type",
             "content",
-            "images",
+            "attachments",
             "is_read",
             "read_at",
             "created_at",
@@ -122,21 +128,34 @@ class SendMessageSerializer(serializers.Serializer):
         max_length=2000,
         help_text="Message text content (max 2000 characters)",
     )
-    images = serializers.ListField(
-        child=serializers.ImageField(),
+    attachments = AttachmentInputSerializer(
+        many=True,
         required=False,
-        max_length=5,
-        help_text="List of images (max 5, each max 10MB)",
+        help_text=f"List of attachments (max {MAX_CHAT_ATTACHMENTS}). "
+        "Use indexed format: attachments[0].file, attachments[0].thumbnail, "
+        "attachments[0].duration_seconds. For videos, thumbnail and duration_seconds are required.",
     )
 
-    def validate(self, data):
-        """Validate that message has content or images."""
-        content = data.get("content", "").strip()
-        images = data.get("images", [])
+    def validate_attachments(self, value):
+        """Validate attachments list count."""
+        if not value:
+            return []
 
-        if not content and not images:
+        if len(value) > MAX_CHAT_ATTACHMENTS:
             raise serializers.ValidationError(
-                "Message must have content or at least one image."
+                f"Maximum {MAX_CHAT_ATTACHMENTS} attachments allowed."
+            )
+
+        return value
+
+    def validate(self, data):
+        """Validate that message has content or attachments."""
+        content = data.get("content", "").strip()
+        attachments = data.get("attachments", [])
+
+        if not content and not attachments:
+            raise serializers.ValidationError(
+                "Message must have content or at least one attachment."
             )
 
         return data

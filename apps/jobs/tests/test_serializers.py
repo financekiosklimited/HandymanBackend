@@ -12,16 +12,16 @@ from apps.jobs.models import (
     MAX_JOB_ITEMS,
     City,
     Job,
+    JobAttachment,
     JobCategory,
-    JobImage,
     JobTask,
 )
 from apps.jobs.serializers import (
     CitySerializer,
+    JobAttachmentSerializer,
     JobCategorySerializer,
     JobCreateSerializer,
     JobDetailSerializer,
-    JobImageSerializer,
     JobListSerializer,
 )
 
@@ -68,8 +68,8 @@ class CitySerializerTests(TestCase):
         self.assertIn("public_id", data)
 
 
-class JobImageSerializerTests(TestCase):
-    """Test cases for JobImageSerializer."""
+class JobAttachmentSerializerTests(TestCase):
+    """Test cases for JobAttachmentSerializer."""
 
     def setUp(self):
         """Set up test data."""
@@ -97,8 +97,8 @@ class JobImageSerializerTests(TestCase):
             address="123 Main St",
         )
 
-    def test_job_image_serialization(self):
-        """Test job image serialization."""
+    def test_job_attachment_serialization(self):
+        """Test job attachment serialization."""
         # Create a simple test image
         image_io = BytesIO()
         pil_image = PILImage.new("RGB", (100, 100), color="red")
@@ -108,15 +108,24 @@ class JobImageSerializerTests(TestCase):
             "test.jpg", image_io.getvalue(), content_type="image/jpeg"
         )
 
-        job_image = JobImage.objects.create(job=self.job, image=image_file, order=0)
-        serializer = JobImageSerializer(job_image)
+        job_attachment = JobAttachment.objects.create(
+            job=self.job,
+            file=image_file,
+            file_type="image",
+            file_name="test.jpg",
+            file_size=image_file.size,
+            order=0,
+        )
+        serializer = JobAttachmentSerializer(job_attachment)
         data = serializer.data
 
         self.assertIn("public_id", data)
-        self.assertIn("image", data)
+        self.assertIn("file_url", data)
+        self.assertEqual(data["file_type"], "image")
         self.assertEqual(data["order"], 0)
-        # In test environment, image URL may be relative or absolute
-        self.assertIn("jobs/images/", data["image"])
+        # In test environment, file URL may be relative or absolute
+        self.assertIn("jobs/attachments/", data["file_url"])
+        self.assertEqual(data["thumbnail_url"], data["file_url"])
 
 
 class JobListSerializerTests(TestCase):
@@ -173,9 +182,9 @@ class JobListSerializerTests(TestCase):
         self.assertEqual(data["city"]["name"], "Toronto")
         self.assertEqual(data["city"]["province"], "Ontario")
 
-        # Check images (should be empty list)
-        self.assertIn("images", data)
-        self.assertEqual(data["images"], [])
+        # Check attachments (should be empty list)
+        self.assertIn("attachments", data)
+        self.assertEqual(data["attachments"], [])
 
         # Check tasks
         self.assertIn("tasks", data)
@@ -312,8 +321,13 @@ class JobCreateSerializerTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("estimated_budget", serializer.errors)
 
-    def test_validate_images_max_count_exceeds(self):
-        """Test validation fails with too many images."""
+    def test_validate_attachments_empty_list(self):
+        """Test empty attachments list returns empty list."""
+        serializer = JobCreateSerializer(context={"request": self.request})
+        self.assertEqual(serializer.validate_attachments([]), [])
+
+    def test_validate_attachments_max_count_exceeds(self):
+        """Test validation fails with too many attachments."""
         import io
 
         from PIL import Image
@@ -329,7 +343,8 @@ class JobCreateSerializerTests(TestCase):
                 "test.png", file_obj.read(), content_type="image/png"
             )
 
-        images = [create_image() for i in range(11)]
+        # New indexed format: list of dicts with file key
+        attachments = [{"file": create_image()} for i in range(11)]
         data = {
             "title": "Test",
             "description": "Test",
@@ -337,17 +352,18 @@ class JobCreateSerializerTests(TestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "images": images,
+            "attachments": attachments,
         }
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
-        self.assertIn("images", serializer.errors)
+        self.assertIn("attachments", serializer.errors)
+        # Error message changed - now validate_attachments checks count
         self.assertIn(
-            "ensure this field has no more than 10 elements",
-            str(serializer.errors["images"]).lower(),
+            "maximum 10 attachments allowed",
+            str(serializer.errors["attachments"]).lower(),
         )
 
-    def test_validate_images_invalid_type(self):
+    def test_validate_attachments_invalid_type(self):
         """Test validation fails with invalid image type."""
         import io
 
@@ -364,6 +380,7 @@ class JobCreateSerializerTests(TestCase):
         image_file = SimpleUploadedFile(
             "test.png", file_obj.read(), content_type="image/bmp"
         )
+        # New indexed format
         data = {
             "title": "Test",
             "description": "Test",
@@ -371,33 +388,53 @@ class JobCreateSerializerTests(TestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "images": [image_file],
+            "attachments": [{"file": image_file}],
         }
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
-
-        from rest_framework import serializers
-
-        # Manually call validate_images
-        try:
-            serializer.validate_images([image_file])
-            self.fail("ValidationError not raised for invalid content type")
-        except serializers.ValidationError as e:
-            self.assertIn("must be a JPEG or PNG file", str(e))
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("attachments", serializer.errors)
+        # Error is now on the nested file field
+        self.assertIn("unsupported file type", str(serializer.errors).lower())
 
         # Also test image size
-        large_file = SimpleUploadedFile(
-            "large.png", b"x" * (6 * 1024 * 1024), content_type="image/png"
+        file_obj2 = io.BytesIO()
+        image2 = Image.new("RGBA", size=(100, 100), color=(155, 0, 0))
+        image2.save(file_obj2, "png")
+        file_obj2.seek(0)
+        valid_file = SimpleUploadedFile(
+            "test.png", file_obj2.read(), content_type="image/png"
         )
-        try:
-            serializer.validate_images([large_file])
-            self.fail("ValidationError not raised for large image")
-        except serializers.ValidationError as e:
-            self.assertIn("exceeds maximum size of 5MB", str(e))
 
-        # Also test max count
-        with self.assertRaises(serializers.ValidationError) as cm:
-            serializer.validate_images([image_file] * 11)
-        self.assertIn("Maximum 10 images allowed", str(cm.exception))
+        large_file = SimpleUploadedFile(
+            "large.png", b"x" * (11 * 1024 * 1024), content_type="image/png"
+        )
+        data2 = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "attachments": [{"file": large_file}],
+        }
+        serializer2 = JobCreateSerializer(data=data2, context={"request": self.request})
+        self.assertFalse(serializer2.is_valid())
+        self.assertIn("exceeds maximum size of 10mb", str(serializer2.errors).lower())
+
+        # Also test max count with new format
+        attachments_11 = [{"file": valid_file} for _ in range(11)]
+        data3 = {
+            "title": "Test",
+            "description": "Test",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "attachments": attachments_11,
+        }
+        serializer3 = JobCreateSerializer(data=data3, context={"request": self.request})
+        self.assertFalse(serializer3.is_valid())
+        self.assertIn("Maximum 10 attachments allowed", str(serializer3.errors))
 
     def test_validate_tasks(self):
         """Test validation and cleaning of tasks."""
@@ -469,6 +506,13 @@ class JobUpdateSerializerTests(TestCase):
         updated_job = serializer.save()
         self.assertEqual(updated_job.category, new_category)
         self.assertEqual(updated_job.city, new_city)
+
+    def test_validate_attachments_empty_list(self):
+        """Test empty attachments list returns empty list."""
+        from apps.jobs.serializers import JobUpdateSerializer
+
+        serializer = JobUpdateSerializer(self.job, data={}, partial=True)
+        self.assertEqual(serializer.validate_attachments([]), [])
 
     def test_validate_inactive_category_city(self):
         """Test validation for inactive category/city in update."""
@@ -892,18 +936,20 @@ class JobCreateSerializerValidationTests(TestCase):
         self.request = self.factory.post("/")
         self.request.user = self.user
 
-    def test_validate_images_max_10(self):
-        """Test validation fails with more than 10 images."""
-        images = []
+    def test_validate_attachments_max_10(self):
+        """Test validation fails with more than 10 attachments."""
+        attachments = []
         for i in range(11):
             image = PILImage.new("RGB", (100, 100), color="red")
             image_file = BytesIO()
             image.save(image_file, format="JPEG")
             image_file.seek(0)
-            images.append(
-                SimpleUploadedFile(
-                    f"image{i}.jpg", image_file.read(), content_type="image/jpeg"
-                )
+            attachments.append(
+                {
+                    "file": SimpleUploadedFile(
+                        f"image{i}.jpg", image_file.read(), content_type="image/jpeg"
+                    )
+                }
             )
 
         data = {
@@ -913,16 +959,16 @@ class JobCreateSerializerValidationTests(TestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "images": images,
+            "attachments": attachments,
         }
 
         from apps.jobs.serializers import JobCreateSerializer
 
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
-        self.assertIn("images", serializer.errors)
+        self.assertIn("attachments", serializer.errors)
 
-    def test_validate_images_content_type(self):
+    def test_validate_attachments_content_type(self):
         """Test validation fails with invalid image content type."""
         # Create a text file pretending to be an image
         text_file = SimpleUploadedFile(
@@ -936,14 +982,14 @@ class JobCreateSerializerValidationTests(TestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "images": [text_file],
+            "attachments": [{"file": text_file}],
         }
 
         from apps.jobs.serializers import JobCreateSerializer
 
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
-        self.assertIn("images", serializer.errors)
+        self.assertIn("attachments", serializer.errors)
 
     def test_validate_postal_code_invalid_format(self):
         """Test postal code validation with invalid format."""
@@ -1646,8 +1692,8 @@ class JobUpdateSerializerValidationTests(TestCase):
         )
         self.assertTrue(serializer.is_valid())
 
-    def test_update_add_images_success(self):
-        """Test adding images to a job with no existing images succeeds."""
+    def test_update_add_attachments_success(self):
+        """Test adding attachments to a job with no existing attachments succeeds."""
         from apps.jobs.serializers import JobUpdateSerializer
 
         image = PILImage.new("RGB", (100, 100), color="red")
@@ -1658,18 +1704,18 @@ class JobUpdateSerializerValidationTests(TestCase):
             "test.jpg", image_file.read(), content_type="image/jpeg"
         )
 
-        data = {"images": [uploaded_image]}
+        data = {"attachments": [{"file": uploaded_image}]}
         serializer = JobUpdateSerializer(
             self.job, data=data, partial=True, context={"request": self.request}
         )
         self.assertTrue(serializer.is_valid(), serializer.errors)
         updated_job = serializer.save()
 
-        self.assertEqual(updated_job.images.count(), 1)
-        self.assertEqual(updated_job.images.first().order, 0)
+        self.assertEqual(updated_job.attachments.count(), 1)
+        self.assertEqual(updated_job.attachments.first().order, 0)
 
-    def test_update_remove_images_success(self):
-        """Test removing existing images works correctly."""
+    def test_update_remove_attachments_success(self):
+        """Test removing existing attachments works correctly."""
         from apps.jobs.serializers import JobUpdateSerializer
 
         # Create an existing image
@@ -1680,24 +1726,31 @@ class JobUpdateSerializerValidationTests(TestCase):
         uploaded_image = SimpleUploadedFile(
             "existing.jpg", image_file.read(), content_type="image/jpeg"
         )
-        job_image = JobImage.objects.create(job=self.job, image=uploaded_image, order=0)
+        job_attachment = JobAttachment.objects.create(
+            job=self.job,
+            file=uploaded_image,
+            file_type="image",
+            file_name=uploaded_image.name,
+            file_size=uploaded_image.size,
+            order=0,
+        )
 
-        self.assertEqual(self.job.images.count(), 1)
+        self.assertEqual(self.job.attachments.count(), 1)
 
-        data = {"images_to_remove": [str(job_image.public_id)]}
+        data = {"attachments_to_remove": [str(job_attachment.public_id)]}
         serializer = JobUpdateSerializer(
             self.job, data=data, partial=True, context={"request": self.request}
         )
         self.assertTrue(serializer.is_valid(), serializer.errors)
         updated_job = serializer.save()
 
-        self.assertEqual(updated_job.images.count(), 0)
+        self.assertEqual(updated_job.attachments.count(), 0)
 
-    def test_update_add_and_remove_images(self):
-        """Test adding and removing images in same request works."""
+    def test_update_add_and_remove_attachments(self):
+        """Test adding and removing attachments in same request works."""
         from apps.jobs.serializers import JobUpdateSerializer
 
-        # Create existing images
+        # Create existing attachments
         for i in range(3):
             image = PILImage.new("RGB", (100, 100), color="blue")
             image_file = BytesIO()
@@ -1706,10 +1759,17 @@ class JobUpdateSerializerValidationTests(TestCase):
             uploaded_image = SimpleUploadedFile(
                 f"existing{i}.jpg", image_file.read(), content_type="image/jpeg"
             )
-            JobImage.objects.create(job=self.job, image=uploaded_image, order=i)
+            JobAttachment.objects.create(
+                job=self.job,
+                file=uploaded_image,
+                file_type="image",
+                file_name=uploaded_image.name,
+                file_size=uploaded_image.size,
+                order=i,
+            )
 
-        self.assertEqual(self.job.images.count(), 3)
-        image_to_remove = self.job.images.first()
+        self.assertEqual(self.job.attachments.count(), 3)
+        image_to_remove = self.job.attachments.first()
 
         # Create new image to add
         new_image = PILImage.new("RGB", (100, 100), color="green")
@@ -1721,8 +1781,8 @@ class JobUpdateSerializerValidationTests(TestCase):
         )
 
         data = {
-            "images": [new_uploaded_image],
-            "images_to_remove": [str(image_to_remove.public_id)],
+            "attachments": [{"file": new_uploaded_image}],
+            "attachments_to_remove": [str(image_to_remove.public_id)],
         }
         serializer = JobUpdateSerializer(
             self.job, data=data, partial=True, context={"request": self.request}
@@ -1731,13 +1791,13 @@ class JobUpdateSerializerValidationTests(TestCase):
         updated_job = serializer.save()
 
         # 3 - 1 + 1 = 3
-        self.assertEqual(updated_job.images.count(), 3)
+        self.assertEqual(updated_job.attachments.count(), 3)
 
-    def test_update_images_total_count_exceeded(self):
-        """Test adding images that would exceed 10 total fails validation."""
+    def test_update_attachments_total_count_exceeded(self):
+        """Test adding attachments that would exceed 10 total fails validation."""
         from apps.jobs.serializers import JobUpdateSerializer
 
-        # Create 8 existing images
+        # Create 8 existing attachments
         for i in range(8):
             image = PILImage.new("RGB", (100, 100), color="blue")
             image_file = BytesIO()
@@ -1746,36 +1806,47 @@ class JobUpdateSerializerValidationTests(TestCase):
             uploaded_image = SimpleUploadedFile(
                 f"existing{i}.jpg", image_file.read(), content_type="image/jpeg"
             )
-            JobImage.objects.create(job=self.job, image=uploaded_image, order=i)
+            JobAttachment.objects.create(
+                job=self.job,
+                file=uploaded_image,
+                file_type="image",
+                file_name=uploaded_image.name,
+                file_size=uploaded_image.size,
+                order=i,
+            )
 
-        self.assertEqual(self.job.images.count(), 8)
+        self.assertEqual(self.job.attachments.count(), 8)
 
         # Try to add 5 more (8 + 5 = 13 > 10)
-        new_images = []
+        new_attachments = []
         for i in range(5):
             new_image = PILImage.new("RGB", (100, 100), color="green")
             new_image_file = BytesIO()
             new_image.save(new_image_file, format="JPEG")
             new_image_file.seek(0)
-            new_images.append(
-                SimpleUploadedFile(
-                    f"new{i}.jpg", new_image_file.read(), content_type="image/jpeg"
-                )
+            new_attachments.append(
+                {
+                    "file": SimpleUploadedFile(
+                        f"new{i}.jpg", new_image_file.read(), content_type="image/jpeg"
+                    )
+                }
             )
 
-        data = {"images": new_images}
+        data = {"attachments": new_attachments}
         serializer = JobUpdateSerializer(
             self.job, data=data, partial=True, context={"request": self.request}
         )
         self.assertFalse(serializer.is_valid())
-        self.assertIn("images", serializer.errors)
-        self.assertIn("Maximum 10 images allowed", str(serializer.errors["images"]))
+        self.assertIn("attachments", serializer.errors)
+        self.assertIn(
+            "Maximum 10 attachments allowed", str(serializer.errors["attachments"])
+        )
 
-    def test_update_images_with_removal_under_limit(self):
+    def test_update_attachments_with_removal_under_limit(self):
         """Test removing some + adding some that stays under 10 succeeds."""
         from apps.jobs.serializers import JobUpdateSerializer
 
-        # Create 9 existing images
+        # Create 9 existing attachments
         for i in range(9):
             image = PILImage.new("RGB", (100, 100), color="blue")
             image_file = BytesIO()
@@ -1784,36 +1855,50 @@ class JobUpdateSerializerValidationTests(TestCase):
             uploaded_image = SimpleUploadedFile(
                 f"existing{i}.jpg", image_file.read(), content_type="image/jpeg"
             )
-            JobImage.objects.create(job=self.job, image=uploaded_image, order=i)
+            JobAttachment.objects.create(
+                job=self.job,
+                file=uploaded_image,
+                file_type="image",
+                file_name=uploaded_image.name,
+                file_size=uploaded_image.size,
+                order=i,
+            )
 
-        self.assertEqual(self.job.images.count(), 9)
+        self.assertEqual(self.job.attachments.count(), 9)
 
         # Remove 2, add 3: 9 - 2 + 3 = 10 (exactly at limit)
-        images_to_remove = [str(img.public_id) for img in self.job.images.all()[:2]]
+        attachments_to_remove = [
+            str(img.public_id) for img in self.job.attachments.all()[:2]
+        ]
 
-        new_images = []
+        new_attachments = []
         for i in range(3):
             new_image = PILImage.new("RGB", (100, 100), color="green")
             new_image_file = BytesIO()
             new_image.save(new_image_file, format="JPEG")
             new_image_file.seek(0)
-            new_images.append(
-                SimpleUploadedFile(
-                    f"new{i}.jpg", new_image_file.read(), content_type="image/jpeg"
-                )
+            new_attachments.append(
+                {
+                    "file": SimpleUploadedFile(
+                        f"new{i}.jpg", new_image_file.read(), content_type="image/jpeg"
+                    )
+                }
             )
 
-        data = {"images": new_images, "images_to_remove": images_to_remove}
+        data = {
+            "attachments": new_attachments,
+            "attachments_to_remove": attachments_to_remove,
+        }
         serializer = JobUpdateSerializer(
             self.job, data=data, partial=True, context={"request": self.request}
         )
         self.assertTrue(serializer.is_valid(), serializer.errors)
         updated_job = serializer.save()
 
-        self.assertEqual(updated_job.images.count(), 10)
+        self.assertEqual(updated_job.attachments.count(), 10)
 
-    def test_update_images_invalid_size(self):
-        """Test image over 5MB fails validation."""
+    def test_update_attachments_invalid_size(self):
+        """Test image over 10MB fails validation."""
         from apps.jobs.serializers import JobUpdateSerializer
 
         # Create a minimal valid 1x1 PNG image
@@ -1823,22 +1908,24 @@ class JobUpdateSerializerValidationTests(TestCase):
         image_file.seek(0)
         image_content = image_file.read()
 
-        # Create a mock file object that reports size > 5MB but has valid image content
+        # Create a mock file object that reports size > 10MB but has valid image content
         large_file = SimpleUploadedFile(
             "large.png", image_content, content_type="image/png"
         )
         # Override the size attribute to simulate a large file
-        large_file.size = 6 * 1024 * 1024
+        large_file.size = 11 * 1024 * 1024
 
-        data = {"images": [large_file]}
+        data = {"attachments": [{"file": large_file}]}
         serializer = JobUpdateSerializer(
             self.job, data=data, partial=True, context={"request": self.request}
         )
         self.assertFalse(serializer.is_valid())
-        self.assertIn("images", serializer.errors)
-        self.assertIn("exceeds maximum size of 5MB", str(serializer.errors["images"]))
+        self.assertIn("attachments", serializer.errors)
+        self.assertIn(
+            "exceeds maximum size of 10MB", str(serializer.errors["attachments"])
+        )
 
-    def test_update_images_invalid_type(self):
+    def test_update_attachments_invalid_type(self):
         """Test non-JPEG/PNG image fails validation."""
         from apps.jobs.serializers import JobUpdateSerializer
 
@@ -1851,17 +1938,15 @@ class JobUpdateSerializerValidationTests(TestCase):
             "test.bmp", image_file.read(), content_type="image/bmp"
         )
 
+        data = {"attachments": [{"file": invalid_type_image}]}
         serializer = JobUpdateSerializer(
-            self.job, data={}, partial=True, context={"request": self.request}
+            self.job, data=data, partial=True, context={"request": self.request}
         )
-        # Manually call validate_images to test content type validation
-        from rest_framework import serializers as drf_serializers
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("attachments", serializer.errors)
+        self.assertIn("unsupported file type", str(serializer.errors).lower())
 
-        with self.assertRaises(drf_serializers.ValidationError) as cm:
-            serializer.validate_images([invalid_type_image])
-        self.assertIn("must be a JPEG or PNG file", str(cm.exception))
-
-    def test_update_remove_nonexistent_images(self):
+    def test_update_remove_nonexistent_attachments(self):
         """Test removing UUIDs that don't exist doesn't cause errors."""
         import uuid
 
@@ -1875,12 +1960,19 @@ class JobUpdateSerializerValidationTests(TestCase):
         uploaded_image = SimpleUploadedFile(
             "existing.jpg", image_file.read(), content_type="image/jpeg"
         )
-        JobImage.objects.create(job=self.job, image=uploaded_image, order=0)
+        JobAttachment.objects.create(
+            job=self.job,
+            file=uploaded_image,
+            file_type="image",
+            file_name=uploaded_image.name,
+            file_size=uploaded_image.size,
+            order=0,
+        )
 
-        self.assertEqual(self.job.images.count(), 1)
+        self.assertEqual(self.job.attachments.count(), 1)
 
         # Try to remove a non-existent UUID
-        data = {"images_to_remove": [str(uuid.uuid4())]}
+        data = {"attachments_to_remove": [str(uuid.uuid4())]}
         serializer = JobUpdateSerializer(
             self.job, data=data, partial=True, context={"request": self.request}
         )
@@ -1888,13 +1980,13 @@ class JobUpdateSerializerValidationTests(TestCase):
         updated_job = serializer.save()
 
         # Image count should remain unchanged
-        self.assertEqual(updated_job.images.count(), 1)
+        self.assertEqual(updated_job.attachments.count(), 1)
 
-    def test_update_images_order_calculation(self):
-        """Test new images get correct order values after existing images."""
+    def test_update_attachments_order_calculation(self):
+        """Test new attachments get correct order values after existing attachments."""
         from apps.jobs.serializers import JobUpdateSerializer
 
-        # Create existing images with orders 0, 1, 2
+        # Create existing attachments with orders 0, 1, 2
         for i in range(3):
             image = PILImage.new("RGB", (100, 100), color="blue")
             image_file = BytesIO()
@@ -1903,33 +1995,42 @@ class JobUpdateSerializerValidationTests(TestCase):
             uploaded_image = SimpleUploadedFile(
                 f"existing{i}.jpg", image_file.read(), content_type="image/jpeg"
             )
-            JobImage.objects.create(job=self.job, image=uploaded_image, order=i)
+            JobAttachment.objects.create(
+                job=self.job,
+                file=uploaded_image,
+                file_type="image",
+                file_name=uploaded_image.name,
+                file_size=uploaded_image.size,
+                order=i,
+            )
 
-        # Add 2 new images
-        new_images = []
+        # Add 2 new attachments
+        new_attachments = []
         for i in range(2):
             new_image = PILImage.new("RGB", (100, 100), color="green")
             new_image_file = BytesIO()
             new_image.save(new_image_file, format="JPEG")
             new_image_file.seek(0)
-            new_images.append(
-                SimpleUploadedFile(
-                    f"new{i}.jpg", new_image_file.read(), content_type="image/jpeg"
-                )
+            new_attachments.append(
+                {
+                    "file": SimpleUploadedFile(
+                        f"new{i}.jpg", new_image_file.read(), content_type="image/jpeg"
+                    )
+                }
             )
 
-        data = {"images": new_images}
+        data = {"attachments": new_attachments}
         serializer = JobUpdateSerializer(
             self.job, data=data, partial=True, context={"request": self.request}
         )
         self.assertTrue(serializer.is_valid(), serializer.errors)
         updated_job = serializer.save()
 
-        self.assertEqual(updated_job.images.count(), 5)
+        self.assertEqual(updated_job.attachments.count(), 5)
 
-        # Check that new images have orders 3 and 4
+        # Check that new attachments have orders 3 and 4
         orders = list(
-            updated_job.images.order_by("order").values_list("order", flat=True)
+            updated_job.attachments.order_by("order").values_list("order", flat=True)
         )
         self.assertEqual(orders, [0, 1, 2, 3, 4])
 
@@ -2034,8 +2135,12 @@ class JobApplicationCreateSerializerTests(TestCase):
         request = self.factory.post("/")
         request.user = self.handyman
 
+        image_io = BytesIO()
+        image = PILImage.new("RGB", (100, 100), color="green")
+        image.save(image_io, format="JPEG")
+        image_io.seek(0)
         file = SimpleUploadedFile(
-            "test.pdf", b"content", content_type="application/pdf"
+            "test.jpg", image_io.read(), content_type="image/jpeg"
         )
         data = {
             "job_id": str(self.job.public_id),
@@ -2043,7 +2148,7 @@ class JobApplicationCreateSerializerTests(TestCase):
             "estimated_total_price": "450.00",
             "negotiation_reasoning": "Test reasoning",
             "materials": [{"name": "PVC Pipe", "price": "25.50", "description": "2m"}],
-            "attachments": [file],
+            "attachments": [{"file": file}],
         }
 
         mock_application = MagicMock()
@@ -2065,6 +2170,83 @@ class JobApplicationCreateSerializerTests(TestCase):
             self.assertEqual(call_kwargs["negotiation_reasoning"], "Test reasoning")
             self.assertEqual(len(call_kwargs["materials_data"]), 1)
             self.assertEqual(len(call_kwargs["attachments"]), 1)
+
+    def test_create_attachment_count_limit(self):
+        """Test create fails if attachment count exceeds limit."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.common.constants import MAX_JOB_APPLICATION_ATTACHMENTS
+        from apps.jobs.serializers import JobApplicationCreateSerializer
+
+        request = self.factory.post("/")
+        request.user = self.handyman
+
+        # Create more attachments than allowed
+        attachments = []
+        for i in range(MAX_JOB_APPLICATION_ATTACHMENTS + 1):
+            image_io = BytesIO()
+            image = PILImage.new("RGB", (100, 100), color="green")
+            image.save(image_io, format="JPEG")
+            image_io.seek(0)
+            file = SimpleUploadedFile(
+                f"test{i}.jpg", image_io.read(), content_type="image/jpeg"
+            )
+            attachments.append({"file": file})
+
+        data = {
+            "job_id": str(self.job.public_id),
+            "predicted_hours": "8.5",
+            "estimated_total_price": "450.00",
+            "attachments": attachments,
+        }
+
+        serializer = JobApplicationCreateSerializer(
+            data=data, context={"request": request}
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("attachments", serializer.errors)
+        self.assertIn(
+            f"Cannot upload more than {MAX_JOB_APPLICATION_ATTACHMENTS}",
+            str(serializer.errors["attachments"]),
+        )
+
+    def test_create_with_document_attachment(self):
+        """Test create with document attachment succeeds."""
+        from unittest.mock import MagicMock, patch
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.jobs.serializers import JobApplicationCreateSerializer
+
+        request = self.factory.post("/")
+        request.user = self.handyman
+
+        pdf_file = SimpleUploadedFile(
+            "quote.pdf", b"%PDF-1.4 test content", content_type="application/pdf"
+        )
+        data = {
+            "job_id": str(self.job.public_id),
+            "predicted_hours": "8.5",
+            "estimated_total_price": "450.00",
+            "attachments": [{"file": pdf_file}],
+        }
+
+        mock_application = MagicMock()
+
+        with patch(
+            "apps.jobs.services.JobApplicationService.apply_to_job"
+        ) as mock_apply:
+            mock_apply.return_value = mock_application
+
+            serializer = JobApplicationCreateSerializer(
+                data=data, context={"request": request}
+            )
+            self.assertTrue(serializer.is_valid())
+            serializer.save()
+
+            call_kwargs = mock_apply.call_args.kwargs
+            self.assertEqual(len(call_kwargs["attachments"]), 1)
+            self.assertEqual(call_kwargs["attachments"][0]["file_type"], "document")
 
 
 class HomeownerJobApplicationListSerializerTests(TestCase):
@@ -2140,12 +2322,12 @@ class HomeownerJobApplicationListSerializerTests(TestCase):
         serializer = HomeownerJobApplicationListSerializer(application)
         self.assertIsNone(serializer.get_handyman_profile(application))
 
-    def test_validate_images_size_exceeds(self):
+    def test_validate_attachments_size_exceeds(self):
         """Test validation fails with large image."""
         from apps.jobs.serializers import JobCreateSerializer
 
         image_file = SimpleUploadedFile(
-            "large.jpg", b"x" * (6 * 1024 * 1024), content_type="image/jpeg"
+            "large.jpg", b"x" * (11 * 1024 * 1024), content_type="image/jpeg"
         )
         data = {
             "title": "Test",
@@ -2154,11 +2336,14 @@ class HomeownerJobApplicationListSerializerTests(TestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "images": [image_file],
+            "attachments": [{"file": image_file}],
         }
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
-        self.assertIn("images", serializer.errors)
+        self.assertIn("attachments", serializer.errors)
+        self.assertIn(
+            "exceeds maximum size of 10MB", str(serializer.errors["attachments"])
+        )
 
 
 class OngoingSerializerTests(TestCase):
@@ -2949,7 +3134,7 @@ class JobReimbursementCreateSerializerTests(TestCase):
             "category_id": str(self.reimbursement_category.public_id),
             "amount": "50.00",
             "notes": "Required for repair",
-            "attachments": [image],
+            "attachments": [{"file": image}],
         }
         serializer = JobReimbursementCreateSerializer(data=data)
         self.assertTrue(serializer.is_valid())
@@ -2965,7 +3150,7 @@ class JobReimbursementCreateSerializerTests(TestCase):
             "name": "Materials",
             "category_id": str(self.reimbursement_category.public_id),
             "amount": "0",
-            "attachments": [image],
+            "attachments": [{"file": image}],
         }
         serializer = JobReimbursementCreateSerializer(data=data)
         self.assertFalse(serializer.is_valid())
@@ -2982,7 +3167,7 @@ class JobReimbursementCreateSerializerTests(TestCase):
             "name": "Materials",
             "category_id": str(self.reimbursement_category.public_id),
             "amount": "-10.00",
-            "attachments": [image],
+            "attachments": [{"file": image}],
         }
         serializer = JobReimbursementCreateSerializer(data=data)
         self.assertFalse(serializer.is_valid())
@@ -3011,7 +3196,7 @@ class JobReimbursementCreateSerializerTests(TestCase):
             "name": "Materials",
             "category_id": "00000000-0000-0000-0000-000000000000",
             "amount": "50.00",
-            "attachments": [image],
+            "attachments": [{"file": image}],
         }
         serializer = JobReimbursementCreateSerializer(data=data)
         self.assertFalse(serializer.is_valid())
@@ -3028,11 +3213,58 @@ class JobReimbursementCreateSerializerTests(TestCase):
             "name": "Materials",
             "category_id": str(self.inactive_category.public_id),
             "amount": "50.00",
-            "attachments": [image],
+            "attachments": [{"file": image}],
         }
         serializer = JobReimbursementCreateSerializer(data=data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("category_id", serializer.errors)
+
+    def test_attachment_count_limit(self):
+        """Test attachment count cannot exceed limit."""
+        from apps.common.constants import MAX_REIMBURSEMENT_ATTACHMENTS
+        from apps.jobs.serializers import JobReimbursementCreateSerializer
+
+        # Create more attachments than allowed
+        attachments = []
+        for i in range(MAX_REIMBURSEMENT_ATTACHMENTS + 1):
+            image = SimpleUploadedFile(
+                f"receipt{i}.jpg", b"file content", content_type="image/jpeg"
+            )
+            attachments.append({"file": image})
+
+        data = {
+            "name": "Materials",
+            "category_id": str(self.reimbursement_category.public_id),
+            "amount": "50.00",
+            "attachments": attachments,
+        }
+        serializer = JobReimbursementCreateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("attachments", serializer.errors)
+        self.assertIn(
+            f"Cannot upload more than {MAX_REIMBURSEMENT_ATTACHMENTS}",
+            str(serializer.errors["attachments"]),
+        )
+
+    def test_document_attachment_accepted(self):
+        """Test document attachments are accepted."""
+        from apps.jobs.serializers import JobReimbursementCreateSerializer
+
+        pdf_file = SimpleUploadedFile(
+            "invoice.pdf", b"%PDF-1.4 test content", content_type="application/pdf"
+        )
+        data = {
+            "name": "Materials",
+            "category_id": str(self.reimbursement_category.public_id),
+            "amount": "50.00",
+            "notes": "Invoice attached",
+            "attachments": [{"file": pdf_file}],
+        }
+        serializer = JobReimbursementCreateSerializer(data=data)
+        self.assertTrue(serializer.is_valid())
+        self.assertEqual(
+            serializer.validated_data["attachments"][0]["file_type"], "document"
+        )
 
 
 class JobReimbursementReviewSerializerTests(TestCase):
@@ -3169,3 +3401,284 @@ class JobReimbursementUpdateSerializerTests(TestCase):
         serializer = JobReimbursementUpdateSerializer(data=data)
         self.assertFalse(serializer.is_valid())
         self.assertIn("category_id", serializer.errors)
+
+
+class JobReimbursementUpdateSerializerValidateTests(TestCase):
+    """Test cases for JobReimbursementUpdateSerializer.validate() method."""
+
+    def setUp(self):
+        """Set up test data."""
+        from apps.jobs.models import (
+            JobReimbursement,
+            JobReimbursementAttachment,
+            JobReimbursementCategory,
+        )
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix faucet",
+            description="Leaking faucet",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+            assigned_handyman=self.handyman,
+        )
+        self.reimbursement_category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Material expenses",
+                "is_active": True,
+            },
+        )
+        # Create a reimbursement with one attachment
+        self.reimbursement = JobReimbursement.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            category=self.reimbursement_category,
+            name="Test Reimbursement",
+            amount=Decimal("50.00"),
+            status="pending",
+        )
+        # Create an existing attachment
+        image_io = BytesIO()
+        image = PILImage.new("RGB", (100, 100), color="green")
+        image.save(image_io, format="JPEG")
+        image_io.seek(0)
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        file = SimpleUploadedFile(
+            "test.jpg", image_io.read(), content_type="image/jpeg"
+        )
+        self.attachment = JobReimbursementAttachment.objects.create(
+            reimbursement=self.reimbursement,
+            file=file,
+            file_type="image",
+            file_name="test.jpg",
+            file_size=file.size,
+        )
+
+    def test_validate_with_instance_covers_branch(self):
+        """Test validate() with instance to cover the if instance: branch."""
+        from apps.jobs.serializers import JobReimbursementUpdateSerializer
+
+        data = {"name": "Updated Name"}
+        serializer = JobReimbursementUpdateSerializer(
+            instance=self.reimbursement, data=data
+        )
+        self.assertTrue(serializer.is_valid())
+
+    def test_validate_attachment_minimum_fails(self):
+        """Test validation fails when trying to remove all attachments."""
+        from apps.jobs.serializers import JobReimbursementUpdateSerializer
+
+        # Try to remove the only attachment
+        data = {"attachments_to_remove": [str(self.attachment.public_id)]}
+        serializer = JobReimbursementUpdateSerializer(
+            instance=self.reimbursement, data=data
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("attachments", serializer.errors)
+        self.assertIn("At least one attachment", str(serializer.errors["attachments"]))
+
+    def test_validate_attachment_maximum_fails(self):
+        """Test validation fails when total attachments exceeds limit."""
+        from apps.common.constants import MAX_REIMBURSEMENT_ATTACHMENTS
+
+        # Create attachments up to the limit
+        from apps.jobs.models import JobReimbursementAttachment
+        from apps.jobs.serializers import JobReimbursementUpdateSerializer
+
+        for i in range(MAX_REIMBURSEMENT_ATTACHMENTS - 1):
+            image_io = BytesIO()
+            image = PILImage.new("RGB", (100, 100), color="blue")
+            image.save(image_io, format="JPEG")
+            image_io.seek(0)
+            from django.core.files.uploadedfile import SimpleUploadedFile
+
+            file = SimpleUploadedFile(
+                f"test{i}.jpg", image_io.read(), content_type="image/jpeg"
+            )
+            JobReimbursementAttachment.objects.create(
+                reimbursement=self.reimbursement,
+                file=file,
+                file_type="image",
+                file_name=f"test{i}.jpg",
+                file_size=file.size,
+            )
+
+        # Now we have MAX_REIMBURSEMENT_ATTACHMENTS attachments
+        self.assertEqual(
+            self.reimbursement.attachments.count(), MAX_REIMBURSEMENT_ATTACHMENTS
+        )
+
+        # Try to add more attachments
+        image_io = BytesIO()
+        image = PILImage.new("RGB", (100, 100), color="red")
+        image.save(image_io, format="JPEG")
+        image_io.seek(0)
+        new_file = SimpleUploadedFile(
+            "new.jpg", image_io.read(), content_type="image/jpeg"
+        )
+
+        data = {"attachments": [{"file": new_file}]}
+        serializer = JobReimbursementUpdateSerializer(
+            instance=self.reimbursement, data=data
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("attachments", serializer.errors)
+        self.assertIn("exceed the limit", str(serializer.errors["attachments"]))
+
+
+class JobReimbursementCreateSerializerEmptyAttachmentsTests(TestCase):
+    """Test cases for JobReimbursementCreateSerializer empty attachments validation."""
+
+    def test_empty_attachments_fails_validation(self):
+        """Test validation fails when attachments is empty."""
+        from apps.jobs.models import JobReimbursementCategory
+        from apps.jobs.serializers import JobReimbursementCreateSerializer
+
+        category, _ = JobReimbursementCategory.objects.get_or_create(
+            slug="materials",
+            defaults={
+                "name": "Materials",
+                "description": "Material expenses",
+                "is_active": True,
+            },
+        )
+
+        data = {
+            "name": "Test Reimbursement",
+            "category_id": str(category.public_id),
+            "amount": "50.00",
+            "attachments": [],
+        }
+        serializer = JobReimbursementCreateSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("attachments", serializer.errors)
+        self.assertIn("At least one attachment", str(serializer.errors["attachments"]))
+
+
+class JobApplicationUpdateSerializerValidateTests(TestCase):
+    """Test cases for JobApplicationUpdateSerializer.validate() method."""
+
+    def setUp(self):
+        """Set up test data."""
+        from apps.jobs.models import JobApplication, JobApplicationAttachment
+
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+        self.job = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Fix faucet",
+            description="Leaking faucet",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="open",
+        )
+        # Create an application
+        self.application = JobApplication.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            predicted_hours=Decimal("8.0"),
+            estimated_total_price=Decimal("400.00"),
+            status="pending",
+        )
+        # Create existing attachments up to the limit
+        from apps.common.constants import MAX_JOB_APPLICATION_ATTACHMENTS
+
+        for i in range(MAX_JOB_APPLICATION_ATTACHMENTS):
+            image_io = BytesIO()
+            image = PILImage.new("RGB", (100, 100), color="green")
+            image.save(image_io, format="JPEG")
+            image_io.seek(0)
+            from django.core.files.uploadedfile import SimpleUploadedFile
+
+            file = SimpleUploadedFile(
+                f"test{i}.jpg", image_io.read(), content_type="image/jpeg"
+            )
+            JobApplicationAttachment.objects.create(
+                application=self.application,
+                file=file,
+                file_type="image",
+                file_name=f"test{i}.jpg",
+                file_size=file.size,
+            )
+
+    def test_validate_with_instance_attachment_count_exceeded(self):
+        """Test validate() fails when total attachments would exceed limit."""
+        from apps.common.constants import MAX_JOB_APPLICATION_ATTACHMENTS
+        from apps.jobs.serializers import JobApplicationUpdateSerializer
+
+        # Verify we're at the limit
+        self.assertEqual(
+            self.application.attachments.count(), MAX_JOB_APPLICATION_ATTACHMENTS
+        )
+
+        # Try to add another attachment
+        image_io = BytesIO()
+        image = PILImage.new("RGB", (100, 100), color="red")
+        image.save(image_io, format="JPEG")
+        image_io.seek(0)
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        new_file = SimpleUploadedFile(
+            "new.jpg", image_io.read(), content_type="image/jpeg"
+        )
+
+        data = {"attachments": [{"file": new_file}]}
+        serializer = JobApplicationUpdateSerializer(
+            instance=self.application, data=data
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("attachments", serializer.errors)
+        self.assertIn("exceed the limit", str(serializer.errors["attachments"]))
+
+    def test_validate_without_instance_skips_attachment_count_check(self):
+        """Test validate() skips attachment count check when no instance.
+
+        Covers branch 1328->1352: when instance is None.
+        """
+        from apps.jobs.serializers import JobApplicationUpdateSerializer
+
+        # Serializer without instance (e.g., in create mode)
+        data = {"predicted_hours": "5.0", "estimated_total_price": "250.00"}
+        serializer = JobApplicationUpdateSerializer(data=data)
+
+        # Manually call validate to test the branch
+        validated = serializer.validate(data)
+        self.assertEqual(validated, data)

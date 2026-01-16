@@ -24,7 +24,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import User, UserRole
-from apps.jobs.models import City, Job, JobCategory, JobImage, JobTask
+from apps.jobs.models import City, Job, JobAttachment, JobCategory, JobTask
 from apps.profiles.models import HandymanProfile, HomeownerProfile
 
 # Configuration
@@ -534,7 +534,14 @@ class Command(BaseCommand):
 
             # Use shared job image path directly (no upload)
             if job_image_path:
-                JobImage.objects.create(job=job, image=job_image_path, order=0)
+                JobAttachment.objects.create(
+                    job=job,
+                    file=job_image_path,
+                    file_type="image",
+                    file_name=str(job_image_path).split("/")[-1],
+                    file_size=0,
+                    order=0,
+                )
 
             jobs.append(job)
             status_counts[status] += 1

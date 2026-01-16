@@ -43,6 +43,7 @@ from apps.common.responses import (
     success_response,
     validation_error_response,
 )
+from apps.common.serializers import normalize_attachments_payload
 
 
 class HandymanConversationListView(APIView):
@@ -340,7 +341,7 @@ class HandymanConversationMessagesView(APIView):
                             "sender_role": "homeowner",
                             "message_type": "text",
                             "content": "Hi, when can you start?",
-                            "images": [],
+                            "attachments": [],
                             "is_read": True,
                             "read_at": "2026-01-08T10:05:00Z",
                             "created_at": "2026-01-08T10:00:00Z",
@@ -350,7 +351,7 @@ class HandymanConversationMessagesView(APIView):
                             "sender_role": "handyman",
                             "message_type": "text",
                             "content": "I'll be there at 2pm tomorrow.",
-                            "images": [],
+                            "attachments": [],
                             "is_read": True,
                             "read_at": "2026-01-08T10:35:00Z",
                             "created_at": "2026-01-08T10:30:00Z",
@@ -412,7 +413,10 @@ class HandymanConversationMessagesView(APIView):
         },
         description=(
             "Send a message in a conversation. "
-            "Can include text content and/or up to 5 images (max 10MB each). "
+            "Can include text content and/or up to 5 attachments. "
+            "Images: max 10MB. Videos: max 100MB (MP4/MOV/WebM, 5 min). "
+            "Use indexed multipart fields like attachments[0].file. "
+            "Video attachments require thumbnail and duration_seconds. "
             "Only allowed when conversation is active and job is in_progress. "
             "Requires handyman role and phone verification."
         ),
@@ -421,8 +425,43 @@ class HandymanConversationMessagesView(APIView):
         examples=[
             OpenApiExample(
                 "Text Message Request",
-                value={"content": "I'll be there at 2pm tomorrow."},
+                value={"content": "I can start tomorrow."},
                 request_only=True,
+            ),
+            OpenApiExample(
+                "Attachment Message Request",
+                value={
+                    "content": "Sharing the estimate and a short video",
+                    "attachments": [
+                        {"file": "estimate.jpg"},
+                        {
+                            "file": "walkthrough.mp4",
+                            "thumbnail": "walkthrough_thumb.jpg",
+                            "duration_seconds": 30,
+                        },
+                    ],
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Message sent successfully",
+                    "data": {
+                        "public_id": "550e8400-e29b-41d4-a716-446655440010",
+                        "sender_role": "handyman",
+                        "message_type": "text",
+                        "content": "I can start tomorrow.",
+                        "attachments": [],
+                        "is_read": False,
+                        "read_at": None,
+                        "created_at": "2026-01-08T10:00:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["201"],
             ),
             OpenApiExample(
                 "Success Response",
@@ -433,7 +472,7 @@ class HandymanConversationMessagesView(APIView):
                         "sender_role": "handyman",
                         "message_type": "text",
                         "content": "I'll be there at 2pm tomorrow.",
-                        "images": [],
+                        "attachments": [],
                         "is_read": False,
                         "read_at": None,
                         "created_at": "2026-01-08T10:30:00Z",
@@ -461,7 +500,9 @@ class HandymanConversationMessagesView(APIView):
         except ChatConversation.DoesNotExist:
             return not_found_response("Conversation not found")
 
-        serializer = SendMessageSerializer(data=request.data)
+        data = normalize_attachments_payload(request)
+
+        serializer = SendMessageSerializer(data=data)
         if not serializer.is_valid():
             return validation_error_response(serializer.errors)
 
@@ -471,7 +512,7 @@ class HandymanConversationMessagesView(APIView):
                 sender=request.user,
                 sender_role="handyman",
                 content=serializer.validated_data.get("content", ""),
-                images=serializer.validated_data.get("images", []),
+                attachments=serializer.validated_data.get("attachments", []),
             )
         except ValueError as e:
             return validation_error_response({"detail": str(e)}, message=str(e))

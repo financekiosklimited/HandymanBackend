@@ -327,6 +327,34 @@ class JobApplicationServiceTests(TestCase):
                 predicted_hours=10,
             )
 
+    def test_update_application_with_legacy_plain_file_attachment(self):
+        """Test update_application handles legacy plain file attachments."""
+        from decimal import Decimal
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        application = self.service.apply_to_job(self.handyman, self.job)
+
+        # Create a plain file (legacy format - not a dict)
+        plain_file = SimpleUploadedFile(
+            "quote.pdf", b"file content", content_type="application/pdf"
+        )
+
+        # This should handle the legacy format where attachment is just a file
+        updated = self.service.update_application(
+            handyman=self.handyman,
+            application=application,
+            predicted_hours=Decimal("10.0"),
+            attachments=[plain_file],  # Legacy plain file format
+        )
+
+        # Check attachment was created
+        attachments = updated.attachments.all()
+        self.assertEqual(attachments.count(), 1)
+        self.assertEqual(attachments[0].file_name, "quote.pdf")
+        # Document type should be detected from mime
+        self.assertEqual(attachments[0].file_type, "document")
+
 
 class OngoingServicesTests(TestCase):
     def setUp(self):

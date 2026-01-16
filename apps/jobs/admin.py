@@ -17,9 +17,9 @@ from .models import (
     JobApplication,
     JobApplicationAttachment,
     JobApplicationMaterial,
+    JobAttachment,
     JobCategory,
     JobDispute,
-    JobImage,
     JobReimbursement,
     JobReimbursementAttachment,
     JobTask,
@@ -253,14 +253,15 @@ class JobDisputeInline(TabularInline):
     ordering = ("-created_at",)
 
 
-class JobImageInline(TabularInline):
+class JobAttachmentInline(TabularInline):
     """
-    Inline admin for JobImage model.
+    Inline admin for JobAttachment model.
     """
 
-    model = JobImage
+    model = JobAttachment
     extra = 0
-    fields = ("image", "order")
+    fields = ("file", "file_type", "file_name", "file_size", "order")
+    readonly_fields = ("file_name", "file_size")
     ordering = ("order",)
 
 
@@ -465,7 +466,7 @@ class JobAdmin(ModelAdmin):
         "completed_at",
     )
     inlines = [
-        JobImageInline,
+        JobAttachmentInline,
         JobTaskInline,
         WorkSessionInline,
         DailyReportInline,
@@ -1115,15 +1116,23 @@ class JobDisputeAdmin(ModelAdmin):
             )
 
 
-@admin.register(JobImage)
-class JobImageAdmin(ModelAdmin):
+@admin.register(JobAttachment)
+class JobAttachmentAdmin(ModelAdmin):
     """
-    Admin interface for JobImage model with Unfold styling.
+    Admin interface for JobAttachment model with Unfold styling.
     """
 
-    list_display = ("job_title", "image_url_display", "order", "created_at")
-    list_filter = ("created_at",)
-    search_fields = ("job__title",)
+    list_display = (
+        "job_title",
+        "file_type",
+        "file_name",
+        "file_size_display",
+        "file_url_display",
+        "order",
+        "created_at",
+    )
+    list_filter = ("file_type", "created_at")
+    search_fields = ("job__title", "file_name")
     ordering = ("job", "order")
     autocomplete_fields = ("job",)
     readonly_fields = ("public_id", "created_at", "updated_at")
@@ -1132,8 +1141,20 @@ class JobImageAdmin(ModelAdmin):
 
     fieldsets = (
         (
-            "Image Information",
-            {"fields": ("public_id", "job", "image", "order")},
+            "Attachment Information",
+            {
+                "fields": (
+                    "public_id",
+                    "job",
+                    "file",
+                    "file_type",
+                    "file_name",
+                    "file_size",
+                    "thumbnail",
+                    "duration_seconds",
+                    "order",
+                )
+            },
         ),
         (
             "Timestamps",
@@ -1146,16 +1167,25 @@ class JobImageAdmin(ModelAdmin):
         """Display job title."""
         return obj.job.title
 
-    @display(description="Image URL")
-    def image_url_display(self, obj):
-        """Display image URL as a clickable link."""
-        if obj.image:
+    @display(description="File Size")
+    def file_size_display(self, obj):
+        """Display file size in KB or MB."""
+        if obj.file_size:
+            if obj.file_size > 1024 * 1024:
+                return f"{obj.file_size / (1024 * 1024):.1f} MB"
+            return f"{obj.file_size / 1024:.1f} KB"
+        return "-"
+
+    @display(description="File URL")
+    def file_url_display(self, obj):
+        """Display file URL as a clickable link."""
+        if obj.file:
             return format_html(
                 '<a href="{}" target="_blank">{}</a>',
-                obj.image.url,
-                obj.image.name[:40] + "..."
-                if len(obj.image.name) > 40
-                else obj.image.name,
+                obj.file.url,
+                obj.file_name[:40] + "..."
+                if len(obj.file_name) > 40
+                else obj.file_name,
             )
         return "-"
 

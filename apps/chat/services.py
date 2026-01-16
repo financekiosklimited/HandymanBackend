@@ -12,15 +12,21 @@ from django.utils import timezone
 from PIL import Image
 
 from apps.accounts.models import User
-from apps.chat.models import ChatConversation, ChatMessage, ChatMessageImage
+from apps.chat.models import ChatConversation, ChatMessage, ChatMessageAttachment
+from apps.common.constants import (
+    ATTACHMENT_TYPE_IMAGE,
+    ATTACHMENT_TYPE_VIDEO,
+    MAX_CHAT_ATTACHMENTS,
+    MAX_IMAGE_SIZE,
+    MAX_VIDEO_SIZE,
+)
+from apps.common.validators import get_file_type_from_mime
 from apps.jobs.models import Job
 from apps.notifications.services import notification_service
 
 logger = logging.getLogger(__name__)
 
 # Configuration constants
-MAX_IMAGES_PER_MESSAGE = 5
-MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
 THUMBNAIL_SIZE = (300, 300)
 MAX_MESSAGE_LENGTH = 2000
 
@@ -136,7 +142,7 @@ class ChatService:
         queryset = (
             ChatMessage.objects.filter(conversation=conversation)
             .select_related("sender")
-            .prefetch_related("images")
+            .prefetch_related("attachments")
         )
 
         if before:
@@ -156,7 +162,7 @@ class ChatService:
         sender,
         sender_role,
         content="",
-        images=None,
+        attachments=None,
     ):
         """
         Send a message in a conversation.
@@ -166,14 +172,18 @@ class ChatService:
             sender: User sending the message
             sender_role: Role of sender (homeowner or handyman)
             content: Text content of the message
-            images: List of uploaded image files
+            attachments: List of dicts with keys:
+                - file: The uploaded file
+                - file_type: 'image' or 'video'
+                - thumbnail: Optional thumbnail file (required for videos)
+                - duration_seconds: Optional video duration (required for videos)
 
         Returns:
             ChatMessage
 
         Raises:
             ValueError: If conversation is archived, content too long,
-                        or too many images
+                        or too many attachments
         """
         # Validate conversation is active
         if conversation.status == ChatConversation.Status.ARCHIVED:
@@ -189,33 +199,51 @@ class ChatService:
 
         # Validate content
         content = content.strip() if content else ""
-        images = images or []
+        attachments = attachments or []
 
-        if not content and not images:
-            raise ValueError("Message must have content or images.")
+        if not content and not attachments:
+            raise ValueError("Message must have content or attachments.")
 
         if len(content) > MAX_MESSAGE_LENGTH:
             raise ValueError(
                 f"Message content cannot exceed {MAX_MESSAGE_LENGTH} characters."
             )
 
-        if len(images) > MAX_IMAGES_PER_MESSAGE:
-            raise ValueError(
-                f"Cannot attach more than {MAX_IMAGES_PER_MESSAGE} images."
-            )
+        if len(attachments) > MAX_CHAT_ATTACHMENTS:
+            raise ValueError(f"Cannot attach more than {MAX_CHAT_ATTACHMENTS} files.")
 
-        # Validate image sizes
-        for image in images:
-            if image.size > MAX_IMAGE_SIZE_BYTES:
-                raise ValueError(
-                    f"Image size cannot exceed {MAX_IMAGE_SIZE_BYTES // (1024 * 1024)}MB."
+        # Validate attachment sizes
+        for attachment_data in attachments:
+            # Handle new indexed format (dict with file, file_type, thumbnail, duration)
+            if isinstance(attachment_data, dict):
+                file = attachment_data.get("file")
+                file_type = attachment_data.get("file_type", ATTACHMENT_TYPE_IMAGE)
+            # Handle legacy tuple format (file, file_type)
+            elif isinstance(attachment_data, tuple):
+                file, file_type = attachment_data
+            else:
+                file = attachment_data
+                content_type = getattr(file, "content_type", "")
+                file_type = (
+                    get_file_type_from_mime(content_type) or ATTACHMENT_TYPE_IMAGE
                 )
 
+            if file_type == ATTACHMENT_TYPE_VIDEO:
+                if file.size > MAX_VIDEO_SIZE:
+                    raise ValueError(
+                        f"Video size cannot exceed {MAX_VIDEO_SIZE // (1024 * 1024)}MB."
+                    )
+            else:
+                if file.size > MAX_IMAGE_SIZE:
+                    raise ValueError(
+                        f"Image size cannot exceed {MAX_IMAGE_SIZE // (1024 * 1024)}MB."
+                    )
+
         # Determine message type
-        if content and images:
-            message_type = ChatMessage.MessageType.TEXT_WITH_IMAGE
-        elif images:
-            message_type = ChatMessage.MessageType.IMAGE
+        if content and attachments:
+            message_type = ChatMessage.MessageType.TEXT_WITH_ATTACHMENT
+        elif attachments:
+            message_type = ChatMessage.MessageType.ATTACHMENT
         else:
             message_type = ChatMessage.MessageType.TEXT
 
@@ -228,9 +256,31 @@ class ChatService:
             content=content,
         )
 
-        # Process and save images
-        for order, image_file in enumerate(images):
-            self._save_message_image(message, image_file, order)
+        # Process and save attachments
+        for order, attachment_data in enumerate(attachments):
+            # Handle new indexed format (dict with file, file_type, thumbnail, duration)
+            if isinstance(attachment_data, dict):
+                file = attachment_data.get("file")
+                file_type = attachment_data.get("file_type", ATTACHMENT_TYPE_IMAGE)
+                thumbnail = attachment_data.get("thumbnail")
+                duration_seconds = attachment_data.get("duration_seconds")
+            # Handle legacy tuple format (file, file_type)
+            elif isinstance(attachment_data, tuple):
+                file, file_type = attachment_data
+                thumbnail = None
+                duration_seconds = None
+            else:
+                file = attachment_data
+                content_type = getattr(file, "content_type", "")
+                file_type = (
+                    get_file_type_from_mime(content_type) or ATTACHMENT_TYPE_IMAGE
+                )
+                thumbnail = None
+                duration_seconds = None
+
+            self._save_message_attachment(
+                message, file, file_type, order, thumbnail, duration_seconds
+            )
 
         # Update conversation metadata
         now = timezone.now()
@@ -263,53 +313,68 @@ class ChatService:
 
         return message
 
-    def _save_message_image(self, message, image_file, order):
+    def _save_message_attachment(
+        self, message, file, file_type, order, thumbnail=None, duration_seconds=None
+    ):
         """
-        Save an image attachment with thumbnail.
+        Save an attachment with thumbnail for images.
 
         Args:
             message: ChatMessage instance
-            image_file: Uploaded image file
-            order: Image order
+            file: Uploaded file
+            file_type: 'image' or 'video'
+            order: Attachment order
+            thumbnail: Client-provided thumbnail file (for videos)
+            duration_seconds: Video duration in seconds
         """
-        # Create ChatMessageImage
-        chat_image = ChatMessageImage(
+        # Create ChatMessageAttachment
+        attachment = ChatMessageAttachment(
             message=message,
+            file_type=file_type,
+            file_name=getattr(file, "name", ""),
+            file_size=getattr(file, "size", 0),
             order=order,
+            duration_seconds=duration_seconds,
         )
 
-        # Save original image
-        chat_image.image.save(image_file.name, image_file, save=False)
+        # Save the file
+        attachment.file.save(file.name, file, save=False)
 
-        # Generate thumbnail
-        try:
-            image_file.seek(0)
-            img = Image.open(image_file)
+        # Handle thumbnail
+        if file_type == ATTACHMENT_TYPE_VIDEO and thumbnail:
+            # Use client-provided thumbnail for videos
+            thumb_name = f"thumb_{thumbnail.name}"
+            attachment.thumbnail.save(thumb_name, thumbnail, save=False)
+        elif file_type == ATTACHMENT_TYPE_IMAGE:
+            # Generate thumbnail for images server-side
+            try:
+                file.seek(0)
+                img = Image.open(file)
 
-            # Convert to RGB if necessary (for PNG with transparency)
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
+                # Convert to RGB if necessary (for PNG with transparency)
+                if img.mode in ("RGBA", "P"):
+                    img = img.convert("RGB")
 
-            # Create thumbnail
-            img.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
+                # Create thumbnail
+                img.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
 
-            # Save thumbnail to BytesIO
-            thumb_io = BytesIO()
-            img.save(thumb_io, format="JPEG", quality=85)
-            thumb_io.seek(0)
+                # Save thumbnail to BytesIO
+                thumb_io = BytesIO()
+                img.save(thumb_io, format="JPEG", quality=85)
+                thumb_io.seek(0)
 
-            # Generate thumbnail filename
-            thumb_name = f"thumb_{image_file.name.rsplit('.', 1)[0]}.jpg"
-            chat_image.thumbnail.save(
-                thumb_name,
-                ContentFile(thumb_io.getvalue()),
-                save=False,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to generate thumbnail: {e}")
-            # Continue without thumbnail
+                # Generate thumbnail filename
+                thumb_name = f"thumb_{file.name.rsplit('.', 1)[0]}.jpg"
+                attachment.thumbnail.save(
+                    thumb_name,
+                    ContentFile(thumb_io.getvalue()),
+                    save=False,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to generate thumbnail: {e}")
+                # Continue without thumbnail
 
-        chat_image.save()
+        attachment.save()
 
     def _send_message_notification(self, message, conversation, sender_role):
         """
@@ -339,7 +404,7 @@ class ChatService:
                 else message.content
             )
         else:
-            body = "Sent an image"
+            body = "Sent an attachment"
 
         # Prepare data payload
         data = {

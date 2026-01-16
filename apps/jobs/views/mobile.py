@@ -28,6 +28,7 @@ from apps.common.responses import (
     success_response,
     validation_error_response,
 )
+from apps.common.serializers import normalize_attachments_payload
 from apps.jobs.models import (
     City,
     DailyReport,
@@ -83,6 +84,8 @@ from apps.jobs.serializers import (
     JobListSerializer,
     JobReimbursementCategoryListResponseSerializer,
     JobReimbursementCategorySerializer,
+    JobReimbursementCreateSerializer,
+    JobReimbursementUpdateSerializer,
     JobTaskSerializer,
     JobTaskStatusSerializer,
     JobUpdateResponseSerializer,
@@ -443,7 +446,7 @@ class JobListCreateView(APIView):
         # Optimize queries with annotation for applicant_count
         jobs = (
             jobs.select_related("category", "city", "homeowner__homeowner_profile")
-            .prefetch_related("images")
+            .prefetch_related("attachments")
             .annotate(applicant_count=Count("applications"))
         )
 
@@ -506,6 +509,26 @@ class JobListCreateView(APIView):
                 request_only=True,
             ),
             OpenApiExample(
+                "Create Job with Attachments",
+                value={
+                    "title": "Fix leaking kitchen faucet",
+                    "description": "Kitchen faucet has been leaking for a few days. Need someone to fix it.",
+                    "estimated_budget": 50.00,
+                    "category_id": "123e4567-e89b-12d3-a456-426614174000",
+                    "city_id": "123e4567-e89b-12d3-a456-426614174001",
+                    "address": "123 Main St, Toronto",
+                    "attachments": [
+                        {"file": "photo.jpg"},
+                        {
+                            "file": "video.mp4",
+                            "thumbnail": "video_thumb.jpg",
+                            "duration_seconds": 120,
+                        },
+                    ],
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
                 "Success Response",
                 value={
                     "message": "Job created successfully",
@@ -532,7 +555,10 @@ class JobListCreateView(APIView):
             FORBIDDEN_EXAMPLE,
         ],
         description="Create a new job listing for mobile app. "
-        "Supports multiple image uploads (max 10 images, each max 5MB, JPEG/PNG only). "
+        "Supports multiple attachment uploads (max 10 attachments). "
+        "Images: max 10MB (JPEG/PNG). Videos: max 100MB (MP4/MOV/WebM, 5 min). "
+        "Use indexed multipart fields like attachments[0].file and attachments[0].thumbnail. "
+        "Video attachments require thumbnail and duration_seconds. "
         "Use multipart/form-data encoding for file uploads. "
         "Requires homeowner role and verified email and phone number.",
         summary="Create job",
@@ -540,15 +566,15 @@ class JobListCreateView(APIView):
     )
     def post(self, request):
         """Create a new job."""
-        serializer = JobCreateSerializer(
-            data=request.data, context={"request": request}
-        )
+        data = normalize_attachments_payload(request)
+
+        serializer = JobCreateSerializer(data=data, context={"request": request})
         if serializer.is_valid():
             job = serializer.save()
             # Refresh from DB to get related objects
             job = (
                 Job.objects.select_related("category", "city")
-                .prefetch_related("images")
+                .prefetch_related("attachments")
                 .get(pk=job.pk)
             )
             response_serializer = JobDetailSerializer(job)
@@ -651,10 +677,10 @@ class JobDetailView(APIView):
                                 "completed_at": None,
                             },
                         ],
-                        "images": [
+                        "attachments": [
                             {
                                 "public_id": "123e4567-e89b-12d3-a456-426614174010",
-                                "image": "https://example.com/media/jobs/images/2024/01/15/faucet.jpg",
+                                "file_url": "https://example.com/media/jobs/attachments/2024/01/15/faucet.jpg",
                                 "order": 0,
                             }
                         ],
@@ -675,7 +701,9 @@ class JobDetailView(APIView):
         """Get job detail."""
         # Verify job belongs to authenticated homeowner
         job = get_object_or_404(
-            Job.objects.select_related("category", "city").prefetch_related("images"),
+            Job.objects.select_related("category", "city").prefetch_related(
+                "attachments"
+            ),
             public_id=public_id,
             homeowner=request.user,
         )
@@ -702,6 +730,8 @@ class JobDetailView(APIView):
             "Only the job owner can update. All fields are optional (partial update supported). "
             "Cannot update completed, cancelled, or deleted jobs. "
             "Status can only be changed to draft, open, or in_progress. "
+            "For attachments, use indexed fields like attachments[0].file. "
+            "Video attachments require thumbnail and duration_seconds. "
             "Requires verified email and phone verification."
         ),
         summary="Update job",
@@ -763,6 +793,28 @@ class JobDetailView(APIView):
                     "_delete: true to delete tasks, "
                     "or omit public_id to create new tasks. "
                     "Tasks not included are preserved."
+                ),
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Update Attachments",
+                value={
+                    "attachments": [
+                        {"file": "new_photo.jpg"},
+                        {
+                            "file": "new_video.mp4",
+                            "thumbnail": "video_thumb.jpg",
+                            "duration_seconds": 120,
+                        },
+                    ],
+                    "attachments_to_remove": [
+                        "123e4567-e89b-12d3-a456-426614174010",
+                        "123e4567-e89b-12d3-a456-426614174011",
+                    ],
+                },
+                description=(
+                    "Add new attachments using indexed fields like attachments[0].file. "
+                    "Provide attachments_to_remove with public_ids to delete."
                 ),
                 request_only=True,
             ),
@@ -829,7 +881,7 @@ class JobDetailView(APIView):
                                 "completed_at": None,
                             },
                         ],
-                        "images": [],
+                        "attachments": [],
                         "created_at": "2024-01-15T10:30:00Z",
                         "updated_at": "2024-01-16T14:30:00Z",
                     },
@@ -849,7 +901,9 @@ class JobDetailView(APIView):
         """Update job."""
         # Verify job belongs to authenticated homeowner
         job = get_object_or_404(
-            Job.objects.select_related("category", "city").prefetch_related("images"),
+            Job.objects.select_related("category", "city").prefetch_related(
+                "attachments"
+            ),
             public_id=public_id,
             homeowner=request.user,
         )
@@ -865,15 +919,15 @@ class JobDetailView(APIView):
                 message=f"Cannot update a {job.status} job",
             )
 
-        serializer = JobUpdateSerializer(
-            job, data=request.data, context={"request": request}
-        )
+        data = normalize_attachments_payload(request)
+
+        serializer = JobUpdateSerializer(job, data=data, context={"request": request})
         if serializer.is_valid():
             job = serializer.save()
             # Refresh to get updated related objects
             job = (
                 Job.objects.select_related("category", "city")
-                .prefetch_related("images")
+                .prefetch_related("attachments")
                 .get(pk=job.pk)
             )
             response_serializer = JobDetailSerializer(job)
@@ -1089,7 +1143,7 @@ class ForYouJobListView(APIView):
                                     "completed_at": None,
                                 },
                             ],
-                            "images": [],
+                            "attachments": [],
                             "homeowner": {
                                 "public_id": "123e4567-e89b-12d3-a456-426614174099",
                                 "display_name": "John D.",
@@ -1202,7 +1256,7 @@ class ForYouJobListView(APIView):
         # Optimize queries
         jobs = jobs.select_related(
             "category", "city", "homeowner__homeowner_profile"
-        ).prefetch_related("images")
+        ).prefetch_related("attachments")
 
         # Slice queryset
         start = (page - 1) * page_size
@@ -1372,7 +1426,7 @@ class GuestJobListView(APIView):
                                     "completed_at": None,
                                 },
                             ],
-                            "images": [],
+                            "attachments": [],
                             "homeowner": {
                                 "public_id": "123e4567-e89b-12d3-a456-426614174099",
                                 "display_name": "John D.",
@@ -1486,7 +1540,7 @@ class GuestJobListView(APIView):
         # Optimize queries
         jobs = jobs.select_related(
             "category", "city", "homeowner__homeowner_profile"
-        ).prefetch_related("images")
+        ).prefetch_related("attachments")
 
         # Slice queryset
         start = (page - 1) * page_size
@@ -1585,7 +1639,7 @@ class GuestJobDetailView(APIView):
                                 "completed_at": None,
                             },
                         ],
-                        "images": [],
+                        "attachments": [],
                         "created_at": "2024-01-15T10:30:00Z",
                         "updated_at": "2024-01-15T10:30:00Z",
                     },
@@ -1611,7 +1665,9 @@ class GuestJobDetailView(APIView):
     def get(self, request, public_id):
         """Get job detail for guest users (only open jobs)."""
         job = get_object_or_404(
-            Job.objects.select_related("category", "city").prefetch_related("images"),
+            Job.objects.select_related("category", "city").prefetch_related(
+                "attachments"
+            ),
             public_id=public_id,
             status="open",
         )
@@ -1751,7 +1807,7 @@ class HandymanForYouJobListView(APIView):
         jobs = (
             Job.objects.filter(status="open")
             .select_related("category", "city", "homeowner__homeowner_profile")
-            .prefetch_related("images")
+            .prefetch_related("attachments")
         )
 
         # Exclude own jobs if user is also a homeowner
@@ -1939,7 +1995,7 @@ class HandymanJobDetailView(APIView):
 
         job = get_object_or_404(
             Job.objects.select_related("category", "city")
-            .prefetch_related("images", "applications")
+            .prefetch_related("attachments", "applications")
             .annotate(
                 is_bookmarked=Exists(
                     JobBookmark.objects.filter(
@@ -2053,7 +2109,7 @@ class HandymanJobApplicationListCreateView(APIView):
         applications = (
             JobApplication.objects.filter(handyman=request.user)
             .select_related("job__category", "job__city")
-            .prefetch_related("job__images")
+            .prefetch_related("job__attachments")
         )
 
         # Filter by status if provided
@@ -2104,7 +2160,11 @@ class HandymanJobApplicationListCreateView(APIView):
         },
         description=(
             "Apply to a job with proposal details. The job must be in 'open' status. "
-            "Supports multipart/form-data for file attachments. "
+            "Supports multipart/form-data for file attachments (max 10 attachments). "
+            "Accepted file types: images (JPEG, PNG, GIF, WebP), videos (MP4, MOV, WebM), "
+            "and documents (PDF, Word, Excel, PowerPoint). "
+            "Use indexed fields like attachments[0].file for uploads. "
+            "Video attachments require thumbnail and duration_seconds. "
             "Required fields: job_id, predicted_hours, estimated_total_price. "
             "Optional: negotiation_reasoning, materials (JSON array), attachments (files). "
             "Requires authentication with verified email and phone number."
@@ -2130,6 +2190,24 @@ class HandymanJobApplicationListCreateView(APIView):
                             "price": "15.00",
                             "description": "4 pieces",
                         },
+                    ],
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Request Example - Attachments",
+                value={
+                    "job_id": "223e4567-e89b-12d3-a456-426614174000",
+                    "predicted_hours": "8.5",
+                    "estimated_total_price": "450.00",
+                    "attachments": [
+                        {"file": "quote.jpg"},
+                        {
+                            "file": "proposal.mp4",
+                            "thumbnail": "proposal_thumb.jpg",
+                            "duration_seconds": 90,
+                        },
+                        {"file": "estimate.pdf"},
                     ],
                 },
                 request_only=True,
@@ -2192,12 +2270,7 @@ class HandymanJobApplicationListCreateView(APIView):
         import json
 
         # Handle multipart/form-data
-        # Don't use request.data.copy() because it might have issues with file objects
-        # Build data dictionary manually
-        data = {}
-        for key in request.data.keys():
-            if key != "attachments":  # Skip attachments, handle separately
-                data[key] = request.data[key]
+        data = normalize_attachments_payload(request)
 
         # Parse materials if provided as JSON string
         if "materials" in data and isinstance(data["materials"], str):
@@ -2207,17 +2280,6 @@ class HandymanJobApplicationListCreateView(APIView):
                 return validation_error_response(
                     {"materials": "Invalid JSON format for materials."}
                 )
-
-        # Handle attachments from request.FILES
-        # Collect files from request.FILES (multipart/form-data)
-        attachments_list = []
-        for key, value in request.FILES.items():
-            if key.startswith("attachments") or key == "attachments":
-                attachments_list.append(value)
-
-        # Add attachments to data if we have valid files from request.FILES
-        if attachments_list:
-            data["attachments"] = attachments_list
 
         serializer = JobApplicationCreateSerializer(
             data=data, context={"request": request}
@@ -2287,7 +2349,7 @@ class HandymanJobApplicationDetailView(APIView):
         application = get_object_or_404(
             JobApplication.objects.select_related(
                 "job__category", "job__city"
-            ).prefetch_related("job__images"),
+            ).prefetch_related("job__attachments"),
             public_id=public_id,
             handyman=request.user,
         )
@@ -2309,10 +2371,16 @@ class HandymanJobApplicationDetailView(APIView):
         },
         description=(
             "Update a pending job application with new proposal details. "
-            "Only pending applications can be edited. "
+            "Only pending applications can be edited. Max 10 attachments total. "
             "Supports multipart/form-data for file attachments. "
+            "Accepted file types: images (JPEG, PNG, GIF, WebP), videos (MP4, MOV, WebM), "
+            "and documents (PDF, Word, Excel, PowerPoint). "
+            "Use indexed fields like attachments[0].file for uploads. "
+            "Video attachments require thumbnail and duration_seconds. "
             "All fields are optional - only provided fields will be updated. "
-            "Materials and attachments will completely replace existing ones if provided. "
+            "Materials will completely replace existing ones if provided. "
+            "Attachments use add/remove pattern: existing attachments remain unless "
+            "their public_id is in attachments_to_remove. New attachments are added. "
             "Requires authentication with verified email."
         ),
         summary="Edit application",
@@ -2338,6 +2406,41 @@ class HandymanJobApplicationDetailView(APIView):
                             "price": "30.00",
                             "description": "3m",
                         }
+                    ],
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Request Example - Add New Attachments",
+                value={
+                    "attachments": [
+                        {"file": "new_quote.jpg"},
+                        {
+                            "file": "new_video.mp4",
+                            "thumbnail": "new_video_thumb.jpg",
+                            "duration_seconds": 75,
+                        },
+                        {"file": "updated_estimate.pdf"},
+                    ],
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Request Example - Remove Attachments",
+                value={
+                    "attachments_to_remove": [
+                        "123e4567-e89b-12d3-a456-426614174000",
+                        "223e4567-e89b-12d3-a456-426614174000",
+                    ],
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Request Example - Add and Remove Attachments",
+                value={
+                    "attachments": [{"file": "replacement_photo.jpg"}],
+                    "attachments_to_remove": [
+                        "123e4567-e89b-12d3-a456-426614174000",
                     ],
                 },
                 request_only=True,
@@ -2391,10 +2494,7 @@ class HandymanJobApplicationDetailView(APIView):
         )
 
         # Handle multipart/form-data similar to create
-        data = {}
-        for key in request.data.keys():
-            if key != "attachments":  # Skip attachments, handle separately
-                data[key] = request.data[key]
+        data = normalize_attachments_payload(request)
 
         # Parse materials if provided as JSON string
         if "materials" in data and isinstance(data["materials"], str):
@@ -2404,16 +2504,6 @@ class HandymanJobApplicationDetailView(APIView):
                 return validation_error_response(
                     {"materials": "Invalid JSON format for materials."}
                 )
-
-        # Handle attachments from request.FILES
-        attachments_list = []
-        for key, value in request.FILES.items():
-            if key.startswith("attachments") or key == "attachments":
-                attachments_list.append(value)
-
-        # Add attachments to data if we have valid files from request.FILES
-        if attachments_list:
-            data["attachments"] = attachments_list
 
         serializer = JobApplicationUpdateSerializer(
             application, data=data, context={"request": request}, partial=True
@@ -5575,22 +5665,7 @@ class HandymanReimbursementListCreateView(APIView):
 
     @extend_schema(
         operation_id="mobile_handyman_reimbursements_create",
-        request={
-            "multipart/form-data": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "category": {"type": "string"},
-                    "amount": {"type": "string"},
-                    "notes": {"type": "string"},
-                    "attachments": {
-                        "type": "array",
-                        "items": {"type": "string", "format": "binary"},
-                    },
-                },
-                "required": ["name", "category", "amount", "attachments"],
-            }
-        },
+        request=JobReimbursementCreateSerializer,
         responses={
             201: "JobReimbursementDetailResponseSerializer",
             400: OpenApiTypes.OBJECT,
@@ -5602,6 +5677,11 @@ class HandymanReimbursementListCreateView(APIView):
             "Submit a new reimbursement request for a job. "
             "Requires handyman role and phone verification. "
             "Job must be in 'in_progress' or 'pending_completion' status. "
+            "Supports 1-5 attachments. "
+            "Accepted file types: images (JPEG, PNG, GIF, WebP), videos (MP4, MOV, WebM), "
+            "and documents (PDF, Word, Excel, PowerPoint). "
+            "Use indexed fields like attachments[0].file for uploads. "
+            "Video attachments require thumbnail and duration_seconds. "
             "At least one attachment (receipt/proof) is required."
         ),
         summary="Submit reimbursement request",
@@ -5611,9 +5691,27 @@ class HandymanReimbursementListCreateView(APIView):
                 "Create Reimbursement Request",
                 value={
                     "name": "Plumbing materials",
-                    "category": "materials",
+                    "category_id": "123e4567-e89b-12d3-a456-426614174050",
                     "amount": "150.00",
                     "notes": "Required for repair",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Create Reimbursement with Attachments",
+                value={
+                    "name": "Plumbing materials",
+                    "category_id": "123e4567-e89b-12d3-a456-426614174050",
+                    "amount": "150.00",
+                    "attachments": [
+                        {"file": "receipt.jpg"},
+                        {
+                            "file": "store_video.mp4",
+                            "thumbnail": "store_video_thumb.jpg",
+                            "duration_seconds": 12,
+                        },
+                        {"file": "invoice.pdf"},
+                    ],
                 },
                 request_only=True,
             ),
@@ -5657,7 +5755,26 @@ class HandymanReimbursementListCreateView(APIView):
         from apps.jobs.services import reimbursement_service
 
         job = get_object_or_404(Job, public_id=public_id)
-        serializer = JobReimbursementCreateSerializer(data=request.data)
+
+        data = normalize_attachments_payload(request)
+
+        category_id = data.get("category_id")
+        if category_id:
+            from uuid import UUID
+
+            from apps.jobs.models import JobReimbursementCategory
+
+            try:
+                UUID(str(category_id))
+            except ValueError:
+                return validation_error_response({"category_id": "Invalid category."})
+
+            if not JobReimbursementCategory.objects.filter(
+                public_id=category_id
+            ).exists():
+                return validation_error_response({"category_id": "Invalid category."})
+
+        serializer = JobReimbursementCreateSerializer(data=data)
         if not serializer.is_valid():
             return validation_error_response(serializer.errors)
 
@@ -5754,25 +5871,7 @@ class HandymanReimbursementDetailView(APIView):
 
     @extend_schema(
         operation_id="mobile_handyman_reimbursement_edit",
-        request={
-            "multipart/form-data": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "category": {"type": "string"},
-                    "amount": {"type": "string"},
-                    "notes": {"type": "string"},
-                    "attachments": {
-                        "type": "array",
-                        "items": {"type": "string", "format": "binary"},
-                    },
-                    "attachments_to_remove": {
-                        "type": "array",
-                        "items": {"type": "string", "format": "uuid"},
-                    },
-                },
-            }
-        },
+        request=JobReimbursementUpdateSerializer,
         responses={
             200: "JobReimbursementDetailResponseSerializer",
             400: OpenApiTypes.OBJECT,
@@ -5783,7 +5882,11 @@ class HandymanReimbursementDetailView(APIView):
         description=(
             "Edit a pending reimbursement request. "
             "Requires handyman role and phone verification. "
-            "Only pending reimbursements can be edited. "
+            "Only pending reimbursements can be edited. Max 5 attachments total. "
+            "Accepted file types: images (JPEG, PNG, GIF, WebP), videos (MP4, MOV, WebM), "
+            "and documents (PDF, Word, Excel, PowerPoint). "
+            "Use indexed fields like attachments[0].file for new uploads. "
+            "Video attachments require thumbnail and duration_seconds. "
             "At least one attachment must remain after edit."
         ),
         summary="Edit reimbursement",
@@ -5795,6 +5898,25 @@ class HandymanReimbursementDetailView(APIView):
                     "name": "Updated materials",
                     "amount": "75.00",
                     "notes": "Updated notes",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Update Attachments",
+                value={
+                    "attachments": [
+                        {"file": "new_receipt.jpg"},
+                        {
+                            "file": "store_video.mp4",
+                            "thumbnail": "store_video_thumb.jpg",
+                            "duration_seconds": 15,
+                        },
+                        {"file": "updated_invoice.pdf"},
+                    ],
+                    "attachments_to_remove": [
+                        "123e4567-e89b-12d3-a456-426614174001",
+                        "223e4567-e89b-12d3-a456-426614174002",
+                    ],
                 },
                 request_only=True,
             ),
@@ -5845,7 +5967,9 @@ class HandymanReimbursementDetailView(APIView):
             JobReimbursement, public_id=reimbursement_id, job=job
         )
 
-        serializer = JobReimbursementUpdateSerializer(data=request.data)
+        data = normalize_attachments_payload(request)
+
+        serializer = JobReimbursementUpdateSerializer(data=data)
         if not serializer.is_valid():
             return validation_error_response(serializer.errors)
 

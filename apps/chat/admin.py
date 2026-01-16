@@ -7,24 +7,47 @@ from django.utils.html import format_html
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
 
-from apps.chat.models import ChatConversation, ChatMessage, ChatMessageImage
+from apps.chat.models import ChatConversation, ChatMessage, ChatMessageAttachment
 
 
-class ChatMessageImageInline(TabularInline):
-    """Inline admin for chat message images."""
+class ChatMessageAttachmentInline(TabularInline):
+    """Inline admin for chat message attachments."""
 
-    model = ChatMessageImage
+    model = ChatMessageAttachment
     extra = 0
-    readonly_fields = ("public_id", "image_preview", "thumbnail_preview", "created_at")
-    fields = ("image_preview", "thumbnail_preview", "order", "created_at")
+    readonly_fields = (
+        "public_id",
+        "file_preview",
+        "thumbnail_preview",
+        "file_type",
+        "file_name",
+        "file_size_display",
+        "duration_seconds",
+        "created_at",
+    )
+    fields = (
+        "file_preview",
+        "thumbnail_preview",
+        "file_type",
+        "file_name",
+        "file_size_display",
+        "order",
+        "created_at",
+    )
 
-    @display(description="Image")
-    def image_preview(self, obj):
-        """Display image thumbnail."""
-        if obj.image:
+    @display(description="File")
+    def file_preview(self, obj):
+        """Display file preview (image or video link)."""
+        if obj.file_type == "image" and obj.file:
             return format_html(
                 '<img src="{}" style="max-height: 100px; max-width: 100px;" />',
-                obj.image.url,
+                obj.file.url,
+            )
+        elif obj.file:
+            return format_html(
+                '<a href="{}" target="_blank">View {}</a>',
+                obj.file.url,
+                obj.file_type,
             )
         return "-"
 
@@ -36,6 +59,15 @@ class ChatMessageImageInline(TabularInline):
                 '<img src="{}" style="max-height: 50px; max-width: 50px;" />',
                 obj.thumbnail.url,
             )
+        return "-"
+
+    @display(description="Size")
+    def file_size_display(self, obj):
+        """Display file size in KB or MB."""
+        if obj.file_size:
+            if obj.file_size > 1024 * 1024:
+                return f"{obj.file_size / (1024 * 1024):.1f} MB"
+            return f"{obj.file_size / 1024:.1f} KB"
         return "-"
 
 
@@ -239,7 +271,7 @@ class ChatMessageAdmin(ModelAdmin):
         "sender_link",
         "sender_role_display",
         "message_type_display",
-        "has_images",
+        "has_attachments",
         "read_status",
         "created_at",
     )
@@ -259,7 +291,7 @@ class ChatMessageAdmin(ModelAdmin):
     date_hierarchy = "created_at"
     list_per_page = 25
     ordering = ("-created_at",)
-    inlines = [ChatMessageImageInline]
+    inlines = [ChatMessageAttachmentInline]
 
     fieldsets = (
         (
@@ -340,18 +372,18 @@ class ChatMessageAdmin(ModelAdmin):
         """Display message type with icon."""
         icons = {
             "text": "📝",
-            "image": "🖼️",
-            "text_with_image": "📝🖼️",
+            "attachment": "📎",
+            "text_with_attachment": "📝📎",
         }
         icon = icons.get(obj.message_type, "📝")
         return f"{icon} {obj.get_message_type_display()}"
 
-    @display(description="Images")
-    def has_images(self, obj):
-        """Display whether message has images."""
-        count = obj.images.count()
+    @display(description="Attachments")
+    def has_attachments(self, obj):
+        """Display whether message has attachments."""
+        count = obj.attachments.count()
         if count > 0:
-            return f"📷 {count}"
+            return f"📎 {count}"
         return "-"
 
     @display(description="Read")
@@ -362,25 +394,30 @@ class ChatMessageAdmin(ModelAdmin):
         return "🔵 Unread"
 
 
-@admin.register(ChatMessageImage)
-class ChatMessageImageAdmin(ModelAdmin):
-    """Admin interface for ChatMessageImage model."""
+@admin.register(ChatMessageAttachment)
+class ChatMessageAttachmentAdmin(ModelAdmin):
+    """Admin interface for ChatMessageAttachment model."""
 
     list_display = (
-        "image_preview",
+        "file_preview",
         "message_link",
+        "file_type",
+        "file_name",
+        "file_size_display",
+        "duration_seconds",
         "order",
         "created_at",
     )
-    list_filter = ("created_at",)
+    list_filter = ("file_type", "created_at")
     search_fields = (
+        "file_name",
         "message__content",
         "message__sender__email",
     )
     autocomplete_fields = ("message",)
     readonly_fields = (
         "public_id",
-        "image_preview_large",
+        "file_preview_large",
         "thumbnail_preview_large",
         "created_at",
         "updated_at",
@@ -390,11 +427,15 @@ class ChatMessageImageAdmin(ModelAdmin):
 
     fieldsets = (
         (
-            "Image Info",
+            "Attachment Info",
             {
                 "fields": (
                     "public_id",
                     "message",
+                    "file_type",
+                    "file_name",
+                    "file_size",
+                    "duration_seconds",
                     "order",
                 )
             },
@@ -403,8 +444,8 @@ class ChatMessageImageAdmin(ModelAdmin):
             "Files",
             {
                 "fields": (
-                    "image",
-                    "image_preview_large",
+                    "file",
+                    "file_preview_large",
                     "thumbnail",
                     "thumbnail_preview_large",
                 )
@@ -417,27 +458,36 @@ class ChatMessageImageAdmin(ModelAdmin):
     )
 
     @display(description="Preview")
-    def image_preview(self, obj):
-        """Display image thumbnail in list."""
-        if obj.thumbnail:
+    def file_preview(self, obj):
+        """Display file thumbnail in list."""
+        if obj.file_type == "image":
+            if obj.thumbnail:
+                return format_html(
+                    '<img src="{}" style="max-height: 50px; max-width: 50px;" />',
+                    obj.thumbnail.url,
+                )
+            if obj.file:
+                return format_html(
+                    '<img src="{}" style="max-height: 50px; max-width: 50px;" />',
+                    obj.file.url,
+                )
+        elif obj.file:
             return format_html(
-                '<img src="{}" style="max-height: 50px; max-width: 50px;" />',
-                obj.thumbnail.url,
-            )
-        if obj.image:
-            return format_html(
-                '<img src="{}" style="max-height: 50px; max-width: 50px;" />',
-                obj.image.url,
+                '<a href="{}" target="_blank">🎬 Video</a>', obj.file.url
             )
         return "-"
 
-    @display(description="Image Preview")
-    def image_preview_large(self, obj):
-        """Display full image preview."""
-        if obj.image:
+    @display(description="File Preview")
+    def file_preview_large(self, obj):
+        """Display full file preview."""
+        if obj.file_type == "image" and obj.file:
             return format_html(
                 '<img src="{}" style="max-height: 300px; max-width: 300px;" />',
-                obj.image.url,
+                obj.file.url,
+            )
+        elif obj.file:
+            return format_html(
+                '<a href="{}" target="_blank">View Video</a>', obj.file.url
             )
         return "-"
 
@@ -451,10 +501,19 @@ class ChatMessageImageAdmin(ModelAdmin):
             )
         return "-"
 
+    @display(description="Size")
+    def file_size_display(self, obj):
+        """Display file size in KB or MB."""
+        if obj.file_size:
+            if obj.file_size > 1024 * 1024:
+                return f"{obj.file_size / (1024 * 1024):.1f} MB"
+            return f"{obj.file_size / 1024:.1f} KB"
+        return "-"
+
     @display(description="Message")
     def message_link(self, obj):
         """Display message as clickable link."""
-        preview = obj.message.content[:30] if obj.message.content else "[Image]"
+        preview = obj.message.content[:30] if obj.message.content else "[Attachment]"
         return format_html(
             '<a href="/admin/chat/chatmessage/{}/change/">{}</a>',
             obj.message.pk,

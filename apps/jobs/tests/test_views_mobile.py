@@ -18,6 +18,7 @@ from apps.jobs.models import (
     DailyReportTask,
     Job,
     JobApplication,
+    JobApplicationAttachment,
     JobApplicationMaterial,
     JobCategory,
     JobDispute,
@@ -518,16 +519,10 @@ class MobileJobListCreateViewTests(APITestCase):
         self.assertEqual(float(job.latitude), 43.651070)
         self.assertEqual(float(job.longitude), -79.347015)
 
-    def test_create_job_with_images(self):
-        """Test creating a job with images."""
-        # Create test images
-        image1_io = BytesIO()
-        pil_image1 = PILImage.new("RGB", (100, 100), color="red")
-        pil_image1.save(image1_io, format="JPEG")
-        image1_io.seek(0)
-        image1 = SimpleUploadedFile(
-            "test1.jpg", image1_io.getvalue(), content_type="image/jpeg"
-        )
+    def test_create_job_with_attachments(self):
+        """Test creating a job with attachments."""
+        # Create test image
+        image1 = create_test_image()
 
         data = {
             "title": "Test job",
@@ -536,7 +531,7 @@ class MobileJobListCreateViewTests(APITestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "images": [image1],
+            "attachments[0].file": image1,
         }
 
         self.client.force_authenticate(user=self.user)
@@ -544,7 +539,7 @@ class MobileJobListCreateViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         job = Job.objects.first()
-        self.assertEqual(job.images.count(), 1)
+        self.assertEqual(job.attachments.count(), 1)
 
     def test_create_job_validation_errors(self):
         """Test job creation with validation errors."""
@@ -2542,18 +2537,14 @@ class HandymanJobApplicationListCreateViewTests(APITestCase):
 
     def test_create_application_with_materials_and_attachments(self):
         """Test creating application with materials and attachments."""
-        from django.core.files.uploadedfile import SimpleUploadedFile
-
-        file = SimpleUploadedFile(
-            "test.pdf", b"content", content_type="application/pdf"
-        )
+        file = create_test_image()
         data = {
             "job_id": str(self.job.public_id),
             "predicted_hours": "8.5",
             "estimated_total_price": "450.00",
             "negotiation_reasoning": "Test reasoning",
             "materials": '[{"name": "PVC Pipe", "price": "25.50", "description": "2m"}]',
-            "attachments": file,
+            "attachments[0].file": file,
         }
 
         response = self.client.post(self.url, data, format="multipart")
@@ -2578,16 +2569,12 @@ class HandymanJobApplicationListCreateViewTests(APITestCase):
 
     def test_create_application_with_attachments_list(self):
         """Test creating application with list of attachments in data."""
-        from django.core.files.uploadedfile import SimpleUploadedFile
-
-        file1 = SimpleUploadedFile(
-            "test1.pdf", b"content1", content_type="application/pdf"
-        )
+        file1 = create_test_image()
         data = {
             "job_id": str(self.job.public_id),
             "predicted_hours": "8.5",
             "estimated_total_price": "450.00",
-            "attachments": file1,
+            "attachments[0].file": file1,
         }
 
         response = self.client.post(self.url, data, format="multipart")
@@ -2957,20 +2944,18 @@ class HandymanJobApplicationEditViewTests(APITestCase):
 
     def test_edit_application_with_new_attachments(self):
         """Test updating application with new attachments."""
-        from django.core.files.uploadedfile import SimpleUploadedFile
-
-        file = SimpleUploadedFile(
-            "updated.pdf", b"new content", content_type="application/pdf"
-        )
+        file = create_test_image()
         data = {
             "predicted_hours": "10.00",
-            "attachments": file,
+            "attachments[0].file": file,
         }
 
         response = self.client.put(self.url, data, format="multipart")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]["attachments"]), 1)
-        self.assertIn("updated.pdf", response.data["data"]["attachments"][0]["file"])
+        # File name may have random suffix added by Django
+        self.assertIn("test", response.data["data"]["attachments"][0]["file_url"])
+        self.assertIn(".jpg", response.data["data"]["attachments"][0]["file_url"])
 
     def test_edit_application_non_pending_fails(self):
         """Test editing non-pending application fails."""
@@ -3053,6 +3038,168 @@ class HandymanJobApplicationEditViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         # No attachments should be added since the file key wasn't 'attachments'
         self.assertEqual(len(response.data["data"]["attachments"]), 0)
+
+    def test_edit_application_add_attachments_keeps_existing(self):
+        """Test adding new attachments keeps existing ones."""
+        # Create existing attachment
+        existing_attachment = JobApplicationAttachment.objects.create(
+            application=self.application,
+            file=create_test_image(),
+            file_type="image",
+            file_name="existing.jpg",
+            file_size=1024,
+        )
+
+        # Add new attachment without specifying attachments_to_remove
+        new_file = create_test_image()
+        data = {
+            "attachments[0].file": new_file,
+        }
+
+        response = self.client.put(self.url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should have 2 attachments now (existing + new)
+        self.assertEqual(len(response.data["data"]["attachments"]), 2)
+        # Verify existing attachment is still there
+        self.assertTrue(
+            any(
+                str(existing_attachment.public_id) == att["public_id"]
+                for att in response.data["data"]["attachments"]
+            )
+        )
+
+    def test_edit_application_remove_specific_attachment(self):
+        """Test removing specific attachment via attachments_to_remove."""
+        # Create two existing attachments
+        att1 = JobApplicationAttachment.objects.create(
+            application=self.application,
+            file=create_test_image(),
+            file_type="image",
+            file_name="keep_me.jpg",
+            file_size=1024,
+        )
+        att2 = JobApplicationAttachment.objects.create(
+            application=self.application,
+            file=create_test_image(),
+            file_type="image",
+            file_name="delete_me.jpg",
+            file_size=1024,
+        )
+
+        # Remove only att2
+        data = {
+            "attachments_to_remove": [str(att2.public_id)],
+        }
+
+        response = self.client.put(self.url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should have 1 attachment remaining
+        self.assertEqual(len(response.data["data"]["attachments"]), 1)
+        # Verify att1 is still there
+        self.assertEqual(
+            response.data["data"]["attachments"][0]["public_id"], str(att1.public_id)
+        )
+        # Verify att2 is deleted from database
+        self.assertFalse(
+            JobApplicationAttachment.objects.filter(public_id=att2.public_id).exists()
+        )
+
+    def test_edit_application_add_and_remove_attachments(self):
+        """Test adding new attachments while removing existing ones."""
+        # Create existing attachment
+        existing_attachment = JobApplicationAttachment.objects.create(
+            application=self.application,
+            file=create_test_image(),
+            file_type="image",
+            file_name="to_remove.jpg",
+            file_size=1024,
+        )
+
+        # Add new and remove existing
+        new_file = create_test_image()
+        data = {
+            "attachments[0].file": new_file,
+            "attachments_to_remove": [str(existing_attachment.public_id)],
+        }
+
+        response = self.client.put(self.url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should have 1 attachment (the new one)
+        self.assertEqual(len(response.data["data"]["attachments"]), 1)
+        # Verify old attachment is deleted
+        self.assertFalse(
+            JobApplicationAttachment.objects.filter(
+                public_id=existing_attachment.public_id
+            ).exists()
+        )
+        # Verify new attachment exists (file name may have random suffix)
+        self.assertIn("test", response.data["data"]["attachments"][0]["file_url"])
+        self.assertIn(".jpg", response.data["data"]["attachments"][0]["file_url"])
+
+    def test_edit_application_remove_nonexistent_attachment_ignored(self):
+        """Test removing non-existent attachment is silently ignored."""
+        import uuid
+
+        # Create existing attachment
+        existing_attachment = JobApplicationAttachment.objects.create(
+            application=self.application,
+            file=create_test_image(),
+            file_type="image",
+            file_name="existing.jpg",
+            file_size=1024,
+        )
+
+        # Try to remove non-existent attachment
+        data = {
+            "attachments_to_remove": [str(uuid.uuid4())],
+        }
+
+        response = self.client.put(self.url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Existing attachment should still be there
+        self.assertEqual(len(response.data["data"]["attachments"]), 1)
+        self.assertEqual(
+            response.data["data"]["attachments"][0]["public_id"],
+            str(existing_attachment.public_id),
+        )
+
+    def test_edit_application_remove_multiple_attachments(self):
+        """Test removing multiple attachments at once."""
+        # Create three attachments
+        att1 = JobApplicationAttachment.objects.create(
+            application=self.application,
+            file=create_test_image(),
+            file_type="image",
+            file_name="keep.jpg",
+            file_size=1024,
+        )
+        att2 = JobApplicationAttachment.objects.create(
+            application=self.application,
+            file=create_test_image(),
+            file_type="image",
+            file_name="delete1.jpg",
+            file_size=1024,
+        )
+        att3 = JobApplicationAttachment.objects.create(
+            application=self.application,
+            file=create_test_image(),
+            file_type="image",
+            file_name="delete2.jpg",
+            file_size=1024,
+        )
+
+        # Remove att2 and att3, keep att1
+        data = {
+            "attachments_to_remove": [str(att2.public_id), str(att3.public_id)],
+        }
+
+        response = self.client.put(self.url, data, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should have 1 attachment remaining
+        self.assertEqual(len(response.data["data"]["attachments"]), 1)
+        self.assertEqual(
+            response.data["data"]["attachments"][0]["public_id"], str(att1.public_id)
+        )
 
 
 class HomeownerApplicationListViewTests(APITestCase):
@@ -8003,7 +8150,7 @@ class HandymanReimbursementListCreateViewTests(APITestCase):
             "category_id": str(self.reimbursement_category.public_id),
             "amount": "50.00",
             "notes": "Required for repair",
-            "attachments": [image],
+            "attachments[0].file": image,
         }
 
         response = self.client.post(self.url, data, format="multipart")
@@ -8055,7 +8202,7 @@ class HandymanReimbursementListCreateViewTests(APITestCase):
             "name": "Materials",
             "category_id": str(self.reimbursement_category.public_id),
             "amount": "50.00",
-            "attachments": [image],
+            "attachments[0].file": image,
         }
 
         response = self.client.post(self.url, data, format="multipart")
@@ -8075,7 +8222,7 @@ class HandymanReimbursementListCreateViewTests(APITestCase):
             "name": "Materials",
             "category_id": str(self.reimbursement_category.public_id),
             "amount": "50.00",
-            "attachments": [image],
+            "attachments[0].file": image,
         }
 
         response = self.client.post(self.url, data, format="multipart")
@@ -8089,14 +8236,31 @@ class HandymanReimbursementListCreateViewTests(APITestCase):
         image = create_test_image()
         data = {
             "name": "Materials",
-            "category_id": "00000000-0000-0000-0000-000000000000",
+            "category_id": "not-a-uuid",
             "amount": "50.00",
-            "attachments": [image],
+            "attachments[0].file": image,
         }
 
         response = self.client.post(self.url, data, format="multipart")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_reimbursement_nonexistent_category(self):
+        """Test creating reimbursement with non-existent category UUID fails."""
+        self.client.force_authenticate(user=self.handyman)
+
+        image = create_test_image()
+        data = {
+            "name": "Materials",
+            "category_id": "00000000-0000-0000-0000-000000000000",  # Valid UUID, doesn't exist
+            "amount": "50.00",
+            "attachments[0].file": image,
+        }
+
+        response = self.client.post(self.url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("category_id", str(response.data["errors"]))
 
     def test_create_reimbursement_inactive_category(self):
         """Test creating reimbursement with inactive category fails."""
@@ -8120,12 +8284,34 @@ class HandymanReimbursementListCreateViewTests(APITestCase):
             "name": "Materials",
             "category_id": str(inactive_category.public_id),
             "amount": "50.00",
-            "attachments": [image],
+            "attachments[0].file": image,
         }
 
         response = self.client.post(self.url, data, format="multipart")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_reimbursement_without_category_fails(self):
+        """Test creating reimbursement without category_id fails at serializer.
+
+        Covers branch 5762->5777: when category_id is not provided, the view
+        skips category validation and lets the serializer handle the error.
+        """
+        self.client.force_authenticate(user=self.handyman)
+
+        image = create_test_image()
+        data = {
+            "name": "Miscellaneous materials",
+            "amount": "25.00",
+            "notes": "No category specified",
+            "attachments[0].file": image,
+        }
+
+        response = self.client.post(self.url, data, format="multipart")
+
+        # Should fail at serializer validation since category_id is required
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("category_id", response.data["errors"])
 
 
 class HandymanReimbursementDetailViewTests(APITestCase):
@@ -8331,7 +8517,7 @@ class HandymanReimbursementEditViewTests(APITestCase):
         self.client.force_authenticate(user=self.handyman)
 
         new_image = create_test_image()
-        data = {"attachments": [new_image]}
+        data = {"attachments[0].file": new_image}
         response = self.client.put(self.url, data, format="multipart")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)

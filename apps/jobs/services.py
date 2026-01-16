@@ -9,6 +9,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.common.validators import get_file_type_from_mime
 from apps.jobs.models import (
     DailyReport,
     DailyReportTask,
@@ -104,11 +105,29 @@ class JobApplicationService:
 
         # Create attachments
         attachments = attachments or []
-        for attachment_file in attachments:
+        for attachment_data in attachments:
+            # Handle new indexed format (dict with file, file_type, thumbnail, duration)
+            if isinstance(attachment_data, dict):
+                file = attachment_data.get("file")
+                file_type = attachment_data.get("file_type", "image")
+                thumbnail = attachment_data.get("thumbnail")
+                duration_seconds = attachment_data.get("duration_seconds")
+            else:
+                # Legacy: plain file object
+                file = attachment_data
+                content_type = getattr(file, "content_type", "")
+                file_type = get_file_type_from_mime(content_type) or "image"
+                thumbnail = None
+                duration_seconds = None
+
             JobApplicationAttachment.objects.create(
                 application=application,
-                file=attachment_file,
-                file_name=attachment_file.name,
+                file=file,
+                file_type=file_type,
+                file_name=getattr(file, "name", ""),
+                file_size=getattr(file, "size", 0),
+                thumbnail=thumbnail,
+                duration_seconds=duration_seconds,
             )
 
         # Create notification for homeowner
@@ -338,6 +357,7 @@ class JobApplicationService:
         negotiation_reasoning=None,
         materials_data=None,
         attachments=None,
+        attachments_to_remove=None,
     ) -> JobApplication:
         """
         Update a job application.
@@ -349,7 +369,8 @@ class JobApplicationService:
             estimated_total_price: Updated price (optional)
             negotiation_reasoning: Updated reasoning (optional)
             materials_data: Updated materials list (optional, replaces existing)
-            attachments: Updated attachments list (optional, replaces existing)
+            attachments: New attachments to add (optional)
+            attachments_to_remove: List of attachment public_ids to remove (optional)
 
         Returns:
             JobApplication: Updated application
@@ -397,16 +418,38 @@ class JobApplicationService:
                     description=material_data.get("description", ""),
                 )
 
-        # Update attachments if provided (replace all)
-        if attachments is not None:
-            # Delete existing attachments
-            application.attachments.all().delete()
-            # Create new attachments
-            for attachment_file in attachments:
+        # Remove attachments if specified
+        if attachments_to_remove:
+            JobApplicationAttachment.objects.filter(
+                application=application,
+                public_id__in=attachments_to_remove,
+            ).delete()
+
+        # Add new attachments
+        if attachments:
+            for attachment_data in attachments:
+                # Handle new indexed format (dict with file, file_type, thumbnail, duration)
+                if isinstance(attachment_data, dict):
+                    file = attachment_data.get("file")
+                    file_type = attachment_data.get("file_type", "image")
+                    thumbnail = attachment_data.get("thumbnail")
+                    duration_seconds = attachment_data.get("duration_seconds")
+                else:
+                    # Legacy: plain file object
+                    file = attachment_data
+                    content_type = getattr(file, "content_type", "")
+                    file_type = get_file_type_from_mime(content_type) or "image"
+                    thumbnail = None
+                    duration_seconds = None
+
                 JobApplicationAttachment.objects.create(
                     application=application,
-                    file=attachment_file,
-                    file_name=attachment_file.name,
+                    file=file,
+                    file_type=file_type,
+                    file_name=getattr(file, "name", ""),
+                    file_size=getattr(file, "size", 0),
+                    thumbnail=thumbnail,
+                    duration_seconds=duration_seconds,
                 )
 
         logger.info(f"Updated application {application.public_id}")
@@ -1279,11 +1322,29 @@ class ReimbursementService:
         )
 
         # Create attachments
-        for attachment_file in attachments:
+        for attachment_data in attachments:
+            # Handle new indexed format (dict with file, file_type, thumbnail, duration)
+            if isinstance(attachment_data, dict):
+                file = attachment_data.get("file")
+                file_type = attachment_data.get("file_type", "image")
+                thumbnail = attachment_data.get("thumbnail")
+                duration_seconds = attachment_data.get("duration_seconds")
+            else:
+                # Legacy: plain file object
+                file = attachment_data
+                content_type = getattr(file, "content_type", "")
+                file_type = get_file_type_from_mime(content_type) or "image"
+                thumbnail = None
+                duration_seconds = None
+
             JobReimbursementAttachment.objects.create(
                 reimbursement=reimbursement,
-                file=attachment_file,
-                file_name=attachment_file.name,
+                file=file,
+                file_type=file_type,
+                file_name=getattr(file, "name", ""),
+                file_size=getattr(file, "size", 0),
+                thumbnail=thumbnail,
+                duration_seconds=duration_seconds,
             )
 
         # Send notification to homeowner
@@ -1411,11 +1472,29 @@ class ReimbursementService:
 
         # Add new attachments
         if attachments:
-            for attachment_file in attachments:
+            for attachment_data in attachments:
+                # Handle new indexed format (dict with file, file_type, thumbnail, duration)
+                if isinstance(attachment_data, dict):
+                    file = attachment_data.get("file")
+                    file_type = attachment_data.get("file_type", "image")
+                    thumbnail = attachment_data.get("thumbnail")
+                    duration_seconds = attachment_data.get("duration_seconds")
+                else:
+                    # Legacy: plain file object
+                    file = attachment_data
+                    content_type = getattr(file, "content_type", "")
+                    file_type = get_file_type_from_mime(content_type) or "image"
+                    thumbnail = None
+                    duration_seconds = None
+
                 JobReimbursementAttachment.objects.create(
                     reimbursement=reimbursement,
-                    file=attachment_file,
-                    file_name=attachment_file.name,
+                    file=file,
+                    file_type=file_type,
+                    file_name=getattr(file, "name", ""),
+                    file_size=getattr(file, "size", 0),
+                    thumbnail=thumbnail,
+                    duration_seconds=duration_seconds,
                 )
 
         # Ensure at least one attachment remains

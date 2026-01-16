@@ -4,7 +4,13 @@ from decimal import Decimal
 from django.db import transaction
 from rest_framework import serializers
 
+from apps.common.constants import (
+    MAX_JOB_APPLICATION_ATTACHMENTS,
+    MAX_JOB_ATTACHMENTS,
+    MAX_REIMBURSEMENT_ATTACHMENTS,
+)
 from apps.common.serializers import (
+    AttachmentInputSerializer,
     create_list_response_serializer,
     create_response_serializer,
 )
@@ -18,9 +24,9 @@ from apps.jobs.models import (
     JobApplication,
     JobApplicationAttachment,
     JobApplicationMaterial,
+    JobAttachment,
     JobCategory,
     JobDispute,
-    JobImage,
     JobTask,
     Review,
     WorkSession,
@@ -68,17 +74,37 @@ class JobTaskSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class JobImageSerializer(serializers.ModelSerializer):
+class JobAttachmentSerializer(serializers.ModelSerializer):
     """
-    Serializer for job image (read-only).
+    Serializer for job attachments (images/videos) - read-only.
     """
 
-    image = serializers.ImageField(use_url=True)
+    file_url = serializers.SerializerMethodField(help_text="Full URL of the file")
+    thumbnail_url = serializers.SerializerMethodField(
+        help_text="Thumbnail URL (video thumbnail or image itself)"
+    )
 
     class Meta:
-        model = JobImage
-        fields = ["public_id", "image", "order"]
+        model = JobAttachment
+        fields = [
+            "public_id",
+            "file_url",
+            "file_type",
+            "file_name",
+            "file_size",
+            "thumbnail_url",
+            "duration_seconds",
+            "order",
+        ]
         read_only_fields = fields
+
+    def get_file_url(self, obj):
+        """Get the full file URL."""
+        return obj.file_url
+
+    def get_thumbnail_url(self, obj):
+        """Get the thumbnail URL."""
+        return obj.thumbnail_url
 
 
 class JobTaskListSerializer(serializers.ModelSerializer):
@@ -163,7 +189,7 @@ class JobListSerializer(serializers.ModelSerializer):
 
     category = JobCategorySerializer(read_only=True)
     city = CitySerializer(read_only=True)
-    images = JobImageSerializer(many=True, read_only=True)
+    attachments = JobAttachmentSerializer(many=True, read_only=True)
     estimated_budget = serializers.DecimalField(
         max_digits=10, decimal_places=2, coerce_to_string=False
     )
@@ -191,7 +217,7 @@ class JobListSerializer(serializers.ModelSerializer):
             "status",
             "status_at",
             "tasks",
-            "images",
+            "attachments",
             "applicant_count",
             "homeowner",
             "created_at",
@@ -460,12 +486,12 @@ class JobCreateSerializer(serializers.Serializer):
         required=False,
         help_text="Job status (default: draft)",
     )
-    images = serializers.ListField(
-        child=serializers.ImageField(use_url=True),
+    attachments = AttachmentInputSerializer(
+        many=True,
         required=False,
-        allow_empty=True,
-        max_length=10,
-        help_text="Job images (max 10 files, each max 5MB, JPEG/PNG only)",
+        help_text=f"Job attachments (max {MAX_JOB_ATTACHMENTS} files). "
+        "Use indexed format: attachments[0].file, attachments[0].thumbnail, "
+        "attachments[0].duration_seconds. For videos, thumbnail and duration_seconds are required.",
     )
     tasks = serializers.ListField(
         child=JobTaskInputSerializer(),
@@ -501,28 +527,15 @@ class JobCreateSerializer(serializers.Serializer):
         except City.DoesNotExist:
             raise serializers.ValidationError("Invalid city.")
 
-    def validate_images(self, value):
-        """Validate images."""
-        if value and len(value) > 10:
-            raise serializers.ValidationError("Maximum 10 images allowed.")
+    def validate_attachments(self, value):
+        """Validate attachments list count."""
+        if not value:
+            return []
 
-        # Validate each image
-        for image in value:
-            # Check file size (max 5MB)
-            if image.size > 5 * 1024 * 1024:
-                raise serializers.ValidationError(
-                    f"Image '{image.name}' exceeds maximum size of 5MB."
-                )
-
-            # Check file type
-            allowed_types = ["image/jpeg", "image/jpg", "image/png"]
-            if (
-                hasattr(image, "content_type")
-                and image.content_type not in allowed_types
-            ):
-                raise serializers.ValidationError(
-                    f"Image '{image.name}' must be a JPEG or PNG file."
-                )
+        if len(value) > MAX_JOB_ATTACHMENTS:
+            raise serializers.ValidationError(
+                f"Maximum {MAX_JOB_ATTACHMENTS} attachments allowed."
+            )
 
         return value
 
@@ -586,17 +599,17 @@ class JobCreateSerializer(serializers.Serializer):
         return attrs
 
     def create(self, validated_data):
-        """Create job with images and tasks."""
+        """Create job with attachments and tasks."""
         # Extract category and city (already validated)
         category = validated_data.pop("category_id")
         city = validated_data.pop("city_id")
-        images = validated_data.pop("images", [])
+        attachments = validated_data.pop("attachments", [])
         tasks = validated_data.pop("tasks", [])
 
         # Get homeowner from context
         homeowner = self.context["request"].user
 
-        # Create job, images, and tasks in a transaction
+        # Create job, attachments, and tasks in a transaction
         with transaction.atomic():
             job = Job.objects.create(
                 homeowner=homeowner,
@@ -605,9 +618,19 @@ class JobCreateSerializer(serializers.Serializer):
                 **validated_data,
             )
 
-            # Create job images
-            for idx, image_file in enumerate(images):
-                JobImage.objects.create(job=job, image=image_file, order=idx)
+            # Create job attachments with new indexed format
+            for idx, attachment_data in enumerate(attachments):
+                file = attachment_data["file"]
+                JobAttachment.objects.create(
+                    job=job,
+                    file=file,
+                    file_type=attachment_data["file_type"],
+                    file_name=getattr(file, "name", ""),
+                    file_size=getattr(file, "size", 0),
+                    thumbnail=attachment_data.get("thumbnail"),
+                    duration_seconds=attachment_data.get("duration_seconds"),
+                    order=idx,
+                )
 
             # Create job tasks
             for idx, task_data in enumerate(tasks):
@@ -694,18 +717,18 @@ class JobUpdateSerializer(serializers.Serializer):
         help_text=f"List of tasks (max {MAX_JOB_ITEMS}). Supports create/update/delete operations.",
     )
 
-    images = serializers.ListField(
-        child=serializers.ImageField(use_url=True),
+    attachments = AttachmentInputSerializer(
+        many=True,
         required=False,
-        allow_empty=True,
-        max_length=10,
-        help_text="New images to add (max 10 total images allowed)",
+        help_text=f"New attachments to add (max {MAX_JOB_ATTACHMENTS} total). "
+        "Use indexed format: attachments[0].file, attachments[0].thumbnail, "
+        "attachments[0].duration_seconds. For videos, thumbnail and duration_seconds are required.",
     )
-    images_to_remove = serializers.ListField(
+    attachments_to_remove = serializers.ListField(
         child=serializers.UUIDField(),
         required=False,
         allow_empty=True,
-        help_text="List of image public_ids to remove",
+        help_text="List of attachment public_ids to remove",
     )
 
     def validate_estimated_budget(self, value):
@@ -832,25 +855,10 @@ class JobUpdateSerializer(serializers.Serializer):
 
         return cleaned_tasks
 
-    def validate_images(self, value):
-        """Validate images."""
-        # Validate each image
-        for image in value:
-            # Check file size (max 5MB)
-            if image.size > 5 * 1024 * 1024:
-                raise serializers.ValidationError(
-                    f"Image '{image.name}' exceeds maximum size of 5MB."
-                )
-
-            # Check file type
-            allowed_types = ["image/jpeg", "image/jpg", "image/png"]
-            if (
-                hasattr(image, "content_type")
-                and image.content_type not in allowed_types
-            ):
-                raise serializers.ValidationError(
-                    f"Image '{image.name}' must be a JPEG or PNG file."
-                )
+    def validate_attachments(self, value):
+        """Validate attachments list count."""
+        if not value:
+            return []
 
         return value
 
@@ -888,31 +896,32 @@ class JobUpdateSerializer(serializers.Serializer):
                         {"longitude": "Longitude must be between -180 and 180."}
                     )
 
-        # Validate total image count after add/remove
-        images = attrs.get("images", [])
-        images_to_remove = attrs.get("images_to_remove", [])
+        # Validate total attachment count after add/remove
+        attachments = attrs.get("attachments", [])
+        attachments_to_remove = attrs.get("attachments_to_remove", [])
 
-        if images or images_to_remove:
-            current_count = instance.images.count() if instance else 0
+        if attachments or attachments_to_remove:
+            current_count = instance.attachments.count() if instance else 0
             removed_count = (
-                instance.images.filter(public_id__in=images_to_remove).count()
-                if instance and images_to_remove
+                instance.attachments.filter(public_id__in=attachments_to_remove).count()
+                if instance and attachments_to_remove
                 else 0
             )
-            new_total = current_count - removed_count + len(images)
+            new_total = current_count - removed_count + len(attachments)
 
-            if new_total > 10:
+            if new_total > MAX_JOB_ATTACHMENTS:
                 raise serializers.ValidationError(
                     {
-                        "images": f"Maximum 10 images allowed. You have {current_count} images, "
-                        f"removing {removed_count}, adding {len(images)} would result in {new_total}."
+                        "attachments": f"Maximum {MAX_JOB_ATTACHMENTS} attachments allowed. "
+                        f"You have {current_count} attachments, "
+                        f"removing {removed_count}, adding {len(attachments)} would result in {new_total}."
                     }
                 )
 
         return attrs
 
     def update(self, instance, validated_data):
-        """Update job fields, images, and tasks."""
+        """Update job fields, attachments, and tasks."""
         # Handle category if provided
         if "category_id" in validated_data:
             instance.category = validated_data.pop("category_id")
@@ -921,37 +930,45 @@ class JobUpdateSerializer(serializers.Serializer):
         if "city_id" in validated_data:
             instance.city = validated_data.pop("city_id")
 
-        # Handle images
-        images = validated_data.pop("images", [])
-        images_to_remove = validated_data.pop("images_to_remove", [])
+        # Handle attachments
+        attachments = validated_data.pop("attachments", [])
+        attachments_to_remove = validated_data.pop("attachments_to_remove", [])
 
         # Handle tasks (replace all if provided)
         tasks = validated_data.pop("tasks", None)
 
         # Wrap all operations in a transaction for data integrity
         with transaction.atomic():
-            # Delete removed images
-            if images_to_remove:
-                JobImage.objects.filter(
-                    job=instance, public_id__in=images_to_remove
+            # Delete removed attachments
+            if attachments_to_remove:
+                JobAttachment.objects.filter(
+                    job=instance, public_id__in=attachments_to_remove
                 ).delete()
 
-            # Add new images
-            if images:
+            # Add new attachments with new indexed format
+            if attachments:
                 from django.db.models import Max
 
                 # Calculate start order
                 current_max_order = (
-                    instance.images.aggregate(Max("order"))["order__max"]
-                    if instance.images.exists()
+                    instance.attachments.aggregate(Max("order"))["order__max"]
+                    if instance.attachments.exists()
                     else -1
                 )
 
                 start_order = current_max_order + 1
 
-                for idx, image_file in enumerate(images):
-                    JobImage.objects.create(
-                        job=instance, image=image_file, order=start_order + idx
+                for idx, attachment_data in enumerate(attachments):
+                    file = attachment_data["file"]
+                    JobAttachment.objects.create(
+                        job=instance,
+                        file=file,
+                        file_type=attachment_data["file_type"],
+                        file_name=getattr(file, "name", ""),
+                        file_size=getattr(file, "size", 0),
+                        thumbnail=attachment_data.get("thumbnail"),
+                        duration_seconds=attachment_data.get("duration_seconds"),
+                        order=start_order + idx,
                     )
 
             # Handle tasks with proper CRUD operations
@@ -1083,17 +1100,32 @@ class JobApplicationAttachmentSerializer(serializers.ModelSerializer):
     Serializer for job application attachment (read-only).
     """
 
-    file = serializers.FileField(use_url=True)
+    file_url = serializers.SerializerMethodField(help_text="Full URL of the file")
+    thumbnail_url = serializers.SerializerMethodField(
+        help_text="Thumbnail URL (video thumbnail or image itself)"
+    )
 
     class Meta:
         model = JobApplicationAttachment
         fields = [
             "public_id",
-            "file",
+            "file_url",
+            "file_type",
             "file_name",
+            "file_size",
+            "thumbnail_url",
+            "duration_seconds",
             "created_at",
         ]
         read_only_fields = fields
+
+    def get_file_url(self, obj):
+        """Get the full file URL."""
+        return obj.file_url
+
+    def get_thumbnail_url(self, obj):
+        """Get the thumbnail URL."""
+        return obj.thumbnail_url
 
 
 class JobApplicationMaterialInputSerializer(serializers.Serializer):
@@ -1169,10 +1201,12 @@ class JobApplicationCreateSerializer(serializers.Serializer):
     )
     negotiation_reasoning = serializers.CharField(required=False, allow_blank=True)
     materials = JobApplicationMaterialInputSerializer(many=True, required=False)
-    attachments = serializers.ListField(
-        child=serializers.FileField(allow_empty_file=False),
+    attachments = AttachmentInputSerializer(
+        many=True,
         required=False,
-        allow_empty=True,
+        help_text="Attachments for the application. "
+        "Use indexed format: attachments[0].file, attachments[0].thumbnail, "
+        "attachments[0].duration_seconds. For videos, thumbnail and duration_seconds are required.",
     )
 
     def validate_job_id(self, value):
@@ -1200,6 +1234,16 @@ class JobApplicationCreateSerializer(serializers.Serializer):
         if value <= 0:
             raise serializers.ValidationError(
                 "Estimated total price must be greater than 0."
+            )
+        return value
+
+    def validate_attachments(self, value):
+        """
+        Validate attachment count does not exceed the limit.
+        """
+        if value and len(value) > MAX_JOB_APPLICATION_ATTACHMENTS:
+            raise serializers.ValidationError(
+                f"Cannot upload more than {MAX_JOB_APPLICATION_ATTACHMENTS} attachments."
             )
         return value
 
@@ -1244,10 +1288,18 @@ class JobApplicationUpdateSerializer(serializers.Serializer):
     )
     negotiation_reasoning = serializers.CharField(required=False, allow_blank=True)
     materials = JobApplicationMaterialInputSerializer(many=True, required=False)
-    attachments = serializers.ListField(
-        child=serializers.FileField(allow_empty_file=False),
+    attachments = AttachmentInputSerializer(
+        many=True,
+        required=False,
+        help_text="New attachments to add to the application. "
+        "Use indexed format: attachments[0].file, attachments[0].thumbnail, "
+        "attachments[0].duration_seconds. For videos, thumbnail and duration_seconds are required.",
+    )
+    attachments_to_remove = serializers.ListField(
+        child=serializers.UUIDField(),
         required=False,
         allow_empty=True,
+        help_text="List of attachment public_ids to remove",
     )
 
     def validate_predicted_hours(self, value):
@@ -1268,6 +1320,37 @@ class JobApplicationUpdateSerializer(serializers.Serializer):
             )
         return value
 
+    def validate(self, data):
+        """
+        Validate total attachment count after add/remove operations.
+        """
+        instance = self.instance
+        if instance:
+            # Calculate final attachment count
+            current_count = instance.attachments.count()
+            to_remove = data.get("attachments_to_remove", [])
+            to_add = data.get("attachments", [])
+
+            # Only count valid removals (attachments that actually belong to this app)
+            valid_removals = instance.attachments.filter(
+                public_id__in=to_remove
+            ).count()
+
+            final_count = current_count - valid_removals + len(to_add)
+            if final_count > MAX_JOB_APPLICATION_ATTACHMENTS:
+                raise serializers.ValidationError(
+                    {
+                        "attachments": (
+                            f"Total attachments would exceed the limit of "
+                            f"{MAX_JOB_APPLICATION_ATTACHMENTS}. "
+                            f"Current: {current_count}, "
+                            f"removing: {valid_removals}, "
+                            f"adding: {len(to_add)}."
+                        )
+                    }
+                )
+        return data
+
     def update(self, instance, validated_data):
         """
         Update job application using the service.
@@ -1280,6 +1363,7 @@ class JobApplicationUpdateSerializer(serializers.Serializer):
         negotiation_reasoning = validated_data.get("negotiation_reasoning")
         materials_data = validated_data.get("materials")
         attachments = validated_data.get("attachments")
+        attachments_to_remove = validated_data.get("attachments_to_remove")
 
         application = job_application_service.update_application(
             handyman=handyman,
@@ -1289,6 +1373,7 @@ class JobApplicationUpdateSerializer(serializers.Serializer):
             negotiation_reasoning=negotiation_reasoning,
             materials_data=materials_data,
             attachments=attachments,
+            attachments_to_remove=attachments_to_remove,
         )
         return application
 
@@ -2379,14 +2464,34 @@ class JobReimbursementCategorySerializer(serializers.ModelSerializer):
 class JobReimbursementAttachmentSerializer(serializers.ModelSerializer):
     """Serializer for reimbursement attachment (read-only)."""
 
-    file = serializers.FileField(use_url=True)
+    file_url = serializers.SerializerMethodField(help_text="Full URL of the file")
+    thumbnail_url = serializers.SerializerMethodField(
+        help_text="Thumbnail URL (video thumbnail or image itself)"
+    )
 
     class Meta:
         from apps.jobs.models import JobReimbursementAttachment
 
         model = JobReimbursementAttachment
-        fields = ["public_id", "file", "file_name", "created_at"]
+        fields = [
+            "public_id",
+            "file_url",
+            "file_type",
+            "file_name",
+            "file_size",
+            "thumbnail_url",
+            "duration_seconds",
+            "created_at",
+        ]
         read_only_fields = fields
+
+    def get_file_url(self, obj):
+        """Get the full file URL."""
+        return obj.file_url
+
+    def get_thumbnail_url(self, obj):
+        """Get the thumbnail URL."""
+        return obj.thumbnail_url
 
 
 class JobReimbursementSerializer(serializers.ModelSerializer):
@@ -2424,11 +2529,22 @@ class JobReimbursementCreateSerializer(serializers.Serializer):
     category_id = serializers.UUIDField(help_text="Category public_id")
     amount = serializers.DecimalField(max_digits=10, decimal_places=2)
     notes = serializers.CharField(required=False, allow_blank=True, default="")
-    attachments = serializers.ListField(
-        child=serializers.FileField(allow_empty_file=False),
-        min_length=1,
-        help_text="At least one attachment required",
+    attachments = AttachmentInputSerializer(
+        many=True,
+        help_text="At least one attachment required. "
+        "Use indexed format: attachments[0].file, attachments[0].thumbnail, "
+        "attachments[0].duration_seconds. For videos, thumbnail and duration_seconds are required.",
     )
+
+    def validate_attachments(self, value):
+        """Ensure at least one attachment is provided and doesn't exceed limit."""
+        if not value or len(value) == 0:
+            raise serializers.ValidationError("At least one attachment is required.")
+        if len(value) > MAX_REIMBURSEMENT_ATTACHMENTS:
+            raise serializers.ValidationError(
+                f"Cannot upload more than {MAX_REIMBURSEMENT_ATTACHMENTS} attachments."
+            )
+        return value
 
     def validate_category_id(self, value):
         """Validate category exists and is active."""
@@ -2455,10 +2571,12 @@ class JobReimbursementUpdateSerializer(serializers.Serializer):
     category_id = serializers.UUIDField(required=False, help_text="Category public_id")
     amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     notes = serializers.CharField(required=False, allow_blank=True)
-    attachments = serializers.ListField(
-        child=serializers.FileField(allow_empty_file=False),
+    attachments = AttachmentInputSerializer(
+        many=True,
         required=False,
-        help_text="New attachments to add (existing ones are preserved)",
+        help_text="New attachments to add (existing ones are preserved). "
+        "Use indexed format: attachments[0].file, attachments[0].thumbnail, "
+        "attachments[0].duration_seconds. For videos, thumbnail and duration_seconds are required.",
     )
     attachments_to_remove = serializers.ListField(
         child=serializers.UUIDField(),
@@ -2482,6 +2600,46 @@ class JobReimbursementUpdateSerializer(serializers.Serializer):
         if value is not None and value <= 0:
             raise serializers.ValidationError("Amount must be greater than 0.")
         return value
+
+    def validate(self, data):
+        """
+        Validate total attachment count after add/remove operations.
+        Also ensure at least one attachment remains.
+        """
+        instance = self.instance
+        if instance:
+            # Calculate final attachment count
+            current_count = instance.attachments.count()
+            to_remove = data.get("attachments_to_remove", [])
+            to_add = data.get("attachments", [])
+
+            # Only count valid removals (attachments that actually belong to this reimbursement)
+            valid_removals = instance.attachments.filter(
+                public_id__in=to_remove
+            ).count()
+
+            final_count = current_count - valid_removals + len(to_add)
+
+            # Check minimum (at least one attachment required)
+            if final_count < 1:
+                raise serializers.ValidationError(
+                    {"attachments": "At least one attachment is required."}
+                )
+
+            # Check maximum
+            if final_count > MAX_REIMBURSEMENT_ATTACHMENTS:
+                raise serializers.ValidationError(
+                    {
+                        "attachments": (
+                            f"Total attachments would exceed the limit of "
+                            f"{MAX_REIMBURSEMENT_ATTACHMENTS}. "
+                            f"Current: {current_count}, "
+                            f"removing: {valid_removals}, "
+                            f"adding: {len(to_add)}."
+                        )
+                    }
+                )
+        return data
 
 
 class JobReimbursementReviewSerializer(serializers.Serializer):

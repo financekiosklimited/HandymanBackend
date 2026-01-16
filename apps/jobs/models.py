@@ -232,28 +232,65 @@ class JobTask(BaseModel):
         return f"{status} {self.title}"
 
 
-class JobImage(BaseModel):
+class JobAttachment(BaseModel):
     """
-    Job image model for storing multiple images per job.
+    Job attachment model for storing images and videos per job.
+    Supports both image and video uploads with metadata.
     """
 
-    job = models.ForeignKey("Job", on_delete=models.CASCADE, related_name="images")
-    image = models.ImageField(upload_to="jobs/images/%Y/%m/%d/")
+    FILE_TYPE_CHOICES = [
+        ("image", "Image"),
+        ("video", "Video"),
+    ]
+
+    job = models.ForeignKey("Job", on_delete=models.CASCADE, related_name="attachments")
+    file = models.FileField(upload_to="jobs/attachments/%Y/%m/%d/")
+    file_type = models.CharField(max_length=10, choices=FILE_TYPE_CHOICES)
+    file_name = models.CharField(max_length=255, help_text="Original file name")
+    file_size = models.PositiveIntegerField(help_text="File size in bytes")
+    thumbnail = models.ImageField(
+        upload_to="jobs/thumbnails/%Y/%m/%d/",
+        null=True,
+        blank=True,
+        help_text="Thumbnail for video attachments",
+    )
+    duration_seconds = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Duration in seconds for video attachments",
+    )
     order = models.PositiveIntegerField(default=0)
 
     class Meta:
-        db_table = "job_images"
+        db_table = "job_attachments"
         ordering = ["order", "created_at"]
-        verbose_name = "Job Image"
-        verbose_name_plural = "Job Images"
-        unique_together = [["job", "order"]]
+        verbose_name = "Job Attachment"
+        verbose_name_plural = "Job Attachments"
         indexes = [
             models.Index(fields=["job"]),
             models.Index(fields=["order"]),
+            models.Index(fields=["file_type"]),
         ]
 
     def __str__(self):
-        return f"Image {self.order} for {self.job.title}"
+        return f"{self.file_type.title()} {self.order} for {self.job.title}"
+
+    @property
+    def file_url(self):
+        """Return the full URL of the file."""
+        if self.file:
+            return self.file.url
+        return None
+
+    @property
+    def thumbnail_url(self):
+        """Return the full URL of the thumbnail."""
+        if self.thumbnail:
+            return self.thumbnail.url
+        # For images, use the file itself as thumbnail
+        if self.file_type == "image" and self.file:
+            return self.file.url
+        return None
 
 
 class WorkSession(BaseModel):
@@ -643,7 +680,14 @@ class JobApplicationMaterial(BaseModel):
 class JobApplicationAttachment(BaseModel):
     """
     Attachment files for a job application.
+    Supports image, video, and document uploads.
     """
+
+    FILE_TYPE_CHOICES = [
+        ("image", "Image"),
+        ("video", "Video"),
+        ("document", "Document"),
+    ]
 
     application = models.ForeignKey(
         "JobApplication",
@@ -651,7 +695,22 @@ class JobApplicationAttachment(BaseModel):
         related_name="attachments",
     )
     file = models.FileField(upload_to="job-applications/attachments/%Y/%m/%d/")
+    file_type = models.CharField(
+        max_length=10, choices=FILE_TYPE_CHOICES, default="image"
+    )
     file_name = models.CharField(max_length=255, help_text="Original file name")
+    file_size = models.PositiveIntegerField(default=0, help_text="File size in bytes")
+    thumbnail = models.ImageField(
+        upload_to="job-applications/thumbnails/%Y/%m/%d/",
+        null=True,
+        blank=True,
+        help_text="Thumbnail for video attachments",
+    )
+    duration_seconds = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Duration in seconds for video attachments",
+    )
 
     class Meta:
         db_table = "job_application_attachments"
@@ -660,10 +719,27 @@ class JobApplicationAttachment(BaseModel):
         verbose_name_plural = "Job Application Attachments"
         indexes = [
             models.Index(fields=["application"]),
+            models.Index(fields=["file_type"]),
         ]
 
     def __str__(self):
         return f"{self.file_name} for {self.application}"
+
+    @property
+    def file_url(self):
+        """Return the full URL of the file."""
+        if self.file:
+            return self.file.url
+        return None
+
+    @property
+    def thumbnail_url(self):
+        """Return the full URL of the thumbnail."""
+        if self.thumbnail:
+            return self.thumbnail.url
+        if self.file_type == "image" and self.file:
+            return self.file.url
+        return None
 
 
 class Review(BaseModel):
@@ -809,7 +885,14 @@ class JobReimbursement(BaseModel):
 class JobReimbursementAttachment(BaseModel):
     """
     Attachment files for a job reimbursement.
+    Supports image, video, and document uploads (receipts, proof of purchase, etc).
     """
+
+    FILE_TYPE_CHOICES = [
+        ("image", "Image"),
+        ("video", "Video"),
+        ("document", "Document"),
+    ]
 
     reimbursement = models.ForeignKey(
         "JobReimbursement",
@@ -817,7 +900,22 @@ class JobReimbursementAttachment(BaseModel):
         related_name="attachments",
     )
     file = models.FileField(upload_to="reimbursements/attachments/%Y/%m/%d/")
+    file_type = models.CharField(
+        max_length=10, choices=FILE_TYPE_CHOICES, default="image"
+    )
     file_name = models.CharField(max_length=255, help_text="Original file name")
+    file_size = models.PositiveIntegerField(default=0, help_text="File size in bytes")
+    thumbnail = models.ImageField(
+        upload_to="reimbursements/thumbnails/%Y/%m/%d/",
+        null=True,
+        blank=True,
+        help_text="Thumbnail for video attachments",
+    )
+    duration_seconds = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Duration in seconds for video attachments",
+    )
 
     class Meta:
         db_table = "job_reimbursement_attachments"
@@ -826,7 +924,24 @@ class JobReimbursementAttachment(BaseModel):
         verbose_name_plural = "Job Reimbursement Attachments"
         indexes = [
             models.Index(fields=["reimbursement"]),
+            models.Index(fields=["file_type"]),
         ]
 
     def __str__(self):
         return f"{self.file_name} for {self.reimbursement}"
+
+    @property
+    def file_url(self):
+        """Return the full URL of the file."""
+        if self.file:
+            return self.file.url
+        return None
+
+    @property
+    def thumbnail_url(self):
+        """Return the full URL of the thumbnail."""
+        if self.thumbnail:
+            return self.thumbnail.url
+        if self.file_type == "image" and self.file:
+            return self.file.url
+        return None

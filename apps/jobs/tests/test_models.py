@@ -1,18 +1,21 @@
 from datetime import timedelta
 from decimal import Decimal
+from io import BytesIO
 
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
 from django.test import TestCase
 from django.utils import timezone
+from PIL import Image as PILImage
 
 from apps.accounts.models import User, UserRole
 from apps.jobs.models import (
     City,
     Job,
     JobApplication,
+    JobAttachment,
     JobCategory,
-    JobImage,
     JobTask,
     Review,
     WorkSession,
@@ -428,8 +431,8 @@ class JobModelTests(TestCase):
         self.assertNotEqual(job.status_at, original_status_at)
 
 
-class JobImageModelTests(TestCase):
-    """Test cases for JobImage model."""
+class JobAttachmentModelTests(TestCase):
+    """Test cases for JobAttachment model."""
 
     def setUp(self):
         """Set up test data."""
@@ -457,28 +460,117 @@ class JobImageModelTests(TestCase):
             address="123 Main St",
         )
 
-    def test_job_image_string_representation(self):
-        """Test job image string representation."""
-        image = JobImage.objects.create(job=self.job, order=0)
-        self.assertEqual(str(image), "Image 0 for Test")
+    def _create_image_file(self, name="test.jpg"):
+        image_io = BytesIO()
+        pil_image = PILImage.new("RGB", (100, 100), color="red")
+        pil_image.save(image_io, format="JPEG")
+        image_io.seek(0)
+        return SimpleUploadedFile(name, image_io.getvalue(), content_type="image/jpeg")
 
-    def test_job_image_cascade_delete(self):
-        """Test job image is deleted when job is deleted."""
-        image = JobImage.objects.create(job=self.job, order=0)
-        image_id = image.id
+    def test_job_attachment_string_representation(self):
+        """Test job attachment string representation."""
+        image_file = self._create_image_file()
+        attachment = JobAttachment.objects.create(
+            job=self.job,
+            file=image_file,
+            file_type="image",
+            file_name=image_file.name,
+            file_size=image_file.size,
+            order=0,
+        )
+        self.assertEqual(str(attachment), "Image 0 for Test")
+
+    def test_job_attachment_cascade_delete(self):
+        """Test job attachment is deleted when job is deleted."""
+        image_file = self._create_image_file()
+        attachment = JobAttachment.objects.create(
+            job=self.job,
+            file=image_file,
+            file_type="image",
+            file_name=image_file.name,
+            file_size=image_file.size,
+            order=0,
+        )
+        attachment_id = attachment.id
         self.job.delete()
-        self.assertFalse(JobImage.objects.filter(id=image_id).exists())
+        self.assertFalse(JobAttachment.objects.filter(id=attachment_id).exists())
 
-    def test_job_image_ordering(self):
-        """Test job images are ordered by order and created_at."""
-        image2 = JobImage.objects.create(job=self.job, order=2)
-        image1 = JobImage.objects.create(job=self.job, order=1)
-        image0 = JobImage.objects.create(job=self.job, order=0)
+    def test_job_attachment_ordering(self):
+        """Test job attachments are ordered by order and created_at."""
+        image_file2 = self._create_image_file(name="test2.jpg")
+        image_file1 = self._create_image_file(name="test1.jpg")
+        image_file0 = self._create_image_file(name="test0.jpg")
+        attachment2 = JobAttachment.objects.create(
+            job=self.job,
+            file=image_file2,
+            file_type="image",
+            file_name=image_file2.name,
+            file_size=image_file2.size,
+            order=2,
+        )
+        attachment1 = JobAttachment.objects.create(
+            job=self.job,
+            file=image_file1,
+            file_type="image",
+            file_name=image_file1.name,
+            file_size=image_file1.size,
+            order=1,
+        )
+        attachment0 = JobAttachment.objects.create(
+            job=self.job,
+            file=image_file0,
+            file_type="image",
+            file_name=image_file0.name,
+            file_size=image_file0.size,
+            order=0,
+        )
 
-        images = list(JobImage.objects.all())
-        self.assertEqual(images[0].id, image0.id)
-        self.assertEqual(images[1].id, image1.id)
-        self.assertEqual(images[2].id, image2.id)
+        attachments = list(JobAttachment.objects.all())
+        self.assertEqual(attachments[0].id, attachment0.id)
+        self.assertEqual(attachments[1].id, attachment1.id)
+        self.assertEqual(attachments[2].id, attachment2.id)
+
+    def test_job_attachment_file_url_none(self):
+        """Test file_url returns None when file missing."""
+        attachment = JobAttachment(
+            job=self.job,
+            file_type="image",
+            file_name="missing.jpg",
+            file_size=0,
+            order=0,
+        )
+        self.assertIsNone(attachment.file_url)
+
+    def test_job_attachment_thumbnail_url_with_thumbnail(self):
+        """Test thumbnail_url returns thumbnail when present."""
+        image_file = self._create_image_file(name="photo.jpg")
+        thumbnail_file = self._create_image_file(name="thumb.jpg")
+        attachment = JobAttachment.objects.create(
+            job=self.job,
+            file=image_file,
+            file_type="image",
+            file_name=image_file.name,
+            file_size=image_file.size,
+            order=0,
+        )
+        attachment.thumbnail.save("thumb.jpg", thumbnail_file, save=True)
+
+        self.assertIsNotNone(attachment.thumbnail_url)
+        self.assertIn("thumb", attachment.thumbnail_url)
+
+    def test_job_attachment_thumbnail_url_video_without_thumbnail(self):
+        """Test thumbnail_url returns None for videos without thumbnail."""
+        video_file = SimpleUploadedFile("clip.mp4", b"video", content_type="video/mp4")
+        attachment = JobAttachment.objects.create(
+            job=self.job,
+            file=video_file,
+            file_type="video",
+            file_name=video_file.name,
+            file_size=video_file.size,
+            order=0,
+        )
+
+        self.assertIsNone(attachment.thumbnail_url)
 
 
 class JobApplicationModelTests(TestCase):
@@ -1001,6 +1093,57 @@ class JobApplicationAttachmentModelTests(TestCase):
         expected = f"test.pdf for {self.application}"
         self.assertEqual(str(attachment), expected)
 
+    def test_attachment_file_url_none(self):
+        """Test file_url returns None when no file set."""
+        from apps.jobs.models import JobApplicationAttachment
+
+        attachment = JobApplicationAttachment(
+            application=self.application,
+            file_type="image",
+            file_name="missing.jpg",
+            file_size=0,
+        )
+        self.assertIsNone(attachment.file_url)
+
+    def test_attachment_thumbnail_url_with_thumbnail(self):
+        """Test thumbnail_url returns thumbnail when present."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.jobs.models import JobApplicationAttachment
+
+        file = SimpleUploadedFile(
+            "photo.jpg", b"file content", content_type="image/jpeg"
+        )
+        thumbnail = SimpleUploadedFile("thumb.jpg", b"thumb", content_type="image/jpeg")
+        attachment = JobApplicationAttachment.objects.create(
+            application=self.application,
+            file=file,
+            file_type="image",
+            file_name="photo.jpg",
+            file_size=file.size,
+        )
+        attachment.thumbnail.save("thumb.jpg", thumbnail, save=True)
+
+        self.assertIsNotNone(attachment.thumbnail_url)
+        self.assertIn("thumb", attachment.thumbnail_url)
+
+    def test_attachment_thumbnail_url_video_without_thumbnail(self):
+        """Test thumbnail_url returns None for video without thumbnail."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.jobs.models import JobApplicationAttachment
+
+        video_file = SimpleUploadedFile("clip.mp4", b"video", content_type="video/mp4")
+        attachment = JobApplicationAttachment.objects.create(
+            application=self.application,
+            file=video_file,
+            file_type="video",
+            file_name="clip.mp4",
+            file_size=video_file.size,
+        )
+
+        self.assertIsNone(attachment.thumbnail_url)
+
 
 class ReviewModelTests(TestCase):
     """Test cases for Review model."""
@@ -1411,3 +1554,56 @@ class JobReimbursementAttachmentModelTests(TestCase):
         self.assertFalse(
             JobReimbursementAttachment.objects.filter(id=attachment_id).exists()
         )
+
+    def test_attachment_file_url_none(self):
+        """Test file_url returns None when file missing."""
+        from apps.jobs.models import JobReimbursementAttachment
+
+        attachment = JobReimbursementAttachment(
+            reimbursement=self.reimbursement,
+            file_type="image",
+            file_name="missing.jpg",
+            file_size=0,
+        )
+        self.assertIsNone(attachment.file_url)
+
+    def test_attachment_thumbnail_url_with_thumbnail(self):
+        """Test thumbnail_url returns thumbnail when present."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.jobs.models import JobReimbursementAttachment
+
+        file = SimpleUploadedFile(
+            "receipt.jpg", b"file content", content_type="image/jpeg"
+        )
+        thumbnail = SimpleUploadedFile("thumb.jpg", b"thumb", content_type="image/jpeg")
+        attachment = JobReimbursementAttachment.objects.create(
+            reimbursement=self.reimbursement,
+            file=file,
+            file_type="image",
+            file_name="receipt.jpg",
+            file_size=file.size,
+        )
+        attachment.thumbnail.save("thumb.jpg", thumbnail, save=True)
+
+        self.assertIsNotNone(attachment.thumbnail_url)
+        self.assertIn("thumb", attachment.thumbnail_url)
+
+    def test_attachment_thumbnail_url_video_without_thumbnail(self):
+        """Test thumbnail_url returns None for video without thumbnail."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.jobs.models import JobReimbursementAttachment
+
+        video_file = SimpleUploadedFile(
+            "receipt.mp4", b"video", content_type="video/mp4"
+        )
+        attachment = JobReimbursementAttachment.objects.create(
+            reimbursement=self.reimbursement,
+            file=video_file,
+            file_type="video",
+            file_name="receipt.mp4",
+            file_size=video_file.size,
+        )
+
+        self.assertIsNone(attachment.thumbnail_url)

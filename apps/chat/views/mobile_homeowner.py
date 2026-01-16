@@ -39,6 +39,7 @@ from apps.common.responses import (
     success_response,
     validation_error_response,
 )
+from apps.common.serializers import normalize_attachments_payload
 
 
 def serialize_conversation_for_list(conversation, user_role):
@@ -456,7 +457,7 @@ class HomeownerConversationMessagesView(APIView):
                             "sender_role": "homeowner",
                             "message_type": "text",
                             "content": "Hi, when can you start?",
-                            "images": [],
+                            "attachments": [],
                             "is_read": True,
                             "read_at": "2026-01-08T10:05:00Z",
                             "created_at": "2026-01-08T10:00:00Z",
@@ -464,13 +465,17 @@ class HomeownerConversationMessagesView(APIView):
                         {
                             "public_id": "550e8400-e29b-41d4-a716-446655440011",
                             "sender_role": "handyman",
-                            "message_type": "text_with_image",
+                            "message_type": "text_with_attachment",
                             "content": "I can start tomorrow. Here's my work from a similar job.",
-                            "images": [
+                            "attachments": [
                                 {
                                     "public_id": "550e8400-e29b-41d4-a716-446655440020",
-                                    "image_url": "https://example.com/image.jpg",
+                                    "file_url": "https://example.com/image.jpg",
+                                    "file_type": "image",
+                                    "file_name": "image.jpg",
+                                    "file_size": 102400,
                                     "thumbnail_url": "https://example.com/thumb.jpg",
+                                    "duration_seconds": None,
                                     "order": 0,
                                 }
                             ],
@@ -535,7 +540,10 @@ class HomeownerConversationMessagesView(APIView):
         },
         description=(
             "Send a message in a conversation. "
-            "Can include text content and/or up to 5 images (max 10MB each). "
+            "Can include text content and/or up to 5 attachments. "
+            "Images: max 10MB. Videos: max 100MB (MP4/MOV/WebM, 5 min). "
+            "Use indexed multipart fields like attachments[0].file. "
+            "Video attachments require thumbnail and duration_seconds. "
             "Only allowed when conversation is active and job is in_progress. "
             "Requires homeowner role and phone verification."
         ),
@@ -548,6 +556,21 @@ class HomeownerConversationMessagesView(APIView):
                 request_only=True,
             ),
             OpenApiExample(
+                "Attachment Message Request",
+                value={
+                    "content": "Here are the photos and video",
+                    "attachments": [
+                        {"file": "photo.jpg"},
+                        {
+                            "file": "video.mp4",
+                            "thumbnail": "video_thumb.jpg",
+                            "duration_seconds": 45,
+                        },
+                    ],
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
                 "Success Response",
                 value={
                     "message": "Message sent successfully",
@@ -556,7 +579,7 @@ class HomeownerConversationMessagesView(APIView):
                         "sender_role": "homeowner",
                         "message_type": "text",
                         "content": "Hi, when can you start?",
-                        "images": [],
+                        "attachments": [],
                         "is_read": False,
                         "read_at": None,
                         "created_at": "2026-01-08T10:00:00Z",
@@ -584,7 +607,9 @@ class HomeownerConversationMessagesView(APIView):
         except ChatConversation.DoesNotExist:
             return not_found_response("Conversation not found")
 
-        serializer = SendMessageSerializer(data=request.data)
+        data = normalize_attachments_payload(request)
+
+        serializer = SendMessageSerializer(data=data)
         if not serializer.is_valid():
             return validation_error_response(serializer.errors)
 
@@ -594,7 +619,7 @@ class HomeownerConversationMessagesView(APIView):
                 sender=request.user,
                 sender_role="homeowner",
                 content=serializer.validated_data.get("content", ""),
-                images=serializer.validated_data.get("images", []),
+                attachments=serializer.validated_data.get("attachments", []),
             )
         except ValueError as e:
             return validation_error_response({"detail": str(e)}, message=str(e))

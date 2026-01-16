@@ -127,8 +127,8 @@ class ChatMessage(BaseModel):
 
     class MessageType(models.TextChoices):
         TEXT = "text", "Text"
-        IMAGE = "image", "Image"
-        TEXT_WITH_IMAGE = "text_with_image", "Text with Image"
+        ATTACHMENT = "attachment", "Attachment"
+        TEXT_WITH_ATTACHMENT = "text_with_attachment", "Text with Attachment"
 
     class SenderRole(models.TextChoices):
         HOMEOWNER = "homeowner", "Homeowner"
@@ -204,32 +204,66 @@ class ChatMessage(BaseModel):
         super().save(*args, **kwargs)
 
 
-class ChatMessageImage(BaseModel):
+class ChatMessageAttachment(BaseModel):
     """
-    Images attached to a chat message.
-    Maximum 5 images per message, 10MB each.
+    Attachments (images/videos) attached to a chat message.
+    Maximum 5 attachments per message.
+    Images: max 10MB, Videos: max 100MB, 5 min duration.
     """
+
+    FILE_TYPE_CHOICES = [
+        ("image", "Image"),
+        ("video", "Video"),
+    ]
 
     message = models.ForeignKey(
         ChatMessage,
         on_delete=models.CASCADE,
-        related_name="images",
+        related_name="attachments",
     )
-    image = models.ImageField(upload_to="chat/images/%Y/%m/")
+    file = models.FileField(upload_to="chat/attachments/%Y/%m/")
+    file_type = models.CharField(max_length=10, choices=FILE_TYPE_CHOICES)
+    file_name = models.CharField(max_length=255, help_text="Original file name")
+    file_size = models.PositiveIntegerField(help_text="File size in bytes")
     thumbnail = models.ImageField(
         upload_to="chat/thumbnails/%Y/%m/",
+        null=True,
         blank=True,
+        help_text="Thumbnail for video attachments",
+    )
+    duration_seconds = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Duration in seconds for video attachments",
     )
     order = models.PositiveSmallIntegerField(default=0)
 
     class Meta:
-        db_table = "chat_message_images"
+        db_table = "chat_message_attachments"
         ordering = ["order"]
-        verbose_name = "Chat Message Image"
-        verbose_name_plural = "Chat Message Images"
+        verbose_name = "Chat Message Attachment"
+        verbose_name_plural = "Chat Message Attachments"
         indexes = [
             models.Index(fields=["message"]),
+            models.Index(fields=["file_type"]),
         ]
 
     def __str__(self):
-        return f"Image {self.order} for message {self.message.public_id}"
+        return f"{self.file_type.title()} {self.order} for message {self.message.public_id}"
+
+    @property
+    def file_url(self):
+        """Return the full URL of the file."""
+        if self.file:
+            return self.file.url
+        return None
+
+    @property
+    def thumbnail_url(self):
+        """Return the full URL of the thumbnail."""
+        if self.thumbnail:
+            return self.thumbnail.url
+        # For images, use the file itself as thumbnail
+        if self.file_type == "image" and self.file:
+            return self.file.url
+        return None

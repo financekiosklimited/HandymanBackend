@@ -146,7 +146,7 @@ class HandymanJobBookmarkListCreateView(APIView):
                 "job__city",
                 "job__homeowner__homeowner_profile",
             )
-            .prefetch_related("job__images", "job__tasks")
+            .prefetch_related("job__attachments", "job__tasks")
         )
 
         # Get coordinates for distance calculation
@@ -282,7 +282,7 @@ class HandymanJobBookmarkListCreateView(APIView):
                     "job__city",
                     "job__homeowner__homeowner_profile",
                 )
-                .prefetch_related("job__images", "job__tasks")
+                .prefetch_related("job__attachments", "job__tasks")
                 .get(pk=bookmark.pk)
             )
             response_serializer = JobBookmarkSerializer(

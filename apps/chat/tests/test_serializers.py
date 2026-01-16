@@ -9,13 +9,13 @@ from django.test import TestCase
 from PIL import Image
 
 from apps.accounts.models import User
-from apps.chat.models import ChatConversation, ChatMessage, ChatMessageImage
-from apps.chat.serializers import ChatMessageImageSerializer
+from apps.chat.models import ChatConversation, ChatMessage, ChatMessageAttachment
+from apps.chat.serializers import ChatMessageAttachmentSerializer, SendMessageSerializer
 from apps.jobs.models import City, Job, JobCategory
 
 
-class ChatMessageImageSerializerTests(TestCase):
-    """Test cases for ChatMessageImageSerializer."""
+class ChatMessageAttachmentSerializerTests(TestCase):
+    """Test cases for ChatMessageAttachmentSerializer."""
 
     def setUp(self):
         """Set up test data."""
@@ -58,7 +58,7 @@ class ChatMessageImageSerializerTests(TestCase):
             conversation=self.conversation,
             sender=self.homeowner,
             sender_role=ChatMessage.SenderRole.HOMEOWNER,
-            message_type=ChatMessage.MessageType.IMAGE,
+            message_type=ChatMessage.MessageType.ATTACHMENT,
             content="",
         )
 
@@ -74,67 +74,138 @@ class ChatMessageImageSerializerTests(TestCase):
             content_type="image/jpeg",
         )
 
-    def test_get_image_url_with_image(self):
-        """Test get_image_url returns URL when image exists."""
-        chat_image = ChatMessageImage.objects.create(
-            message=self.message,
-            order=0,
-        )
-        # Save an actual image
+    def test_get_file_url_with_file(self):
+        """Test get_file_url returns URL when file exists."""
         test_image = self._create_test_image()
-        chat_image.image.save("test.jpg", test_image, save=True)
-
-        serializer = ChatMessageImageSerializer(chat_image)
-        self.assertIsNotNone(serializer.data["image_url"])
-        self.assertIn("test", serializer.data["image_url"])
-
-    def test_get_image_url_without_image(self):
-        """Test get_image_url returns None when no image."""
-        chat_image = ChatMessageImage.objects.create(
+        chat_attachment = ChatMessageAttachment.objects.create(
             message=self.message,
+            file=test_image,
+            file_type="image",
+            file_name=test_image.name,
+            file_size=test_image.size,
             order=0,
         )
-        # Don't save any image
 
-        serializer = ChatMessageImageSerializer(chat_image)
-        self.assertIsNone(serializer.data["image_url"])
+        serializer = ChatMessageAttachmentSerializer(chat_attachment)
+        self.assertIsNotNone(serializer.data["file_url"])
+        self.assertIn("test", serializer.data["file_url"])
+
+    def test_get_file_url_without_file(self):
+        """Test get_file_url returns None when no file."""
+        chat_attachment = ChatMessageAttachment(
+            message=self.message,
+            file_type="image",
+            file_name="missing.jpg",
+            file_size=0,
+            order=0,
+        )
+
+        serializer = ChatMessageAttachmentSerializer(chat_attachment)
+        self.assertIsNone(serializer.data["file_url"])
 
     def test_get_thumbnail_url_with_thumbnail(self):
         """Test get_thumbnail_url returns thumbnail URL when thumbnail exists."""
-        chat_image = ChatMessageImage.objects.create(
+        test_image = self._create_test_image()
+        chat_attachment = ChatMessageAttachment.objects.create(
             message=self.message,
+            file=test_image,
+            file_type="image",
+            file_name=test_image.name,
+            file_size=test_image.size,
             order=0,
         )
         # Save a thumbnail
-        test_image = self._create_test_image()
-        chat_image.thumbnail.save("thumb.jpg", test_image, save=True)
+        chat_attachment.thumbnail.save("thumb.jpg", test_image, save=True)
 
-        serializer = ChatMessageImageSerializer(chat_image)
+        serializer = ChatMessageAttachmentSerializer(chat_attachment)
         self.assertIsNotNone(serializer.data["thumbnail_url"])
         self.assertIn("thumb", serializer.data["thumbnail_url"])
 
-    def test_get_thumbnail_url_fallback_to_image(self):
-        """Test get_thumbnail_url returns image URL when no thumbnail."""
-        chat_image = ChatMessageImage.objects.create(
+    def test_get_thumbnail_url_fallback_to_file(self):
+        """Test get_thumbnail_url returns file URL when no thumbnail."""
+        test_image = self._create_test_image()
+        chat_attachment = ChatMessageAttachment.objects.create(
             message=self.message,
+            file=test_image,
+            file_type="image",
+            file_name=test_image.name,
+            file_size=test_image.size,
             order=0,
         )
-        # Save only the main image, no thumbnail
-        test_image = self._create_test_image()
-        chat_image.image.save("test.jpg", test_image, save=True)
 
-        serializer = ChatMessageImageSerializer(chat_image)
-        # Should fallback to image URL
+        serializer = ChatMessageAttachmentSerializer(chat_attachment)
+        # Should fallback to file URL for images
         self.assertIsNotNone(serializer.data["thumbnail_url"])
         self.assertIn("test", serializer.data["thumbnail_url"])
 
-    def test_get_thumbnail_url_without_image_or_thumbnail(self):
-        """Test get_thumbnail_url returns None when no image or thumbnail."""
-        chat_image = ChatMessageImage.objects.create(
+    def test_get_thumbnail_url_without_file_or_thumbnail(self):
+        """Test get_thumbnail_url returns None when no file or thumbnail."""
+        chat_attachment = ChatMessageAttachment(
             message=self.message,
+            file_type="image",
+            file_name="missing.jpg",
+            file_size=0,
             order=0,
         )
-        # Don't save any image or thumbnail
 
-        serializer = ChatMessageImageSerializer(chat_image)
+        serializer = ChatMessageAttachmentSerializer(chat_attachment)
         self.assertIsNone(serializer.data["thumbnail_url"])
+
+
+class SendMessageSerializerTests(TestCase):
+    """Test cases for SendMessageSerializer validation."""
+
+    def _create_test_image(self, name="test.jpg"):
+        img = Image.new("RGB", (100, 100), color="red")
+        buffer = BytesIO()
+        img.save(buffer, format="JPEG")
+        buffer.seek(0)
+        return SimpleUploadedFile(
+            name=name,
+            content=buffer.read(),
+            content_type="image/jpeg",
+        )
+
+    def test_validate_attachments_empty_list(self):
+        """Test empty attachments list returns empty list."""
+        serializer = SendMessageSerializer()
+        self.assertEqual(serializer.validate_attachments([]), [])
+
+    def test_validate_attachments_valid_file(self):
+        """Test valid attachment passes validation."""
+        image_file = self._create_test_image()
+        serializer = SendMessageSerializer(data={"attachments": [{"file": image_file}]})
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(len(serializer.validated_data["attachments"]), 1)
+        self.assertEqual(
+            serializer.validated_data["attachments"][0]["file"], image_file
+        )
+        self.assertEqual(
+            serializer.validated_data["attachments"][0]["file_type"], "image"
+        )
+
+    def test_validate_attachments_invalid_file(self):
+        """Test invalid attachment raises validation error."""
+        bad_file = SimpleUploadedFile(
+            "bad.gif", b"gif", content_type="application/octet-stream"
+        )
+        serializer = SendMessageSerializer(data={"attachments": [{"file": bad_file}]})
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("attachments", serializer.errors)
+        self.assertIn("unsupported file type", str(serializer.errors).lower())
+
+    def test_validate_attachments_exceeds_max_count(self):
+        """Test too many attachments raises validation error."""
+        from apps.chat.serializers import MAX_CHAT_ATTACHMENTS
+
+        # Create more attachments than allowed
+        attachments = []
+        for i in range(MAX_CHAT_ATTACHMENTS + 1):
+            attachments.append({"file": self._create_test_image(f"test{i}.jpg")})
+
+        serializer = SendMessageSerializer(data={"attachments": attachments})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("attachments", serializer.errors)
+        self.assertIn(f"Maximum {MAX_CHAT_ATTACHMENTS}", str(serializer.errors))
