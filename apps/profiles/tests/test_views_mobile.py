@@ -216,7 +216,7 @@ class MobileHomeownerHandymanDetailViewTests(APITestCase):
             is_available=True,
             is_approved=True,
         )
-        self.url = f"/api/v1/mobile/homeowner/handymen/{self.handyman.public_id}/"
+        self.url = f"/api/v1/mobile/homeowner/handymen/{self.handyman.user.public_id}/"
 
     def test_get_handyman_detail_success(self):
         """Test successfully getting handyman detail as homeowner."""
@@ -928,7 +928,7 @@ class MobileGuestHandymanDetailViewTests(APITestCase):
             is_available=True,
             is_approved=True,
         )
-        self.url = f"/api/v1/mobile/guest/handymen/{self.handyman.public_id}/"
+        self.url = f"/api/v1/mobile/guest/handymen/{self.handyman.user.public_id}/"
 
         # Not approved handyman
         self.handyman_user_not_approved = User.objects.create_user(
@@ -985,7 +985,7 @@ class MobileGuestHandymanDetailViewTests(APITestCase):
 
     def test_get_handyman_not_approved_returns_404(self):
         """Test getting not approved handyman returns 404."""
-        url = f"/api/v1/mobile/guest/handymen/{self.handyman_not_approved.public_id}/"
+        url = f"/api/v1/mobile/guest/handymen/{self.handyman_not_approved.user.public_id}/"
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.data["message"], "Handyman not found")

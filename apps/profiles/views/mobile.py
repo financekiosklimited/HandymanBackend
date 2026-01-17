@@ -627,7 +627,7 @@ class HomeownerHandymanDetailView(APIView):
                     )
                 )
                 .get(
-                    public_id=public_id,
+                    user__public_id=public_id,
                     is_approved=True,
                     is_active=True,
                     is_available=True,
@@ -935,7 +935,7 @@ class GuestHandymanDetailView(APIView):
         """Get handyman detail for guest users."""
         try:
             profile = HandymanProfile.objects.select_related("user").get(
-                public_id=public_id,
+                user__public_id=public_id,
                 is_approved=True,
                 is_active=True,
                 is_available=True,

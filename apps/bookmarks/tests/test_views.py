@@ -693,7 +693,7 @@ class HomeownerHandymanBookmarkListCreateViewTests(APITestCase):
         self.client.force_authenticate(user=self.homeowner_user)
         response = self.client.post(
             self.list_create_url,
-            {"handyman_id": str(self.handyman_profile1.public_id)},
+            {"handyman_id": str(self.handyman_profile1.user.public_id)},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -714,7 +714,7 @@ class HomeownerHandymanBookmarkListCreateViewTests(APITestCase):
         self.client.force_authenticate(user=self.homeowner_user)
         response = self.client.post(
             self.list_create_url,
-            {"handyman_id": str(self.handyman_profile1.public_id)},
+            {"handyman_id": str(self.handyman_profile1.user.public_id)},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -744,7 +744,7 @@ class HomeownerHandymanBookmarkListCreateViewTests(APITestCase):
         # Try to bookmark inactive handyman
         response = self.client.post(
             self.list_create_url,
-            {"handyman_id": str(self.inactive_handyman_profile.public_id)},
+            {"handyman_id": str(self.inactive_handyman_profile.user.public_id)},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -753,7 +753,7 @@ class HomeownerHandymanBookmarkListCreateViewTests(APITestCase):
         # Try to bookmark unapproved handyman
         response = self.client.post(
             self.list_create_url,
-            {"handyman_id": str(self.unapproved_handyman_profile.public_id)},
+            {"handyman_id": str(self.unapproved_handyman_profile.user.public_id)},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -763,7 +763,7 @@ class HomeownerHandymanBookmarkListCreateViewTests(APITestCase):
         """Test that unauthenticated users cannot create bookmarks."""
         response = self.client.post(
             self.list_create_url,
-            {"handyman_id": str(self.handyman_profile1.public_id)},
+            {"handyman_id": str(self.handyman_profile1.user.public_id)},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -811,7 +811,7 @@ class HomeownerHandymanBookmarkDeleteViewTests(APITestCase):
             handyman_profile=self.handyman_profile,
         )
 
-        self.delete_url = f"/api/v1/mobile/homeowner/bookmarks/handymen/{self.handyman_profile.public_id}/"
+        self.delete_url = f"/api/v1/mobile/homeowner/bookmarks/handymen/{self.handyman_profile.user.public_id}/"
 
     def test_delete_handyman_bookmark_success(self):
         """Test successfully deleting a handyman bookmark."""

@@ -99,14 +99,14 @@ class HandymanBookmarkCreateSerializer(serializers.Serializer):
 
     handyman_id = serializers.UUIDField(
         required=True,
-        help_text="Public ID of the handyman profile to bookmark",
+        help_text="User public ID of the handyman to bookmark",
     )
 
     def validate_handyman_id(self, value):
         """Validate that the handyman exists and is visible."""
         try:
             handyman_profile = HandymanProfile.objects.get(
-                public_id=value,
+                user__public_id=value,
                 is_approved=True,
                 is_active=True,
             )

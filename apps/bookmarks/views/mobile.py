@@ -534,6 +534,7 @@ class HomeownerHandymanBookmarkListCreateView(APIView):
         },
         description=(
             "Bookmark a handyman for later reference. "
+            "The handyman_id should be the user's public_id (same as returned in handyman list). "
             "Only active and approved handymen can be bookmarked. "
             "If the handyman is already bookmarked, returns the existing bookmark. "
             "Requires homeowner role and verified email."
@@ -613,6 +614,7 @@ class HomeownerHandymanBookmarkDeleteView(APIView):
         },
         description=(
             "Remove a handyman from bookmarks. "
+            "The handyman_id in the URL should be the user's public_id (same as returned in handyman list). "
             "Requires homeowner role and verified email."
         ),
         summary="Remove handyman bookmark",
@@ -639,7 +641,7 @@ class HomeownerHandymanBookmarkDeleteView(APIView):
         try:
             bookmark = HandymanBookmark.objects.get(
                 homeowner=request.user,
-                handyman_profile__public_id=handyman_id,
+                handyman_profile__user__public_id=handyman_id,
             )
             bookmark.delete()
             return no_content_response(message="Bookmark removed successfully")
