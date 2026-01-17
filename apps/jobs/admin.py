@@ -22,6 +22,7 @@ from .models import (
     JobDispute,
     JobReimbursement,
     JobReimbursementAttachment,
+    JobReimbursementCategory,
     JobTask,
     Review,
     WorkSession,
@@ -432,6 +433,9 @@ class JobAdmin(ModelAdmin):
         "category",
         "city",
         "status_display",
+        "is_direct_offer_display",
+        "offer_status_display",
+        "target_handyman_link",
         "budget_display",
         "application_count",
         "active_tasks",
@@ -441,6 +445,8 @@ class JobAdmin(ModelAdmin):
     )
     list_filter = (
         "status",
+        "is_direct_offer",
+        "offer_status",
         "category",
         "city__province_code",
         "created_at",
@@ -453,10 +459,19 @@ class JobAdmin(ModelAdmin):
         "homeowner__email",
         "homeowner__first_name",
         "homeowner__last_name",
+        "target_handyman__email",
+        "target_handyman__first_name",
+        "target_handyman__last_name",
         "postal_code",
     )
     ordering = ("-created_at",)
-    autocomplete_fields = ("homeowner", "category", "city", "assigned_handyman")
+    autocomplete_fields = (
+        "homeowner",
+        "category",
+        "city",
+        "assigned_handyman",
+        "target_handyman",
+    )
     readonly_fields = (
         "public_id",
         "created_at",
@@ -464,6 +479,7 @@ class JobAdmin(ModelAdmin):
         "status_at",
         "completion_requested_at",
         "completed_at",
+        "offer_responded_at",
     )
     inlines = [
         JobAttachmentInline,
@@ -508,6 +524,21 @@ class JobAdmin(ModelAdmin):
         (
             "Budget",
             {"fields": ("estimated_budget",)},
+        ),
+        (
+            "Direct Offer",
+            {
+                "fields": (
+                    "is_direct_offer",
+                    "target_handyman",
+                    "offer_status",
+                    "offer_expires_at",
+                    "offer_responded_at",
+                    "offer_rejection_reason",
+                ),
+                "classes": ("collapse",),
+                "description": "Direct offer settings for jobs sent to specific handymen",
+            },
         ),
         (
             "Completion",
@@ -581,6 +612,39 @@ class JobAdmin(ModelAdmin):
     @display(description="Open Disputes")
     def open_disputes(self, obj):
         return obj.disputes.exclude(status__startswith="resolved").count()
+
+    @display(description="Direct", boolean=True)
+    def is_direct_offer_display(self, obj):
+        """Display whether this is a direct offer."""
+        return obj.is_direct_offer
+
+    @display(description="Offer Status")
+    def offer_status_display(self, obj):
+        """Display offer status with color coding for direct offers."""
+        if not obj.is_direct_offer:
+            return "-"
+        if not obj.offer_status:
+            return "-"
+        status_colors = {
+            "pending": "🟡",
+            "accepted": "✅",
+            "rejected": "🔴",
+            "expired": "⏰",
+            "converted": "🔄",
+        }
+        icon = status_colors.get(obj.offer_status, "")
+        return f"{icon} {obj.get_offer_status_display()}"
+
+    @display(description="Target Handyman")
+    def target_handyman_link(self, obj):
+        """Display target handyman as clickable link for direct offers."""
+        if not obj.is_direct_offer or not obj.target_handyman:
+            return "-"
+        return format_html(
+            '<a href="/admin/accounts/user/{}/change/">{}</a>',
+            obj.target_handyman.pk,
+            obj.target_handyman.email,
+        )
 
     def save_model(self, request, obj, form, change):
         """
@@ -1123,8 +1187,9 @@ class JobAttachmentAdmin(ModelAdmin):
     """
 
     list_display = (
+        "thumbnail_preview",
         "job_title",
-        "file_type",
+        "file_type_display",
         "file_name",
         "file_size_display",
         "file_url_display",
@@ -1162,10 +1227,40 @@ class JobAttachmentAdmin(ModelAdmin):
         ),
     )
 
+    @display(description="Preview")
+    def thumbnail_preview(self, obj):
+        """Display thumbnail preview for images/videos."""
+        if obj.thumbnail:
+            return format_html(
+                '<img src="{}" style="max-width: 50px; max-height: 50px; '
+                'object-fit: cover; border-radius: 4px;" />',
+                obj.thumbnail.url,
+            )
+        elif obj.file_type == "image" and obj.file:
+            return format_html(
+                '<img src="{}" style="max-width: 50px; max-height: 50px; '
+                'object-fit: cover; border-radius: 4px;" />',
+                obj.file.url,
+            )
+        elif obj.file_type == "video":
+            return format_html('<span style="font-size: 24px;" title="Video">🎬</span>')
+        return "-"
+
     @display(description="Job")
     def job_title(self, obj):
         """Display job title."""
         return obj.job.title
+
+    @display(description="Type")
+    def file_type_display(self, obj):
+        """Display file type with icon."""
+        type_icons = {
+            "image": "🖼️",
+            "video": "🎬",
+            "document": "📄",
+        }
+        icon = type_icons.get(obj.file_type, "📁")
+        return f"{icon} {obj.get_file_type_display()}"
 
     @display(description="File Size")
     def file_size_display(self, obj):
@@ -1538,12 +1633,15 @@ class JobApplicationAttachmentAdmin(ModelAdmin):
     """
 
     list_display = (
+        "thumbnail_preview",
         "application_link",
+        "file_type_display",
         "file_name",
+        "file_size_display",
         "file_link",
         "created_at",
     )
-    list_filter = ("created_at",)
+    list_filter = ("file_type", "created_at")
     search_fields = (
         "application__job__title",
         "file_name",
@@ -1562,7 +1660,11 @@ class JobApplicationAttachmentAdmin(ModelAdmin):
                     "public_id",
                     "application",
                     "file",
+                    "file_type",
                     "file_name",
+                    "file_size",
+                    "thumbnail",
+                    "duration_seconds",
                 )
             },
         ),
@@ -1572,6 +1674,29 @@ class JobApplicationAttachmentAdmin(ModelAdmin):
         ),
     )
 
+    @display(description="Preview")
+    def thumbnail_preview(self, obj):
+        """Display thumbnail preview for images/videos."""
+        if obj.thumbnail:
+            return format_html(
+                '<img src="{}" style="max-width: 50px; max-height: 50px; '
+                'object-fit: cover; border-radius: 4px;" />',
+                obj.thumbnail.url,
+            )
+        elif obj.file_type == "image" and obj.file:
+            return format_html(
+                '<img src="{}" style="max-width: 50px; max-height: 50px; '
+                'object-fit: cover; border-radius: 4px;" />',
+                obj.file.url,
+            )
+        elif obj.file_type == "video":
+            return format_html('<span style="font-size: 24px;" title="Video">🎬</span>')
+        elif obj.file_type == "document":
+            return format_html(
+                '<span style="font-size: 24px;" title="Document">📄</span>'
+            )
+        return "-"
+
     @display(description="Application")
     def application_link(self, obj):
         """Display application as clickable link."""
@@ -1580,6 +1705,26 @@ class JobApplicationAttachmentAdmin(ModelAdmin):
             obj.application.pk,
             f"{obj.application.job.title[:30]}...",
         )
+
+    @display(description="Type")
+    def file_type_display(self, obj):
+        """Display file type with icon."""
+        type_icons = {
+            "image": "🖼️",
+            "video": "🎬",
+            "document": "📄",
+        }
+        icon = type_icons.get(obj.file_type, "📁")
+        return f"{icon} {obj.get_file_type_display()}"
+
+    @display(description="Size")
+    def file_size_display(self, obj):
+        """Display file size in KB or MB."""
+        if obj.file_size:
+            if obj.file_size > 1024 * 1024:
+                return f"{obj.file_size / (1024 * 1024):.1f} MB"
+            return f"{obj.file_size / 1024:.1f} KB"
+        return "-"
 
     @display(description="File")
     def file_link(self, obj):
@@ -1592,6 +1737,62 @@ class JobApplicationAttachmentAdmin(ModelAdmin):
 # =============================================================================
 # Reimbursement Admin
 # =============================================================================
+
+
+@admin.register(JobReimbursementCategory)
+class JobReimbursementCategoryAdmin(ModelAdmin):
+    """Admin interface for JobReimbursementCategory model with Unfold styling."""
+
+    list_display = (
+        "name",
+        "slug",
+        "icon_display",
+        "is_active",
+        "reimbursement_count",
+        "created_at",
+    )
+    list_filter = ("is_active",)
+    search_fields = ("name", "slug", "description")
+    prepopulated_fields = {"slug": ("name",)}
+    ordering = ("name",)
+    readonly_fields = ("public_id", "created_at", "updated_at")
+    list_per_page = 25
+
+    fieldsets = (
+        (
+            "Category Information",
+            {
+                "fields": (
+                    "public_id",
+                    "name",
+                    "slug",
+                    "description",
+                    "icon",
+                    "is_active",
+                )
+            },
+        ),
+        (
+            "Timestamps",
+            {"fields": ("created_at", "updated_at")},
+        ),
+    )
+
+    @display(description="Icon")
+    def icon_display(self, obj):
+        """Display icon with visual representation."""
+        if obj.icon:
+            return f"{obj.icon}"
+        return "-"
+
+    @display(description="Reimbursements")
+    def reimbursement_count(self, obj):
+        """Display count of reimbursements using this category."""
+        count = obj.reimbursements.count()
+        if count > 0:
+            url = f"/admin/jobs/jobreimbursement/?category__id__exact={obj.pk}"
+            return format_html('<a href="{}">{}</a>', url, count)
+        return "0"
 
 
 class JobReimbursementAttachmentInline(TabularInline):
@@ -1621,11 +1822,12 @@ class JobReimbursementAdmin(ModelAdmin):
     list_filter = ("status", "category", "created_at")
     search_fields = ("job__title", "handyman__email", "name")
     ordering = ("-created_at",)
-    autocomplete_fields = ("job", "handyman", "reviewed_by")
+    autocomplete_fields = ("job", "handyman", "category", "reviewed_by")
     readonly_fields = ("public_id", "created_at", "updated_at", "reviewed_at")
     inlines = [JobReimbursementAttachmentInline]
     date_hierarchy = "created_at"
     list_per_page = 25
+    actions = ["approve_reimbursements", "reject_reimbursements"]
 
     fieldsets = (
         (
@@ -1693,18 +1895,75 @@ class JobReimbursementAdmin(ModelAdmin):
         icon = status_colors.get(obj.status, "")
         return f"{icon} {obj.get_status_display()}"
 
+    # -------------------------------------------------------------------------
+    # Admin Actions
+    # -------------------------------------------------------------------------
+
+    @admin.action(description="Approve selected reimbursements")
+    def approve_reimbursements(self, request, queryset):
+        """Bulk approve selected pending reimbursements."""
+        pending_qs = queryset.filter(status="pending")
+        count = pending_qs.count()
+
+        if count == 0:
+            self.message_user(
+                request,
+                "No pending reimbursements selected.",
+                level=messages.WARNING,
+            )
+            return
+
+        pending_qs.update(
+            status="approved",
+            reviewed_by=request.user,
+            reviewed_at=timezone.now(),
+        )
+        self.message_user(
+            request,
+            f"Successfully approved {count} reimbursement(s).",
+            level=messages.SUCCESS,
+        )
+
+    @admin.action(description="Reject selected reimbursements")
+    def reject_reimbursements(self, request, queryset):
+        """Bulk reject selected pending reimbursements."""
+        pending_qs = queryset.filter(status="pending")
+        count = pending_qs.count()
+
+        if count == 0:
+            self.message_user(
+                request,
+                "No pending reimbursements selected.",
+                level=messages.WARNING,
+            )
+            return
+
+        pending_qs.update(
+            status="rejected",
+            reviewed_by=request.user,
+            reviewed_at=timezone.now(),
+        )
+        self.message_user(
+            request,
+            f"Successfully rejected {count} reimbursement(s).",
+            level=messages.SUCCESS,
+        )
+
 
 @admin.register(JobReimbursementAttachment)
 class JobReimbursementAttachmentAdmin(ModelAdmin):
     """Admin interface for JobReimbursementAttachment model with Unfold styling."""
 
     list_display = (
+        "thumbnail_preview",
         "reimbursement_link",
+        "file_type_display",
         "file_name",
+        "file_size_display",
         "file_link",
         "created_at",
     )
-    list_filter = ("created_at",)
+    list_filter = ("file_type", "created_at")
     search_fields = (
         "reimbursement__job__title",
         "reimbursement__name",
@@ -1724,7 +1983,11 @@ class JobReimbursementAttachmentAdmin(ModelAdmin):
                     "public_id",
                     "reimbursement",
                     "file",
+                    "file_type",
                     "file_name",
+                    "file_size",
+                    "thumbnail",
+                    "duration_seconds",
                 )
             },
         ),
@@ -1734,6 +1997,29 @@ class JobReimbursementAttachmentAdmin(ModelAdmin):
         ),
     )
 
+    @display(description="Preview")
+    def thumbnail_preview(self, obj):
+        """Display thumbnail preview for images/videos."""
+        if obj.thumbnail:
+            return format_html(
+                '<img src="{}" style="max-width: 50px; max-height: 50px; '
+                'object-fit: cover; border-radius: 4px;" />',
+                obj.thumbnail.url,
+            )
+        elif obj.file_type == "image" and obj.file:
+            return format_html(
+                '<img src="{}" style="max-width: 50px; max-height: 50px; '
+                'object-fit: cover; border-radius: 4px;" />',
+                obj.file.url,
+            )
+        elif obj.file_type == "video":
+            return format_html('<span style="font-size: 24px;" title="Video">🎬</span>')
+        elif obj.file_type == "document":
+            return format_html(
+                '<span style="font-size: 24px;" title="Document">📄</span>'
+            )
+        return "-"
+
     @display(description="Reimbursement")
     def reimbursement_link(self, obj):
         """Display reimbursement as clickable link."""
@@ -1742,6 +2028,26 @@ class JobReimbursementAttachmentAdmin(ModelAdmin):
             obj.reimbursement.pk,
             f"{obj.reimbursement.name[:30]}...",
         )
+
+    @display(description="Type")
+    def file_type_display(self, obj):
+        """Display file type with icon."""
+        type_icons = {
+            "image": "🖼️",
+            "video": "🎬",
+            "document": "📄",
+        }
+        icon = type_icons.get(obj.file_type, "📁")
+        return f"{icon} {obj.get_file_type_display()}"
+
+    @display(description="Size")
+    def file_size_display(self, obj):
+        """Display file size in KB or MB."""
+        if obj.file_size:
+            if obj.file_size > 1024 * 1024:
+                return f"{obj.file_size / (1024 * 1024):.1f} MB"
+            return f"{obj.file_size / 1024:.1f} KB"
+        return "-"
 
     @display(description="File")
     def file_link(self, obj):

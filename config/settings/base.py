@@ -386,9 +386,9 @@ UNFOLD = {
                         "link": lambda request: "/admin/jobs/jobapplication/",
                     },
                     {
-                        "title": "Job Categories",
-                        "icon": "category",
-                        "link": lambda request: "/admin/jobs/jobcategory/",
+                        "title": "Reimbursements",
+                        "icon": "receipt_long",
+                        "link": lambda request: "/admin/jobs/jobreimbursement/",
                     },
                 ],
             },
@@ -444,6 +444,21 @@ UNFOLD = {
                 "separator": True,
                 "items": [
                     {
+                        "title": "Job Categories",
+                        "icon": "category",
+                        "link": lambda request: "/admin/jobs/jobcategory/",
+                    },
+                    {
+                        "title": "Reimbursement Categories",
+                        "icon": "label",
+                        "link": lambda request: "/admin/jobs/jobreimbursementcategory/",
+                    },
+                    {
+                        "title": "Job Attachments",
+                        "icon": "attachment",
+                        "link": lambda request: "/admin/jobs/jobattachment/",
+                    },
+                    {
                         "title": "Cities",
                         "icon": "location_city",
                         "link": lambda request: "/admin/jobs/city/",
@@ -455,7 +470,7 @@ UNFOLD = {
                     },
                     {
                         "title": "Handyman Categories",
-                        "icon": "category",
+                        "icon": "engineering",
                         "link": lambda request: "/admin/profiles/handymancategory/",
                     },
                 ],
