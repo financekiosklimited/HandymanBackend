@@ -118,6 +118,7 @@ class HandymanConversationListView(APIView):
             user=request.user,
             user_role="handyman",
             conversation_type="general",
+            has_messages=True,
         )
 
         data = [

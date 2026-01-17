@@ -332,6 +332,71 @@ class ChatServiceGetConversationsForUserTests(TestCase):
         )
         self.assertEqual(len(conversations), 0)
 
+    def test_filter_has_messages_excludes_empty_conversations(self):
+        """Test has_messages filter excludes conversations without messages."""
+        # Create a conversation without messages (last_message_at is None)
+        handyman2 = User.objects.create_user(
+            email="handyman2@example.com",
+            password="testpass123",
+        )
+        ChatConversation.objects.create(
+            conversation_type=ChatConversation.ConversationType.GENERAL,
+            homeowner=self.homeowner,
+            handyman=handyman2,
+            last_message_at=None,
+        )
+
+        # Without has_messages filter, should return both
+        conversations = self.service.get_conversations_for_user(
+            user=self.homeowner,
+            user_role="homeowner",
+        )
+        self.assertEqual(len(conversations), 2)
+
+        # With has_messages=True, should only return the one with messages
+        conversations = self.service.get_conversations_for_user(
+            user=self.homeowner,
+            user_role="homeowner",
+            has_messages=True,
+        )
+        self.assertEqual(len(conversations), 1)
+        self.assertEqual(conversations[0].id, self.conversation.id)
+
+    def test_filter_has_messages_with_conversation_type(self):
+        """Test has_messages filter works with conversation_type filter."""
+        # Create a general conversation with messages
+        handyman2 = User.objects.create_user(
+            email="handyman2@example.com",
+            password="testpass123",
+        )
+        general_with_messages = ChatConversation.objects.create(
+            conversation_type=ChatConversation.ConversationType.GENERAL,
+            homeowner=self.homeowner,
+            handyman=handyman2,
+            last_message_at=timezone.now(),
+        )
+        # Create a general conversation without messages
+        handyman3 = User.objects.create_user(
+            email="handyman3@example.com",
+            password="testpass123",
+        )
+        ChatConversation.objects.create(
+            conversation_type=ChatConversation.ConversationType.GENERAL,
+            homeowner=self.homeowner,
+            handyman=handyman3,
+            last_message_at=None,
+        )
+
+        # Filter by general type and has_messages
+        conversations = self.service.get_conversations_for_user(
+            user=self.homeowner,
+            user_role="homeowner",
+            conversation_type="general",
+            has_messages=True,
+        )
+        self.assertEqual(len(conversations), 1)
+        self.assertEqual(conversations[0].id, general_with_messages.id)
+
 
 class ChatServiceSendMessageTests(TestCase):
     """Test cases for ChatService.send_message."""

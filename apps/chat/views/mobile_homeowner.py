@@ -235,6 +235,7 @@ class HomeownerConversationListView(APIView):
             user=request.user,
             user_role="homeowner",
             conversation_type="general",
+            has_messages=True,
         )
 
         data = [

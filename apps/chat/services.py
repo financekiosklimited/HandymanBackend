@@ -103,7 +103,9 @@ class ChatService:
 
         return ChatConversation.objects.get(**filters)
 
-    def get_conversations_for_user(self, user, user_role, conversation_type=None):
+    def get_conversations_for_user(
+        self, user, user_role, conversation_type=None, has_messages=False
+    ):
         """
         Get all conversations for a user.
 
@@ -111,6 +113,7 @@ class ChatService:
             user: Current user
             user_role: Role of the user (homeowner or handyman)
             conversation_type: Optional filter by conversation type
+            has_messages: If True, only return conversations that have at least one message
 
         Returns:
             QuerySet of ChatConversation
@@ -122,6 +125,9 @@ class ChatService:
 
         if conversation_type:
             queryset = queryset.filter(conversation_type=conversation_type)
+
+        if has_messages:
+            queryset = queryset.filter(last_message_at__isnull=False)
 
         return queryset.select_related("job", "homeowner", "handyman").order_by(
             "-last_message_at", "-created_at"

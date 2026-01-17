@@ -5,6 +5,7 @@ Test cases for handyman chat views.
 from decimal import Decimal
 from unittest.mock import patch
 
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -79,11 +80,12 @@ class HandymanConversationListViewTests(APITestCase):
             handyman=self.handyman,
         )
 
-        # Create general conversation
+        # Create general conversation with a message (so it appears in list)
         self.general_conversation = ChatConversation.objects.create(
             conversation_type=ChatConversation.ConversationType.GENERAL,
             homeowner=self.homeowner,
             handyman=self.handyman,
+            last_message_at=timezone.now(),
         )
 
         self.url = "/api/v1/mobile/handyman/conversations/"
