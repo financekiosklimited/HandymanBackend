@@ -2153,6 +2153,301 @@ class MobileGuestJobDetailViewTests(APITestCase):
         self.assertIn("updated_at", data)
 
 
+class HandymanAssignedJobListViewTests(APITestCase):
+    """Test cases for HandymanAssignedJobListView (listing assigned jobs)."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.url = "/api/v1/mobile/handyman/jobs/"
+        self.homeowner = User.objects.create_user(
+            email="homeowner@example.com", password="testpass123"
+        )
+        HomeownerProfile.objects.create(
+            user=self.homeowner,
+            display_name="Test Homeowner",
+        )
+
+        self.handyman = User.objects.create_user(
+            email="handyman@example.com", password="testpass123"
+        )
+        self.handyman.token_payload = {
+            "plat": "mobile",
+            "active_role": "handyman",
+            "roles": ["handyman"],
+            "phone_verified": True,
+            "email_verified": True,
+        }
+
+        HandymanProfile.objects.create(
+            user=self.handyman,
+            display_name="Test Handyman",
+            phone_verified_at=timezone.now(),
+        )
+
+        self.category = JobCategory.objects.create(
+            name="Plumbing", slug="plumbing", is_active=True
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+        # Create jobs with different statuses assigned to the handyman
+        self.job_in_progress = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="In Progress Job",
+            description="Test job in progress",
+            estimated_budget=Decimal("100.00"),
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+            status="in_progress",
+        )
+
+        self.job_pending_completion = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Pending Completion Job",
+            description="Test job pending completion",
+            estimated_budget=Decimal("200.00"),
+            category=self.category,
+            city=self.city,
+            address="456 Oak St",
+            status="pending_completion",
+        )
+
+        self.job_completed = Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=self.handyman,
+            title="Completed Job",
+            description="Test completed job",
+            estimated_budget=Decimal("300.00"),
+            category=self.category,
+            city=self.city,
+            address="789 Elm St",
+            status="completed",
+        )
+
+        # Create an open job NOT assigned to the handyman (should not appear)
+        self.job_open = Job.objects.create(
+            homeowner=self.homeowner,
+            title="Open Job",
+            description="Open job not assigned",
+            estimated_budget=Decimal("50.00"),
+            category=self.category,
+            city=self.city,
+            address="000 None St",
+            status="open",
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+
+    def test_list_assigned_jobs_success(self):
+        """Test successfully listing assigned jobs."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Jobs retrieved successfully")
+        # Should only get 3 assigned jobs (not the open one)
+        self.assertEqual(len(response.data["data"]), 3)
+
+    def test_list_assigned_jobs_ordered_by_status_priority(self):
+        """Test jobs are ordered by status priority."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        data = response.data["data"]
+        # First should be in_progress, then pending_completion, then completed
+        self.assertEqual(data[0]["status"], "in_progress")
+        self.assertEqual(data[1]["status"], "pending_completion")
+        self.assertEqual(data[2]["status"], "completed")
+
+    def test_list_assigned_jobs_filter_by_status(self):
+        """Test filtering by status."""
+        response = self.client.get(self.url, {"status": "in_progress"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "In Progress Job")
+
+    def test_list_assigned_jobs_filter_by_completed_status(self):
+        """Test filtering by completed status."""
+        response = self.client.get(self.url, {"status": "completed"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Completed Job")
+
+    def test_list_assigned_jobs_search_by_title(self):
+        """Test searching by job title."""
+        response = self.client.get(self.url, {"search": "Pending"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["title"], "Pending Completion Job")
+
+    def test_list_assigned_jobs_filter_by_date(self):
+        """Test filtering by date range."""
+        today = timezone.now().date().isoformat()
+        response = self.client.get(self.url, {"date_from": today, "date_to": today})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 3)
+
+    def test_list_assigned_jobs_pagination(self):
+        """Test pagination works correctly."""
+        response = self.client.get(self.url, {"page": 1, "page_size": 2})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+        self.assertEqual(response.data["meta"]["pagination"]["page"], 1)
+        self.assertEqual(response.data["meta"]["pagination"]["page_size"], 2)
+        self.assertEqual(response.data["meta"]["pagination"]["total_count"], 3)
+        self.assertTrue(response.data["meta"]["pagination"]["has_next"])
+        self.assertFalse(response.data["meta"]["pagination"]["has_previous"])
+
+    def test_list_assigned_jobs_pagination_page_2(self):
+        """Test pagination page 2."""
+        response = self.client.get(self.url, {"page": 2, "page_size": 2})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertFalse(response.data["meta"]["pagination"]["has_next"])
+        self.assertTrue(response.data["meta"]["pagination"]["has_previous"])
+
+    def test_list_assigned_jobs_contains_task_progress(self):
+        """Test response contains task progress."""
+        # Add tasks to the job
+        JobTask.objects.create(
+            job=self.job_in_progress, title="Task 1", is_completed=True
+        )
+        JobTask.objects.create(
+            job=self.job_in_progress, title="Task 2", is_completed=False
+        )
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        job_data = next(
+            j for j in response.data["data"] if j["title"] == "In Progress Job"
+        )
+        self.assertIn("task_progress", job_data)
+        self.assertEqual(job_data["task_progress"]["total"], 2)
+        self.assertEqual(job_data["task_progress"]["completed"], 1)
+        self.assertEqual(job_data["task_progress"]["percentage"], 50.0)
+
+    def test_list_assigned_jobs_contains_homeowner_info(self):
+        """Test response contains homeowner info with rating."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        job_data = response.data["data"][0]
+        self.assertIn("homeowner", job_data)
+        self.assertIn("public_id", job_data["homeowner"])
+        self.assertIn("display_name", job_data["homeowner"])
+        self.assertIn("avatar_url", job_data["homeowner"])
+        self.assertIn("rating", job_data["homeowner"])
+        self.assertIn("review_count", job_data["homeowner"])
+
+    def test_list_assigned_jobs_excludes_open_jobs(self):
+        """Test that open (unassigned) jobs are excluded."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        titles = [j["title"] for j in response.data["data"]]
+        self.assertNotIn("Open Job", titles)
+
+    def test_list_assigned_jobs_only_own_jobs(self):
+        """Test that only jobs assigned to the authenticated handyman are returned."""
+        # Create another handyman with their own job
+        other_handyman = User.objects.create_user(
+            email="other@example.com", password="testpass123"
+        )
+        HandymanProfile.objects.create(
+            user=other_handyman,
+            display_name="Other Handyman",
+            phone_verified_at=timezone.now(),
+        )
+        Job.objects.create(
+            homeowner=self.homeowner,
+            assigned_handyman=other_handyman,
+            title="Other Handyman Job",
+            description="Job for other handyman",
+            estimated_budget=Decimal("400.00"),
+            category=self.category,
+            city=self.city,
+            address="999 Other St",
+            status="in_progress",
+        )
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should still only see 3 jobs (not the other handyman's job)
+        self.assertEqual(len(response.data["data"]), 3)
+
+        titles = [j["title"] for j in response.data["data"]]
+        self.assertNotIn("Other Handyman Job", titles)
+
+    def test_list_assigned_jobs_unauthenticated(self):
+        """Test unauthenticated request returns 401."""
+        self.client.force_authenticate(user=None)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_list_assigned_jobs_invalid_status_filter_ignored(self):
+        """Test that invalid status filter is ignored."""
+        response = self.client.get(self.url, {"status": "invalid_status"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return all assigned jobs since invalid status is ignored
+        self.assertEqual(len(response.data["data"]), 3)
+
+    def test_list_assigned_jobs_max_page_size(self):
+        """Test that page_size is capped at 50."""
+        response = self.client.get(self.url, {"page_size": 100})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Page size should be capped at 50
+        self.assertEqual(response.data["meta"]["pagination"]["page_size"], 50)
+
+    def test_list_assigned_jobs_includes_disputed_status(self):
+        """Test that disputed jobs are included."""
+        self.job_in_progress.status = "disputed"
+        self.job_in_progress.save()
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        statuses = [j["status"] for j in response.data["data"]]
+        self.assertIn("disputed", statuses)
+
+    def test_list_assigned_jobs_homeowner_without_profile(self):
+        """Test response when homeowner has no profile."""
+        # Create a homeowner without profile
+        homeowner_no_profile = User.objects.create_user(
+            email="no_profile@example.com", password="testpass123"
+        )
+        Job.objects.create(
+            homeowner=homeowner_no_profile,
+            assigned_handyman=self.handyman,
+            title="Job Without Profile",
+            description="Homeowner has no profile",
+            estimated_budget=Decimal("500.00"),
+            category=self.category,
+            city=self.city,
+            address="111 No Profile St",
+            status="in_progress",
+        )
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Find the job with homeowner without profile
+        job_data = next(
+            j for j in response.data["data"] if j["title"] == "Job Without Profile"
+        )
+        # Homeowner info should have null values
+        self.assertEqual(job_data["homeowner"]["display_name"], None)
+        self.assertEqual(job_data["homeowner"]["avatar_url"], None)
+        self.assertEqual(job_data["homeowner"]["rating"], None)
+        self.assertEqual(job_data["homeowner"]["review_count"], 0)
+
+
 class HandymanForYouJobListViewTests(APITestCase):
     """Test cases for handyman ForYouJobListView (job browsing)."""
 

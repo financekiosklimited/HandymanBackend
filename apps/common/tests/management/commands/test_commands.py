@@ -749,6 +749,45 @@ class GenerateDummyDataCoverageTests(TestCase):
         # Should skip - no new reviews created
         self.assertEqual(review_count, 0)
 
+    def test_reviews_create_for_completed_job(self):
+        """Test lines 1543-1562: create mutual reviews for completed job."""
+        from apps.common.management.commands.generate_dummy_data import Command
+        from apps.jobs.models import City, JobCategory, Review
+
+        homeowners, handymen = self._create_test_users(1, 1)
+        category = JobCategory.objects.first()
+        city = City.objects.first()
+
+        job = self._create_job(
+            homeowners[0],
+            category,
+            city,
+            status="completed",
+            assigned_handyman=handymen[0],
+        )
+
+        cmd = Command()
+        cmd.now = timezone.now()
+
+        # Should create 2 reviews (homeowner -> handyman, handyman -> homeowner)
+        review_count = cmd._create_reviews([job])
+
+        self.assertEqual(review_count, 2)
+
+        # Verify homeowner's review for handyman
+        homeowner_review = Review.objects.get(job=job, reviewer_type="homeowner")
+        self.assertEqual(homeowner_review.reviewer, homeowners[0])
+        self.assertEqual(homeowner_review.reviewee, handymen[0])
+        self.assertIn(homeowner_review.rating, [1, 2, 3, 4, 5])
+        self.assertIsNotNone(homeowner_review.comment)
+
+        # Verify handyman's review for homeowner
+        handyman_review = Review.objects.get(job=job, reviewer_type="handyman")
+        self.assertEqual(handyman_review.reviewer, handymen[0])
+        self.assertEqual(handyman_review.reviewee, homeowners[0])
+        self.assertIn(handyman_review.rating, [1, 2, 3, 4, 5])
+        self.assertIsNotNone(handyman_review.comment)
+
     def test_daily_report_no_job_tasks(self):
         """Test line 1510 branch: job without tasks."""
         from apps.common.management.commands.generate_dummy_data import Command

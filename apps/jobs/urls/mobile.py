@@ -64,6 +64,11 @@ urlpatterns = [
     ),
     # Handyman job browsing endpoints
     path(
+        "handyman/jobs/",
+        mobile_views.HandymanAssignedJobListView.as_view(),
+        name="mobile_handyman_jobs",
+    ),
+    path(
         "handyman/jobs/for-you/",
         mobile_views.HandymanForYouJobListView.as_view(),
         name="mobile_handyman_jobs_for_you",

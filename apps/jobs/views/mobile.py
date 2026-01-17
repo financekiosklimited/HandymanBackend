@@ -55,6 +55,8 @@ from apps.jobs.serializers import (
     GuestJobDetailSerializer,
     GuestJobListResponseSerializer,
     GuestJobListSerializer,
+    HandymanAssignedJobListResponseSerializer,
+    HandymanAssignedJobListSerializer,
     HandymanForYouJobListResponseSerializer,
     HandymanForYouJobSerializer,
     HandymanJobDashboardResponseSerializer,
@@ -1683,6 +1685,215 @@ class GuestJobDetailView(APIView):
 # ========================
 # Job Views - Handyman
 # ========================
+
+
+class HandymanAssignedJobListView(APIView):
+    """
+    View for listing jobs assigned to the handyman.
+    Shows jobs where the handyman has been approved/assigned.
+    Ordered by status priority (in_progress first) then by created_at.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_jobs_list",
+        responses={
+            200: HandymanAssignedJobListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+        },
+        parameters=[
+            OpenApiParameter(
+                name="page",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Page number (default: 1)",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="page_size",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Items per page (default: 10, max: 50)",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="status",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Filter by job status: in_progress, pending_completion, completed, disputed",
+                required=False,
+                examples=[
+                    OpenApiExample("In Progress", value="in_progress"),
+                    OpenApiExample("Pending Completion", value="pending_completion"),
+                    OpenApiExample("Completed", value="completed"),
+                    OpenApiExample("Disputed", value="disputed"),
+                ],
+            ),
+            OpenApiParameter(
+                name="date_from",
+                type=OpenApiTypes.DATE,
+                location=OpenApiParameter.QUERY,
+                description="Filter jobs created from date (YYYY-MM-DD)",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="date_to",
+                type=OpenApiTypes.DATE,
+                location=OpenApiParameter.QUERY,
+                description="Filter jobs created until date (YYYY-MM-DD)",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="search",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Search by job title",
+                required=False,
+            ),
+        ],
+        description=(
+            "List all jobs assigned to the authenticated handyman. "
+            "Shows jobs from approved applications or accepted direct offers. "
+            "Jobs are ordered by status priority (in_progress > pending_completion > disputed > completed) "
+            "then by created_at descending. "
+            "Requires authenticated handyman with verified email."
+        ),
+        summary="List assigned jobs",
+        tags=["Mobile Handyman Jobs"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Jobs retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "title": "Fix leaking kitchen faucet",
+                            "description": "Kitchen faucet has been leaking for a few days.",
+                            "estimated_budget": 150.00,
+                            "category": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                                "name": "Plumbing",
+                                "slug": "plumbing",
+                            },
+                            "city": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174002",
+                                "name": "Toronto",
+                                "province": "Ontario",
+                                "province_code": "ON",
+                            },
+                            "status": "in_progress",
+                            "status_at": "2026-01-15T10:30:00Z",
+                            "homeowner": {
+                                "public_id": "123e4567-e89b-12d3-a456-426614174099",
+                                "display_name": "John D.",
+                                "avatar_url": "https://example.com/avatars/john.jpg",
+                                "rating": 4.5,
+                                "review_count": 12,
+                            },
+                            "task_progress": {
+                                "total": 3,
+                                "completed": 1,
+                                "percentage": 33.3,
+                            },
+                            "created_at": "2026-01-10T08:00:00Z",
+                        }
+                    ],
+                    "errors": None,
+                    "meta": pagination_meta_example(total_count=5, total_pages=1),
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            UNAUTHORIZED_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+        ],
+    )
+    def get(self, request):
+        """List jobs assigned to the handyman."""
+        # Valid statuses for assigned jobs
+        valid_statuses = ["in_progress", "pending_completion", "completed", "disputed"]
+
+        # Get jobs where this handyman is assigned
+        jobs = (
+            Job.objects.filter(
+                assigned_handyman=request.user,
+                status__in=valid_statuses,
+            )
+            .select_related("category", "city", "homeowner__homeowner_profile")
+            .prefetch_related("attachments", "tasks")
+        )
+
+        # Filter by status if provided
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            if status_filter in valid_statuses:
+                jobs = jobs.filter(status=status_filter)
+
+        # Filter by date range
+        date_from = request.query_params.get("date_from")
+        if date_from:
+            jobs = jobs.filter(created_at__date__gte=date_from)
+
+        date_to = request.query_params.get("date_to")
+        if date_to:
+            jobs = jobs.filter(created_at__date__lte=date_to)
+
+        # Search filter by title
+        search_query = request.query_params.get("search")
+        if search_query:
+            jobs = jobs.filter(title__icontains=search_query)
+
+        # Order by status priority, then by created_at descending
+        # Priority: in_progress (0) > pending_completion (1) > disputed (2) > completed (3)
+        jobs = jobs.annotate(
+            status_priority=Case(
+                When(status="in_progress", then=Value(0)),
+                When(status="pending_completion", then=Value(1)),
+                When(status="disputed", then=Value(2)),
+                When(status="completed", then=Value(3)),
+                default=Value(4),
+                output_field=FloatField(),
+            )
+        ).order_by("status_priority", "-created_at")
+
+        # Pagination
+        page = int(request.query_params.get("page", 1))
+        page_size = min(int(request.query_params.get("page_size", 10)), 50)
+        total_count = jobs.count()
+        total_pages = (
+            (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        )
+
+        start = (page - 1) * page_size
+        end = start + page_size
+        jobs = jobs[start:end]
+
+        serializer = HandymanAssignedJobListSerializer(jobs, many=True)
+
+        meta = {
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "total_count": total_count,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+            }
+        }
+
+        return success_response(
+            serializer.data,
+            message="Jobs retrieved successfully",
+            meta=meta,
+        )
 
 
 class HandymanForYouJobListView(APIView):

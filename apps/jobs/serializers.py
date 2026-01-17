@@ -3156,3 +3156,92 @@ HandymanDirectOfferListResponseSerializer = create_list_response_serializer(
 HandymanDirectOfferDetailResponseSerializer = create_response_serializer(
     HandymanDirectOfferDetailSerializer, "HandymanDirectOfferDetailResponse"
 )
+
+
+# ========================
+# Handyman Assigned Jobs Serializers
+# ========================
+
+
+class HandymanAssignedJobListSerializer(serializers.ModelSerializer):
+    """
+    Serializer for listing jobs assigned to a handyman.
+    Shows jobs that the handyman has been approved to work on.
+    """
+
+    category = JobCategorySerializer(read_only=True)
+    city = CitySerializer(read_only=True)
+    attachments = JobAttachmentSerializer(many=True, read_only=True)
+    estimated_budget = serializers.DecimalField(
+        max_digits=10, decimal_places=2, coerce_to_string=False
+    )
+    tasks = JobTaskListSerializer(many=True, read_only=True)
+    homeowner = serializers.SerializerMethodField(
+        help_text="Homeowner information with rating"
+    )
+    task_progress = serializers.SerializerMethodField(
+        help_text="Task completion progress summary"
+    )
+
+    class Meta:
+        model = Job
+        fields = [
+            "public_id",
+            "title",
+            "description",
+            "estimated_budget",
+            "category",
+            "city",
+            "address",
+            "postal_code",
+            "latitude",
+            "longitude",
+            "status",
+            "status_at",
+            "tasks",
+            "attachments",
+            "homeowner",
+            "task_progress",
+            "completion_requested_at",
+            "completed_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_homeowner(self, obj):
+        """Get homeowner info with rating."""
+        if hasattr(obj.homeowner, "homeowner_profile"):
+            profile = obj.homeowner.homeowner_profile
+            return {
+                "public_id": obj.homeowner.public_id,
+                "display_name": profile.display_name,
+                "avatar_url": profile.avatar_url,
+                "rating": profile.rating,
+                "review_count": profile.review_count,
+            }
+        return {
+            "public_id": obj.homeowner.public_id,
+            "display_name": None,
+            "avatar_url": None,
+            "rating": None,
+            "review_count": 0,
+        }
+
+    def get_task_progress(self, obj):
+        """Get task completion progress."""
+        # Use prefetched tasks if available
+        tasks = obj.tasks.all()
+        total = len(tasks)
+        completed = sum(1 for t in tasks if t.is_completed)
+        return {
+            "total": total,
+            "completed": completed,
+            "percentage": round((completed / total * 100), 1) if total > 0 else 0,
+        }
+
+
+# Response serializer for handyman assigned jobs
+HandymanAssignedJobListResponseSerializer = create_list_response_serializer(
+    HandymanAssignedJobListSerializer, "HandymanAssignedJobListResponse"
+)
