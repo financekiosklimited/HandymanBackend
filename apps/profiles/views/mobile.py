@@ -616,20 +616,24 @@ class HomeownerHandymanDetailView(APIView):
         from apps.bookmarks.models import HandymanBookmark
 
         try:
-            profile = HandymanProfile.objects.annotate(
-                is_bookmarked=Exists(
-                    HandymanBookmark.objects.filter(
-                        homeowner=request.user,
-                        handyman_profile=OuterRef("pk"),
+            profile = (
+                HandymanProfile.objects.select_related("user")
+                .annotate(
+                    is_bookmarked=Exists(
+                        HandymanBookmark.objects.filter(
+                            homeowner=request.user,
+                            handyman_profile=OuterRef("pk"),
+                        )
                     )
                 )
-            ).get(
-                public_id=public_id,
-                is_approved=True,
-                is_active=True,
-                is_available=True,
-                latitude__isnull=False,
-                longitude__isnull=False,
+                .get(
+                    public_id=public_id,
+                    is_approved=True,
+                    is_active=True,
+                    is_available=True,
+                    latitude__isnull=False,
+                    longitude__isnull=False,
+                )
             )
         except HandymanProfile.DoesNotExist:
             return not_found_response("Handyman not found")
@@ -930,7 +934,7 @@ class GuestHandymanDetailView(APIView):
     def get(self, request, public_id):
         """Get handyman detail for guest users."""
         try:
-            profile = HandymanProfile.objects.get(
+            profile = HandymanProfile.objects.select_related("user").get(
                 public_id=public_id,
                 is_approved=True,
                 is_active=True,

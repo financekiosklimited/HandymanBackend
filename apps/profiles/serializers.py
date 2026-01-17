@@ -224,6 +224,11 @@ HandymanProfileResponseSerializer = create_response_serializer(
 class HomeownerHandymanListSerializer(serializers.ModelSerializer):
     """Serializer for homeowners browsing nearby handymen (public fields only)."""
 
+    public_id = serializers.UUIDField(
+        source="user.public_id",
+        read_only=True,
+        help_text="User public ID (use this for chat endpoints)",
+    )
     avatar_url = serializers.URLField(read_only=True, allow_null=True)
     rating = serializers.DecimalField(
         max_digits=3,
@@ -276,6 +281,11 @@ class HomeownerHandymanListSerializer(serializers.ModelSerializer):
 class HomeownerHandymanDetailSerializer(serializers.ModelSerializer):
     """Serializer for homeowner viewing a handyman profile detail (public fields only)."""
 
+    public_id = serializers.UUIDField(
+        source="user.public_id",
+        read_only=True,
+        help_text="User public ID (use this for chat endpoints)",
+    )
     avatar_url = serializers.URLField(read_only=True, allow_null=True)
     rating = serializers.DecimalField(
         max_digits=3,
