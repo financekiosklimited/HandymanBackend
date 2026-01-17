@@ -1238,12 +1238,11 @@ class Command(BaseCommand):
                         file_path = random.choice(video_thumbs)
                         file_type = "video"
                         duration = random.randint(10, 180)
-                    elif job_images:
+                    else:
+                        # Fallback: use_image was False but no video_thumbs, use job_images
                         file_path = random.choice(job_images)
                         file_type = "image"
                         duration = None
-                    else:
-                        continue
 
                     JobAttachment.objects.create(
                         job=job,
@@ -1280,6 +1279,10 @@ class Command(BaseCommand):
 
                 try:
                     hourly_rate = handyman.handyman_profile.hourly_rate
+                    if hourly_rate is None:
+                        hourly_rate = Decimal("50.00")
+                    elif not isinstance(hourly_rate, Decimal):
+                        hourly_rate = Decimal(str(hourly_rate))
                 except HandymanProfile.DoesNotExist:
                     hourly_rate = Decimal("50.00")
 
@@ -1332,11 +1335,10 @@ class Command(BaseCommand):
                         elif job_images:
                             file_path = random.choice(job_images)
                             file_type = "image"
-                        elif documents:
+                        else:
+                            # Fallback: use_document was False but no job_images, use documents
                             file_path = random.choice(documents)
                             file_type = "document"
-                        else:
-                            continue
 
                         JobApplicationAttachment.objects.create(
                             application=app,
@@ -1409,36 +1411,34 @@ class Command(BaseCommand):
                 )
                 stats["sessions"] += 1
 
-                # Add session media (0-3) - only if assets exist
-                if work_photos or video_thumbs:
-                    num_media = random.randint(MIN_SESSION_MEDIA, MAX_SESSION_MEDIA)
-                    for _ in range(num_media):
-                        # 70% photo, 30% video (fallback to available type)
-                        use_photo = random.random() < 0.7
-                        if use_photo and work_photos:
-                            file_path = random.choice(work_photos)
-                            media_type = "photo"
-                            duration = None
-                        elif video_thumbs:
-                            file_path = random.choice(video_thumbs)
-                            media_type = "video"
-                            duration = random.randint(5, 60)
-                        elif work_photos:
-                            file_path = random.choice(work_photos)
-                            media_type = "photo"
-                            duration = None
-                        else:
-                            continue
+                # Add session media (0-3) - work_photos is guaranteed non-empty at this point
+                num_media = random.randint(MIN_SESSION_MEDIA, MAX_SESSION_MEDIA)
+                for _ in range(num_media):
+                    # 70% photo, 30% video (fallback to available type)
+                    use_photo = random.random() < 0.7
+                    if use_photo and work_photos:
+                        file_path = random.choice(work_photos)
+                        media_type = "photo"
+                        duration = None
+                    elif video_thumbs:
+                        file_path = random.choice(video_thumbs)
+                        media_type = "video"
+                        duration = random.randint(5, 60)
+                    else:
+                        # Fallback: use_photo was False but no video_thumbs, use work_photos
+                        file_path = random.choice(work_photos)
+                        media_type = "photo"
+                        duration = None
 
-                        WorkSessionMedia.objects.create(
-                            work_session=session,
-                            media_type=media_type,
-                            file=file_path,
-                            description=f"Work progress {media_type}",
-                            file_size=random.randint(50000, 500000),
-                            duration_seconds=duration,
-                        )
-                        stats["media"] += 1
+                    WorkSessionMedia.objects.create(
+                        work_session=session,
+                        media_type=media_type,
+                        file=file_path,
+                        description=f"Work progress {media_type}",
+                        file_size=random.randint(50000, 500000),
+                        duration_seconds=duration,
+                    )
+                    stats["media"] += 1
 
         return stats
 
