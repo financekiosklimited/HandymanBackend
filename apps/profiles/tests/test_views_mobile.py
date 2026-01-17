@@ -278,34 +278,54 @@ class MobileHandymanBrowsingTests(APITestCase):
             "email_verified": True,
         }
 
-    def test_list_nearby_handymen_validation(self):
-        """Test coordinate validation for nearby handymen."""
-        self.client.force_authenticate(user=self.user)
-
-        # Missing coordinates
-        response = self.client.get(self.url)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-        # Invalid numbers
-        response = self.client.get(f"{self.url}?latitude=abc&longitude=123")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-        # Out of range
-        response = self.client.get(f"{self.url}?latitude=100&longitude=45")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-        response = self.client.get(f"{self.url}?latitude=45&longitude=200")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-        # Invalid radius
-        response = self.client.get(f"{self.url}?latitude=45&longitude=45&radius_km=-1")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_list_nearby_handymen_success(self):
-        """Test successfully listing nearby handymen."""
+    def test_list_handymen_without_coordinates_success(self):
+        """Test listing handymen without coordinates returns all visible handymen."""
         # Create a handyman
         handyman_user = User.objects.create_user(
             email="handyman@example.com", password="password"
+        )
+        UserRole.objects.create(user=handyman_user, role="handyman")
+        HandymanProfile.objects.create(
+            user=handyman_user,
+            display_name="Test Handyman",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            latitude=43.651070,
+            longitude=-79.347015,
+            rating=4.5,
+            review_count=10,
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["display_name"], "Test Handyman")
+        # distance_km should be None when no coordinates provided
+        self.assertIsNone(response.data["data"][0]["distance_km"])
+
+    def test_list_handymen_with_coordinates_validation(self):
+        """Test coordinate validation for handymen listing."""
+        self.client.force_authenticate(user=self.user)
+
+        # Invalid numbers - should return 400
+        response = self.client.get(f"{self.url}?latitude=abc&longitude=123")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Out of range latitude
+        response = self.client.get(f"{self.url}?latitude=100&longitude=45")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Out of range longitude
+        response = self.client.get(f"{self.url}?latitude=45&longitude=200")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_list_handymen_with_coordinates_success(self):
+        """Test listing handymen with coordinates includes distance."""
+        # Create a handyman
+        handyman_user = User.objects.create_user(
+            email="handyman2@example.com", password="password"
         )
         UserRole.objects.create(user=handyman_user, role="handyman")
         HandymanProfile.objects.create(
@@ -323,6 +343,137 @@ class MobileHandymanBrowsingTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
         self.assertEqual(response.data["data"][0]["display_name"], "Nearby Handyman")
+        # distance_km should be calculated
+        self.assertIsNotNone(response.data["data"][0]["distance_km"])
+
+    def test_list_handymen_shows_all_no_radius_filter(self):
+        """Test all handymen are returned regardless of distance (no radius filter)."""
+        # Create a near handyman
+        near_user = User.objects.create_user(
+            email="near_handyman@example.com", password="password"
+        )
+        UserRole.objects.create(user=near_user, role="handyman")
+        HandymanProfile.objects.create(
+            user=near_user,
+            display_name="Near Handyman",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            latitude=43.651070,
+            longitude=-79.347015,
+        )
+
+        # Create a far handyman (about 1000km away)
+        far_user = User.objects.create_user(
+            email="far_handyman@example.com", password="password"
+        )
+        UserRole.objects.create(user=far_user, role="handyman")
+        HandymanProfile.objects.create(
+            user=far_user,
+            display_name="Far Handyman",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            latitude=53.0,  # Very far north
+            longitude=-79.0,
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(f"{self.url}?latitude=43.65&longitude=-79.34")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Both handymen should be returned regardless of distance
+        self.assertEqual(len(response.data["data"]), 2)
+
+    def test_list_handymen_without_coords_appear_last(self):
+        """Test handymen without coordinates appear at end of list."""
+        # Create handyman with coordinates and high rating
+        with_coords_user = User.objects.create_user(
+            email="with_coords@example.com", password="password"
+        )
+        UserRole.objects.create(user=with_coords_user, role="handyman")
+        HandymanProfile.objects.create(
+            user=with_coords_user,
+            display_name="With Coords",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            latitude=43.651070,
+            longitude=-79.347015,
+            rating=3.0,
+            review_count=5,
+        )
+
+        # Create handyman without coordinates but higher rating
+        no_coords_user = User.objects.create_user(
+            email="no_coords@example.com", password="password"
+        )
+        UserRole.objects.create(user=no_coords_user, role="handyman")
+        HandymanProfile.objects.create(
+            user=no_coords_user,
+            display_name="No Coords High Rating",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            latitude=None,
+            longitude=None,
+            rating=5.0,
+            review_count=100,
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(f"{self.url}?latitude=43.65&longitude=-79.34")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+        # Handyman with coords should be first, despite lower rating
+        self.assertEqual(response.data["data"][0]["display_name"], "With Coords")
+        # Handyman without coords at end
+        self.assertEqual(
+            response.data["data"][1]["display_name"], "No Coords High Rating"
+        )
+
+    def test_list_handymen_ordered_by_popularity(self):
+        """Test handymen are ordered by popularity score."""
+        # Create low popularity handyman
+        low_user = User.objects.create_user(
+            email="low_pop@example.com", password="password"
+        )
+        UserRole.objects.create(user=low_user, role="handyman")
+        HandymanProfile.objects.create(
+            user=low_user,
+            display_name="Low Popularity",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            latitude=43.651070,
+            longitude=-79.347015,
+            rating=2.0,
+            review_count=1,
+        )
+
+        # Create high popularity handyman
+        high_user = User.objects.create_user(
+            email="high_pop@example.com", password="password"
+        )
+        UserRole.objects.create(user=high_user, role="handyman")
+        HandymanProfile.objects.create(
+            user=high_user,
+            display_name="High Popularity",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            latitude=43.651070,
+            longitude=-79.347015,
+            rating=5.0,
+            review_count=100,
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+        # High popularity should be first
+        self.assertEqual(response.data["data"][0]["display_name"], "High Popularity")
+        self.assertEqual(response.data["data"][1]["display_name"], "Low Popularity")
 
 
 class MobileHandymanProfileViewTests(APITestCase):
@@ -607,20 +758,8 @@ class MobileGuestHandymanListViewTests(APITestCase):
         for item in response.data["data"]:
             self.assertIsNone(item.get("distance_km"))
 
-    def test_list_handymen_filter_by_radius(self):
-        """Test filtering by radius excludes far handymen."""
-        response = self.client.get(
-            self.url,
-            {"latitude": "43.651070", "longitude": "-79.347015", "radius_km": "1"},
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-        results = response.data["data"]
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["display_name"], "Visible Handyman")
-
-    def test_list_handymen_orders_by_distance_when_location_provided(self):
-        """Test handymen are ordered by distance when location provided."""
+    def test_list_handymen_shows_all_no_radius_filter(self):
+        """Test all visible handymen are returned regardless of distance."""
         response = self.client.get(
             self.url,
             {"latitude": "43.651070", "longitude": "-79.347015"},
@@ -628,8 +767,34 @@ class MobileGuestHandymanListViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         results = response.data["data"]
-        self.assertEqual(results[0]["display_name"], "Visible Handyman")
-        self.assertEqual(results[1]["display_name"], "Far Handyman")
+        # Both visible and far handymen should be included (no radius filter)
+        self.assertEqual(len(results), 2)
+        display_names = [r["display_name"] for r in results]
+        self.assertIn("Visible Handyman", display_names)
+        self.assertIn("Far Handyman", display_names)
+
+    def test_list_handymen_ordered_by_popularity_then_distance(self):
+        """Test handymen are ordered by popularity first, then distance."""
+        # Update far handyman to have higher rating
+        self.handyman_far.rating = 5.0
+        self.handyman_far.review_count = 100
+        self.handyman_far.save()
+
+        # Update visible handyman to have lower rating
+        self.handyman_visible.rating = 2.0
+        self.handyman_visible.review_count = 1
+        self.handyman_visible.save()
+
+        response = self.client.get(
+            self.url,
+            {"latitude": "43.651070", "longitude": "-79.347015"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = response.data["data"]
+        # Far handyman has higher popularity, so should be first despite distance
+        self.assertEqual(results[0]["display_name"], "Far Handyman")
+        self.assertEqual(results[1]["display_name"], "Visible Handyman")
 
     def test_list_handymen_includes_pagination(self):
         """Test response includes pagination metadata."""
@@ -674,22 +839,70 @@ class MobileGuestHandymanListViewTests(APITestCase):
 
     def test_list_handymen_coordinate_validation_edge_cases(self):
         """Test guest list coordinate validation failure branches."""
-        # Latitude out of range
+        # Latitude out of range - treated as no coordinates (graceful fallback)
         response = self.client.get(self.url, {"latitude": "91", "longitude": "0"})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNone(response.data["data"][0]["distance_km"])
 
-        # Longitude out of range
+        # Longitude out of range - treated as no coordinates (graceful fallback)
         response = self.client.get(self.url, {"latitude": "0", "longitude": "181"})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNone(response.data["data"][0]["distance_km"])
 
-        # Radius <= 0
+    def test_list_handymen_without_coords_appear_last(self):
+        """Test handymen without coordinates appear at end of list when coords provided."""
+        # Create handyman without coordinates
+        no_coords_user = User.objects.create_user(
+            email="no_coords@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=no_coords_user, role="handyman")
+        HandymanProfile.objects.create(
+            user=no_coords_user,
+            display_name="No Coords Handyman",
+            phone_number="+1234567899",
+            address="999 No Coords St",
+            hourly_rate="100.00",
+            latitude=None,
+            longitude=None,
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            rating=5.0,  # High rating
+            review_count=100,
+        )
+
         response = self.client.get(
-            self.url, {"latitude": "0", "longitude": "0", "radius_km": "0"}
+            self.url,
+            {"latitude": "43.651070", "longitude": "-79.347015"},
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNone(response.data["data"][0]["distance_km"])
+
+        results = response.data["data"]
+        # Handymen with coordinates first, then without coordinates at end
+        self.assertEqual(len(results), 3)
+        # Last one should be the handyman without coordinates
+        self.assertEqual(results[-1]["display_name"], "No Coords Handyman")
+        self.assertIsNone(results[-1]["distance_km"])
+
+    def test_list_handymen_ordered_by_popularity_without_coords(self):
+        """Test handymen ordered by popularity when no coordinates provided."""
+        # Set different ratings
+        self.handyman_visible.rating = 5.0
+        self.handyman_visible.review_count = 100
+        self.handyman_visible.save()
+
+        self.handyman_far.rating = 2.0
+        self.handyman_far.review_count = 1
+        self.handyman_far.save()
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = response.data["data"]
+        # Higher popularity first
+        self.assertEqual(results[0]["display_name"], "Visible Handyman")
+        self.assertEqual(results[1]["display_name"], "Far Handyman")
 
 
 class MobileGuestHandymanDetailViewTests(APITestCase):

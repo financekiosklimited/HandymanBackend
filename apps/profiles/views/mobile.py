@@ -2,8 +2,8 @@
 Mobile profile views.
 """
 
-from django.db.models import Case, FloatField, Value, When
-from django.db.models.functions import ACos, Cos, Radians, Sin
+from django.db.models import Case, F, FloatField, IntegerField, Value, When
+from django.db.models.functions import ACos, Coalesce, Cos, Log, Radians, Sin
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema
 from rest_framework.permissions import IsAuthenticated
@@ -324,6 +324,7 @@ class HomeownerNearbyHandymanListView(APIView):
         operation_id="mobile_homeowner_handymen_nearby_list",
         responses={
             200: HomeownerHandymanListResponseSerializer,
+            400: OpenApiTypes.OBJECT,
             401: OpenApiTypes.OBJECT,
         },
         parameters=[
@@ -331,8 +332,12 @@ class HomeownerNearbyHandymanListView(APIView):
                 name="latitude",
                 type=OpenApiTypes.DECIMAL,
                 location=OpenApiParameter.QUERY,
-                description="Homeowner current latitude (required)",
-                required=True,
+                description=(
+                    "User's current latitude for distance calculation (optional). "
+                    "If provided with longitude, handymen are sorted by popularity "
+                    "and distance. Handymen without coordinates appear at the end."
+                ),
+                required=False,
                 examples=[
                     OpenApiExample("Toronto", value=43.651070),
                 ],
@@ -341,21 +346,13 @@ class HomeownerNearbyHandymanListView(APIView):
                 name="longitude",
                 type=OpenApiTypes.DECIMAL,
                 location=OpenApiParameter.QUERY,
-                description="Homeowner current longitude (required)",
-                required=True,
-                examples=[
-                    OpenApiExample("Toronto", value=-79.347015),
-                ],
-            ),
-            OpenApiParameter(
-                name="radius_km",
-                type=OpenApiTypes.DECIMAL,
-                location=OpenApiParameter.QUERY,
-                description="Search radius in kilometers (default: 25)",
+                description=(
+                    "User's current longitude for distance calculation (optional). "
+                    "Must be provided together with latitude."
+                ),
                 required=False,
                 examples=[
-                    OpenApiExample("Default", value=25),
-                    OpenApiExample("Large", value=50),
+                    OpenApiExample("Toronto", value=-79.347015),
                 ],
             ),
             OpenApiParameter(
@@ -374,24 +371,50 @@ class HomeownerNearbyHandymanListView(APIView):
             ),
         ],
         description=(
-            "List approved, active, available handymen near the homeowner. "
+            "List approved, active, available handymen for homeowners. "
+            "Returns all handymen sorted by popularity score (rating + review count). "
+            "If latitude and longitude are provided, also considers distance in sorting "
+            "and handymen without coordinates appear at the end of the list. "
             "This endpoint does not expose sensitive fields (phone/address/coordinates). "
             "Requires authenticated homeowner with verified email."
         ),
-        summary="List nearby handymen",
+        summary="List handymen",
         tags=["Mobile Homeowner Handymen"],
         examples=[
             OpenApiExample(
-                "Success Response",
+                "Success Response (with coordinates)",
                 value={
                     "message": "Handymen retrieved successfully",
                     "data": [
                         {
                             "public_id": "123e4567-e89b-12d3-a456-426614174000",
                             "display_name": "John Handyman",
+                            "avatar_url": "https://example.com/avatar.jpg",
                             "rating": 4.5,
                             "hourly_rate": 75.0,
                             "distance_km": 2.1,
+                            "is_bookmarked": False,
+                        }
+                    ],
+                    "errors": None,
+                    "meta": pagination_meta_example(total_count=1),
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Success Response (without coordinates)",
+                value={
+                    "message": "Handymen retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "display_name": "John Handyman",
+                            "avatar_url": "https://example.com/avatar.jpg",
+                            "rating": 4.5,
+                            "hourly_rate": 75.0,
+                            "distance_km": None,
+                            "is_bookmarked": True,
                         }
                     ],
                     "errors": None,
@@ -405,85 +428,115 @@ class HomeownerNearbyHandymanListView(APIView):
         ],
     )
     def get(self, request):
-        """List nearby handymen ordered by distance."""
+        """List handymen sorted by popularity and optionally by distance."""
         from django.db.models import Exists, OuterRef
 
         from apps.bookmarks.models import HandymanBookmark
 
         latitude = request.query_params.get("latitude")
         longitude = request.query_params.get("longitude")
-        radius_km = request.query_params.get("radius_km", "25")
 
-        if latitude is None or longitude is None:
-            return validation_error_response(
-                {"coordinates": ["Latitude and longitude are required."]}
-            )
+        # Base queryset: only visible handymen
+        handymen = HandymanProfile.objects.filter(
+            is_approved=True,
+            is_active=True,
+            is_available=True,
+        ).select_related("user")
 
-        try:
-            user_lat = float(latitude)
-            user_lng = float(longitude)
-            radius = float(radius_km)
-        except (ValueError, TypeError):
-            return validation_error_response(
-                {"coordinates": ["Latitude, longitude and radius_km must be numbers."]}
+        # Annotate is_bookmarked for the current user
+        handymen = handymen.annotate(
+            is_bookmarked=Exists(
+                HandymanBookmark.objects.filter(
+                    homeowner=request.user,
+                    handyman_profile=OuterRef("pk"),
+                )
             )
-
-        if not (-90 <= user_lat <= 90):
-            return validation_error_response(
-                {"latitude": ["Latitude must be between -90 and 90."]}
-            )
-        if not (-180 <= user_lng <= 180):
-            return validation_error_response(
-                {"longitude": ["Longitude must be between -180 and 180."]}
-            )
-        if radius <= 0:
-            return validation_error_response(
-                {"radius_km": ["Radius must be greater than 0."]}
-            )
-
-        # Base queryset: only visible handymen with coordinates
-        handymen = (
-            HandymanProfile.objects.filter(
-                is_approved=True,
-                is_active=True,
-                is_available=True,
-                latitude__isnull=False,
-                longitude__isnull=False,
-            )
-            .select_related("user")
-            .annotate(
-                # Annotate is_bookmarked for the current user
-                is_bookmarked=Exists(
-                    HandymanBookmark.objects.filter(
-                        homeowner=request.user,
-                        handyman_profile=OuterRef("pk"),
-                    )
-                ),
-                distance_km=Case(
-                    When(
-                        latitude__isnull=False,
-                        longitude__isnull=False,
-                        then=(
-                            6371.0
-                            * ACos(
-                                Cos(Radians(Value(user_lat)))
-                                * Cos(Radians("latitude"))
-                                * Cos(Radians("longitude") - Radians(Value(user_lng)))
-                                + Sin(Radians(Value(user_lat)))
-                                * Sin(Radians("latitude"))
-                            )
-                        ),
-                    ),
-                    default=Value(None),
-                    output_field=FloatField(),
-                ),
-            )
-            .filter(distance_km__lte=radius)
-            .order_by("distance_km", "-created_at")
         )
 
+        # Popularity score: rating * 2 + log10(review_count + 1) * 1.5
+        # Rating (0-5) contributes up to 10 points
+        # Review count uses log scale to prevent dominance
+        popularity_score = Coalesce(
+            F("rating"), Value(0.0), output_field=FloatField()
+        ) * Value(2.0) + Log(F("review_count") + Value(1), Value(10)) * Value(1.5)
+
+        handymen = handymen.annotate(
+            popularity_score=popularity_score,
+        )
+
+        # Check if coordinates provided
+        has_coordinates = latitude is not None and longitude is not None
+        if has_coordinates:
+            try:
+                user_lat = float(latitude)
+                user_lng = float(longitude)
+
+                # Validate coordinate ranges
+                if not (-90 <= user_lat <= 90):
+                    return validation_error_response(
+                        {"latitude": ["Latitude must be between -90 and 90."]}
+                    )
+                if not (-180 <= user_lng <= 180):
+                    return validation_error_response(
+                        {"longitude": ["Longitude must be between -180 and 180."]}
+                    )
+
+                # Annotate distance_km using Haversine formula
+                handymen = handymen.annotate(
+                    distance_km=Case(
+                        When(
+                            latitude__isnull=False,
+                            longitude__isnull=False,
+                            then=(
+                                6371.0
+                                * ACos(
+                                    Cos(Radians(Value(user_lat)))
+                                    * Cos(Radians("latitude"))
+                                    * Cos(
+                                        Radians("longitude") - Radians(Value(user_lng))
+                                    )
+                                    + Sin(Radians(Value(user_lat)))
+                                    * Sin(Radians("latitude"))
+                                )
+                            ),
+                        ),
+                        default=Value(None),
+                        output_field=FloatField(),
+                    ),
+                    # Handymen without coordinates go to the end
+                    has_location=Case(
+                        When(
+                            latitude__isnull=False,
+                            longitude__isnull=False,
+                            then=Value(0),
+                        ),
+                        default=Value(1),
+                        output_field=IntegerField(),
+                    ),
+                )
+
+                # Order: has_location first, then by popularity, then by distance
+                handymen = handymen.order_by(
+                    "has_location",
+                    "-popularity_score",
+                    "distance_km",
+                    "-created_at",
+                )
+            except (ValueError, TypeError):
+                return validation_error_response(
+                    {"coordinates": ["Latitude and longitude must be valid numbers."]}
+                )
+        else:
+            # No coordinates - return all without distance, sorted by popularity
+            handymen = handymen.annotate(
+                distance_km=Value(None, output_field=FloatField())
+            )
+            handymen = handymen.order_by("-popularity_score", "-created_at")
+
+        # Count total before pagination
         total_count = handymen.count()
 
+        # Pagination
         page = int(request.query_params.get("page", 1))
         page_size = min(int(request.query_params.get("page_size", 20)), 100)
         total_pages = (
@@ -591,7 +644,7 @@ class HomeownerHandymanDetailView(APIView):
 class GuestHandymanListView(APIView):
     """
     View for listing handymen for guest users (no authentication required).
-    Returns approved, active, available handymen with optional distance calculation.
+    Returns approved, active, available handymen sorted by popularity and optionally distance.
     """
 
     authentication_classes = []
@@ -607,7 +660,11 @@ class GuestHandymanListView(APIView):
                 name="latitude",
                 type=OpenApiTypes.DECIMAL,
                 location=OpenApiParameter.QUERY,
-                description="User's current latitude for distance calculation (e.g., 43.651070)",
+                description=(
+                    "User's current latitude for distance calculation (optional). "
+                    "If provided with longitude, handymen are sorted by popularity "
+                    "and distance. Handymen without coordinates appear at the end."
+                ),
                 required=False,
                 examples=[
                     OpenApiExample("Toronto", value=43.651070),
@@ -617,21 +674,13 @@ class GuestHandymanListView(APIView):
                 name="longitude",
                 type=OpenApiTypes.DECIMAL,
                 location=OpenApiParameter.QUERY,
-                description="User's current longitude for distance calculation (e.g., -79.347015)",
+                description=(
+                    "User's current longitude for distance calculation (optional). "
+                    "Must be provided together with latitude."
+                ),
                 required=False,
                 examples=[
                     OpenApiExample("Toronto", value=-79.347015),
-                ],
-            ),
-            OpenApiParameter(
-                name="radius_km",
-                type=OpenApiTypes.DECIMAL,
-                location=OpenApiParameter.QUERY,
-                description="Search radius in kilometers (default: 25). Only applies if lat/lng provided.",
-                required=False,
-                examples=[
-                    OpenApiExample("Default", value=25),
-                    OpenApiExample("Large", value=50),
                 ],
             ),
             OpenApiParameter(
@@ -651,24 +700,26 @@ class GuestHandymanListView(APIView):
         ],
         description=(
             "List approved, active, available handymen for guest users (no authentication required). "
-            "If latitude and longitude are provided, handymen are filtered by radius_km and sorted by distance. "
-            "If coordinates not provided, returns all matching handymen without distance filter."
+            "Returns all handymen sorted by popularity score (rating + review count). "
+            "If latitude and longitude are provided, also considers distance in sorting "
+            "and handymen without coordinates appear at the end of the list."
         ),
         summary="Guest - List handymen",
         tags=["Mobile Guest Handymen"],
         examples=[
             OpenApiExample(
-                "Success Response",
+                "Success Response (with coordinates)",
                 value={
                     "message": "Handymen retrieved successfully",
                     "data": [
                         {
                             "public_id": "123e4567-e89b-12d3-a456-426614174000",
                             "display_name": "John Handyman",
-                            "avatar_url": None,
+                            "avatar_url": "https://example.com/avatar.jpg",
                             "rating": 4.5,
                             "hourly_rate": 75.0,
                             "distance_km": 2.1,
+                            "is_bookmarked": False,
                         }
                     ],
                     "errors": None,
@@ -677,14 +728,33 @@ class GuestHandymanListView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
-            NOT_FOUND_EXAMPLE,
+            OpenApiExample(
+                "Success Response (without coordinates)",
+                value={
+                    "message": "Handymen retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "display_name": "John Handyman",
+                            "avatar_url": "https://example.com/avatar.jpg",
+                            "rating": 4.5,
+                            "hourly_rate": 75.0,
+                            "distance_km": None,
+                            "is_bookmarked": False,
+                        }
+                    ],
+                    "errors": None,
+                    "meta": pagination_meta_example(total_count=1),
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
         ],
     )
     def get(self, request):
-        """List handymen for guest users with optional distance calculation."""
+        """List handymen for guest users sorted by popularity and optionally distance."""
         latitude = request.query_params.get("latitude")
         longitude = request.query_params.get("longitude")
-        radius_km = request.query_params.get("radius_km", "25")
 
         # Base queryset: only visible handymen
         handymen = HandymanProfile.objects.filter(
@@ -693,29 +763,27 @@ class GuestHandymanListView(APIView):
             is_available=True,
         ).select_related("user")
 
+        # Popularity score: rating * 2 + log10(review_count + 1) * 1.5
+        popularity_score = Coalesce(
+            F("rating"), Value(0.0), output_field=FloatField()
+        ) * Value(2.0) + Log(F("review_count") + Value(1), Value(10)) * Value(1.5)
+
+        handymen = handymen.annotate(
+            popularity_score=popularity_score,
+        )
+
         # Check if coordinates provided
         has_coordinates = latitude is not None and longitude is not None
         if has_coordinates:
             try:
                 user_lat = float(latitude)
                 user_lng = float(longitude)
-                radius = float(radius_km)
 
-                # Validate coordinate ranges
-                if not (-90 <= user_lat <= 90):
-                    has_coordinates = False
-                elif not (-180 <= user_lng <= 180):
-                    has_coordinates = False
-                elif radius <= 0:
+                # Validate coordinate ranges - if invalid, treat as no coordinates
+                if not (-90 <= user_lat <= 90) or not (-180 <= user_lng <= 180):
                     has_coordinates = False
                 else:
-                    # Filter handymen that have coordinates
-                    handymen = handymen.filter(
-                        latitude__isnull=False,
-                        longitude__isnull=False,
-                    )
-
-                    # Haversine formula for distance calculation in km
+                    # Annotate distance_km using Haversine formula
                     handymen = handymen.annotate(
                         distance_km=Case(
                             When(
@@ -737,23 +805,35 @@ class GuestHandymanListView(APIView):
                             ),
                             default=Value(None),
                             output_field=FloatField(),
-                        )
+                        ),
+                        # Handymen without coordinates go to the end
+                        has_location=Case(
+                            When(
+                                latitude__isnull=False,
+                                longitude__isnull=False,
+                                then=Value(0),
+                            ),
+                            default=Value(1),
+                            output_field=IntegerField(),
+                        ),
                     )
 
-                    # Filter by radius
-                    handymen = handymen.filter(distance_km__lte=radius)
-
-                    # Order by distance, then by created_at
-                    handymen = handymen.order_by("distance_km", "-created_at")
+                    # Order: has_location first, then by popularity, then by distance
+                    handymen = handymen.order_by(
+                        "has_location",
+                        "-popularity_score",
+                        "distance_km",
+                        "-created_at",
+                    )
             except (ValueError, TypeError):
                 has_coordinates = False
 
         if not has_coordinates:
-            # No coordinates or invalid - return all without distance filter
+            # No coordinates or invalid - return all without distance, sorted by popularity
             handymen = handymen.annotate(
                 distance_km=Value(None, output_field=FloatField())
             )
-            handymen = handymen.order_by("-created_at")
+            handymen = handymen.order_by("-popularity_score", "-created_at")
 
         # Count total before pagination
         total_count = handymen.count()
