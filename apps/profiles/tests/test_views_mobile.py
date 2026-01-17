@@ -475,6 +475,164 @@ class MobileHandymanBrowsingTests(APITestCase):
         self.assertEqual(response.data["data"][0]["display_name"], "High Popularity")
         self.assertEqual(response.data["data"][1]["display_name"], "Low Popularity")
 
+    def test_list_handymen_search_by_display_name_success(self):
+        """Test searching handymen by display name returns matching results."""
+        # Create handymen with different names
+        user1 = User.objects.create_user(
+            email="john_doe@example.com", password="password"
+        )
+        UserRole.objects.create(user=user1, role="handyman")
+        HandymanProfile.objects.create(
+            user=user1,
+            display_name="John Doe",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+        )
+
+        user2 = User.objects.create_user(
+            email="jane_smith@example.com", password="password"
+        )
+        UserRole.objects.create(user=user2, role="handyman")
+        HandymanProfile.objects.create(
+            user=user2,
+            display_name="Jane Smith",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(f"{self.url}?search=John")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["display_name"], "John Doe")
+
+    def test_list_handymen_search_case_insensitive(self):
+        """Test search is case-insensitive."""
+        user = User.objects.create_user(
+            email="mike_handyman@example.com", password="password"
+        )
+        UserRole.objects.create(user=user, role="handyman")
+        HandymanProfile.objects.create(
+            user=user,
+            display_name="Mike Johnson",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        # Search with lowercase
+        response = self.client.get(f"{self.url}?search=mike")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["display_name"], "Mike Johnson")
+
+        # Search with uppercase
+        response = self.client.get(f"{self.url}?search=MIKE")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+    def test_list_handymen_search_partial_match(self):
+        """Test search returns partial matches."""
+        user = User.objects.create_user(
+            email="alexander@example.com", password="password"
+        )
+        UserRole.objects.create(user=user, role="handyman")
+        HandymanProfile.objects.create(
+            user=user,
+            display_name="Alexander Hamilton",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(f"{self.url}?search=Alex")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["display_name"], "Alexander Hamilton")
+
+    def test_list_handymen_search_no_results(self):
+        """Test search with no matches returns empty list."""
+        user = User.objects.create_user(
+            email="bob_builder@example.com", password="password"
+        )
+        UserRole.objects.create(user=user, role="handyman")
+        HandymanProfile.objects.create(
+            user=user,
+            display_name="Bob Builder",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(f"{self.url}?search=NonExistentName")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+        self.assertEqual(response.data["meta"]["pagination"]["total_count"], 0)
+
+    def test_list_handymen_search_with_coordinates(self):
+        """Test search works together with coordinate filtering."""
+        user1 = User.objects.create_user(
+            email="nearby_john@example.com", password="password"
+        )
+        UserRole.objects.create(user=user1, role="handyman")
+        HandymanProfile.objects.create(
+            user=user1,
+            display_name="John Nearby",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            latitude=43.651070,
+            longitude=-79.347015,
+        )
+
+        user2 = User.objects.create_user(
+            email="far_john@example.com", password="password"
+        )
+        UserRole.objects.create(user=user2, role="handyman")
+        HandymanProfile.objects.create(
+            user=user2,
+            display_name="John Far",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            latitude=53.0,
+            longitude=-79.0,
+        )
+
+        user3 = User.objects.create_user(
+            email="jane_nearby@example.com", password="password"
+        )
+        UserRole.objects.create(user=user3, role="handyman")
+        HandymanProfile.objects.create(
+            user=user3,
+            display_name="Jane Nearby",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            latitude=43.651070,
+            longitude=-79.347015,
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(
+            f"{self.url}?search=John&latitude=43.65&longitude=-79.34"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return only the 2 Johns, not Jane
+        self.assertEqual(len(response.data["data"]), 2)
+        names = [h["display_name"] for h in response.data["data"]]
+        self.assertIn("John Nearby", names)
+        self.assertIn("John Far", names)
+        self.assertNotIn("Jane Nearby", names)
+        # Distance should be calculated
+        self.assertIsNotNone(response.data["data"][0]["distance_km"])
+
 
 class MobileHandymanProfileViewTests(APITestCase):
     """Test cases for mobile HandymanProfileView."""
@@ -903,6 +1061,44 @@ class MobileGuestHandymanListViewTests(APITestCase):
         # Higher popularity first
         self.assertEqual(results[0]["display_name"], "Visible Handyman")
         self.assertEqual(results[1]["display_name"], "Far Handyman")
+
+    def test_list_handymen_search_by_display_name_success(self):
+        """Test searching handymen by display name returns matching results."""
+        response = self.client.get(f"{self.url}?search=Visible")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["display_name"], "Visible Handyman")
+
+    def test_list_handymen_search_case_insensitive(self):
+        """Test search is case-insensitive."""
+        # Search with lowercase
+        response = self.client.get(f"{self.url}?search=visible")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["display_name"], "Visible Handyman")
+
+        # Search with uppercase
+        response = self.client.get(f"{self.url}?search=VISIBLE")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+    def test_list_handymen_search_no_results(self):
+        """Test search with no matches returns empty list."""
+        response = self.client.get(f"{self.url}?search=NonExistentName")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+        self.assertEqual(response.data["meta"]["pagination"]["total_count"], 0)
+
+    def test_list_handymen_search_with_coordinates(self):
+        """Test search works together with coordinate filtering."""
+        response = self.client.get(
+            f"{self.url}?search=Handyman&latitude=43.651070&longitude=-79.347015"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return both visible and far handymen (both have "Handyman" in name)
+        self.assertEqual(len(response.data["data"]), 2)
+        # Distance should be calculated
+        self.assertIsNotNone(response.data["data"][0]["distance_km"])
 
 
 class MobileGuestHandymanDetailViewTests(APITestCase):

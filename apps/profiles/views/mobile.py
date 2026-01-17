@@ -369,12 +369,23 @@ class HomeownerNearbyHandymanListView(APIView):
                 description="Items per page, max 100 (default: 20)",
                 required=False,
             ),
+            OpenApiParameter(
+                name="search",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Search by display name (case-insensitive partial match)",
+                required=False,
+                examples=[
+                    OpenApiExample("Search Example", value="John"),
+                ],
+            ),
         ],
         description=(
             "List approved, active, available handymen for homeowners. "
             "Returns all handymen sorted by popularity score (rating + review count). "
             "If latitude and longitude are provided, also considers distance in sorting "
             "and handymen without coordinates appear at the end of the list. "
+            "Optional text search by display name available. "
             "This endpoint does not expose sensitive fields (phone/address/coordinates). "
             "Requires authenticated homeowner with verified email."
         ),
@@ -435,6 +446,7 @@ class HomeownerNearbyHandymanListView(APIView):
 
         latitude = request.query_params.get("latitude")
         longitude = request.query_params.get("longitude")
+        search_query = request.query_params.get("search")
 
         # Base queryset: only visible handymen
         handymen = HandymanProfile.objects.filter(
@@ -442,6 +454,10 @@ class HomeownerNearbyHandymanListView(APIView):
             is_active=True,
             is_available=True,
         ).select_related("user")
+
+        # Search filter
+        if search_query:
+            handymen = handymen.filter(display_name__icontains=search_query)
 
         # Annotate is_bookmarked for the current user
         handymen = handymen.annotate(
@@ -702,12 +718,23 @@ class GuestHandymanListView(APIView):
                 description="Items per page, max 100 (default: 20)",
                 required=False,
             ),
+            OpenApiParameter(
+                name="search",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Search by display name (case-insensitive partial match)",
+                required=False,
+                examples=[
+                    OpenApiExample("Search Example", value="John"),
+                ],
+            ),
         ],
         description=(
             "List approved, active, available handymen for guest users (no authentication required). "
             "Returns all handymen sorted by popularity score (rating + review count). "
             "If latitude and longitude are provided, also considers distance in sorting "
-            "and handymen without coordinates appear at the end of the list."
+            "and handymen without coordinates appear at the end of the list. "
+            "Optional text search by display name available."
         ),
         summary="Guest - List handymen",
         tags=["Mobile Guest Handymen"],
@@ -760,6 +787,7 @@ class GuestHandymanListView(APIView):
         """List handymen for guest users sorted by popularity and optionally distance."""
         latitude = request.query_params.get("latitude")
         longitude = request.query_params.get("longitude")
+        search_query = request.query_params.get("search")
 
         # Base queryset: only visible handymen
         handymen = HandymanProfile.objects.filter(
@@ -767,6 +795,10 @@ class GuestHandymanListView(APIView):
             is_active=True,
             is_available=True,
         ).select_related("user")
+
+        # Search filter
+        if search_query:
+            handymen = handymen.filter(display_name__icontains=search_query)
 
         # Popularity score: rating * 2 + log10(review_count + 1) * 1.5
         # PostgreSQL LOG(base, value) = log_base(value), so Log(10, x) = log_10(x)
