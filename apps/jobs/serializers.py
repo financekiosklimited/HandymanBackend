@@ -459,10 +459,10 @@ class JobCreateSerializer(serializers.Serializer):
         help_text="Street address",
     )
     postal_code = serializers.CharField(
-        max_length=7,
+        max_length=12,
         required=False,
         allow_blank=True,
-        help_text="Postal code (e.g., A1A 1A1)",
+        help_text="Postal code (international formats supported, e.g., A1A 1A1, 12345, SW1A 1AA)",
     )
     latitude = serializers.DecimalField(
         max_digits=9,
@@ -554,23 +554,41 @@ class JobCreateSerializer(serializers.Serializer):
         return cleaned_tasks
 
     def validate_postal_code(self, value):
-        """Validate Canadian postal code format."""
+        """Validate international postal code format.
+
+        Supports various international formats including:
+        - Canada: A1A 1A1
+        - USA: 12345 or 12345-6789
+        - UK: SW1A 1AA
+        - Indonesia: 12345
+        - Germany: 10115
+        - Japan: 100-0001
+        - And many more
+        """
         if value:
-            # Remove spaces and convert to uppercase
-            cleaned = value.replace(" ", "").upper()
-            # Canadian postal code format: A1A1A1 (letter-number-letter-number-letter-number)
-            if len(cleaned) != 6:
+            # Strip leading/trailing whitespace and convert to uppercase
+            cleaned = value.strip().upper()
+
+            # Check minimum and maximum length (3-12 characters)
+            if len(cleaned) < 3 or len(cleaned) > 12:
                 raise serializers.ValidationError(
-                    "Postal code must be 6 characters (e.g., A1A 1A1)."
+                    "Postal code must be between 3 and 12 characters."
                 )
-            # Check format: letter-number-letter-number-letter-number
-            pattern = r"^[A-Z]\d[A-Z]\d[A-Z]\d$"
+
+            # International postal code pattern:
+            # - Must start and end with alphanumeric
+            # - Can contain letters, numbers, spaces, and hyphens
+            pattern = r"^[A-Z0-9][A-Z0-9\s\-]*[A-Z0-9]$|^[A-Z0-9]{1,2}$"
             if not re.match(pattern, cleaned):
                 raise serializers.ValidationError(
-                    "Invalid postal code format. Must be like A1A 1A1."
+                    "Invalid postal code format. Only letters, numbers, spaces, "
+                    "and hyphens are allowed."
                 )
-            # Return formatted value with space
-            return f"{cleaned[:3]} {cleaned[3:]}"
+
+            # Normalize: collapse multiple spaces into single space
+            cleaned = " ".join(cleaned.split())
+
+            return cleaned
         return value
 
     def validate(self, attrs):
@@ -679,10 +697,10 @@ class JobUpdateSerializer(serializers.Serializer):
         help_text="Street address",
     )
     postal_code = serializers.CharField(
-        max_length=7,
+        max_length=12,
         required=False,
         allow_blank=True,
-        help_text="Postal code (e.g., A1A 1A1)",
+        help_text="Postal code (international formats supported, e.g., A1A 1A1, 12345, SW1A 1AA)",
     )
     latitude = serializers.DecimalField(
         max_digits=9,
@@ -758,23 +776,41 @@ class JobUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Invalid city.")
 
     def validate_postal_code(self, value):
-        """Validate Canadian postal code format."""
+        """Validate international postal code format.
+
+        Supports various international formats including:
+        - Canada: A1A 1A1
+        - USA: 12345 or 12345-6789
+        - UK: SW1A 1AA
+        - Indonesia: 12345
+        - Germany: 10115
+        - Japan: 100-0001
+        - And many more
+        """
         if value:
-            # Remove spaces and convert to uppercase
-            cleaned = value.replace(" ", "").upper()
-            # Canadian postal code format: A1A1A1
-            if len(cleaned) != 6:
+            # Strip leading/trailing whitespace and convert to uppercase
+            cleaned = value.strip().upper()
+
+            # Check minimum and maximum length (3-12 characters)
+            if len(cleaned) < 3 or len(cleaned) > 12:
                 raise serializers.ValidationError(
-                    "Postal code must be 6 characters (e.g., A1A 1A1)."
+                    "Postal code must be between 3 and 12 characters."
                 )
-            # Check format: letter-number-letter-number-letter-number
-            pattern = r"^[A-Z]\d[A-Z]\d[A-Z]\d$"
+
+            # International postal code pattern:
+            # - Must start and end with alphanumeric
+            # - Can contain letters, numbers, spaces, and hyphens
+            pattern = r"^[A-Z0-9][A-Z0-9\s\-]*[A-Z0-9]$|^[A-Z0-9]{1,2}$"
             if not re.match(pattern, cleaned):
                 raise serializers.ValidationError(
-                    "Invalid postal code format. Must be like A1A 1A1."
+                    "Invalid postal code format. Only letters, numbers, spaces, "
+                    "and hyphens are allowed."
                 )
-            # Return formatted value with space
-            return f"{cleaned[:3]} {cleaned[3:]}"
+
+            # Normalize: collapse multiple spaces into single space
+            cleaned = " ".join(cleaned.split())
+
+            return cleaned
         return value
 
     def validate_tasks(self, value):
@@ -2733,10 +2769,10 @@ class DirectOfferCreateSerializer(serializers.Serializer):
         help_text="Street address",
     )
     postal_code = serializers.CharField(
-        max_length=7,
+        max_length=12,
         required=False,
         allow_blank=True,
-        help_text="Postal code (e.g., A1A 1A1)",
+        help_text="Postal code (international formats supported, e.g., A1A 1A1, 12345, SW1A 1AA)",
     )
     latitude = serializers.DecimalField(
         max_digits=9,
@@ -2847,25 +2883,43 @@ class DirectOfferCreateSerializer(serializers.Serializer):
         return cleaned_tasks
 
     def validate_postal_code(self, value):
-        """Validate Canadian postal code format."""
+        """Validate international postal code format.
+
+        Supports various international formats including:
+        - Canada: A1A 1A1
+        - USA: 12345 or 12345-6789
+        - UK: SW1A 1AA
+        - Indonesia: 12345
+        - Germany: 10115
+        - Japan: 100-0001
+        - And many more
+        """
         if value:
             import re
 
-            # Remove spaces and convert to uppercase
-            cleaned = value.replace(" ", "").upper()
-            # Canadian postal code format: A1A1A1 (letter-number-letter-number-letter-number)
-            if len(cleaned) != 6:
+            # Strip leading/trailing whitespace and convert to uppercase
+            cleaned = value.strip().upper()
+
+            # Check minimum and maximum length (3-12 characters)
+            if len(cleaned) < 3 or len(cleaned) > 12:
                 raise serializers.ValidationError(
-                    "Postal code must be 6 characters (e.g., A1A 1A1)."
+                    "Postal code must be between 3 and 12 characters."
                 )
-            # Check format: letter-number-letter-number-letter-number
-            pattern = r"^[A-Z]\d[A-Z]\d[A-Z]\d$"
+
+            # International postal code pattern:
+            # - Must start and end with alphanumeric
+            # - Can contain letters, numbers, spaces, and hyphens
+            pattern = r"^[A-Z0-9][A-Z0-9\s\-]*[A-Z0-9]$|^[A-Z0-9]{1,2}$"
             if not re.match(pattern, cleaned):
                 raise serializers.ValidationError(
-                    "Invalid postal code format. Must be like A1A 1A1."
+                    "Invalid postal code format. Only letters, numbers, spaces, "
+                    "and hyphens are allowed."
                 )
-            # Return formatted value with space
-            return f"{cleaned[:3]} {cleaned[3:]}"
+
+            # Normalize: collapse multiple spaces into single space
+            cleaned = " ".join(cleaned.split())
+
+            return cleaned
         return value
 
     def validate(self, attrs):

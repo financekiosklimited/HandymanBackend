@@ -538,17 +538,18 @@ class JobUpdateSerializerTests(TestCase):
         self.assertIn("city_id", serializer.errors)
 
     def test_update_validate_postal_code_invalid(self):
-        """Test postal code validation in update."""
+        """Test postal code validation in update with invalid characters."""
         from apps.jobs.serializers import JobUpdateSerializer
 
+        # Invalid: contains special characters
         serializer = JobUpdateSerializer(
-            self.job, data={"postal_code": "INVALID"}, partial=True
+            self.job, data={"postal_code": "A1A@1A1"}, partial=True
         )
         self.assertFalse(serializer.is_valid())
 
-        # Branch for invalid pattern
+        # Invalid: too short (less than 3 characters)
         serializer = JobUpdateSerializer(
-            self.job, data={"postal_code": "1A1A1A"}, partial=True
+            self.job, data={"postal_code": "AB"}, partial=True
         )
         self.assertFalse(serializer.is_valid())
 
@@ -599,7 +600,7 @@ class JobUpdateSerializerTests(TestCase):
         self.assertEqual(task_titles, ["Valid task", "Another valid task"])
 
     def test_validate_postal_code_invalid(self):
-        """Test validation fails with invalid postal code."""
+        """Test validation fails with invalid postal code (special characters)."""
         from apps.jobs.serializers import JobCreateSerializer
 
         data = {
@@ -609,17 +610,17 @@ class JobUpdateSerializerTests(TestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "postal_code": "INVALID",
+            "postal_code": "A1A@1A1",  # Invalid: contains special character
         }
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
         self.assertIn("postal_code", serializer.errors)
 
-        data["postal_code"] = "A1A 1A"  # Too short
+        data["postal_code"] = "AB"  # Too short (less than 3 chars)
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
 
-        data["postal_code"] = "1A1 A1A"  # Invalid format
+        data["postal_code"] = "A1A1A1A1A1A1A"  # Too long (more than 12 chars)
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
 
@@ -992,8 +993,8 @@ class JobCreateSerializerValidationTests(TestCase):
         self.assertIn("attachments", serializer.errors)
 
     def test_validate_postal_code_invalid_format(self):
-        """Test postal code validation with invalid format."""
-        invalid_codes = ["12345", "ABCDEF", "A1A-1A1", "A1A 1A1A"]
+        """Test postal code validation with invalid format (special characters)."""
+        invalid_codes = ["A1A@1A1", "12#45", "!@#$%", "-12345", "12345-"]
 
         from apps.jobs.serializers import JobCreateSerializer
 
@@ -1027,15 +1028,20 @@ class JobCreateSerializerValidationTests(TestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "postal_code": "A1A",  # Too short
+            "postal_code": "AB",  # Too short (less than 3 chars)
         }
 
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertFalse(serializer.is_valid())
         self.assertIn("postal_code", serializer.errors)
 
+        data["postal_code"] = "A1A1A1A1A1A1A"  # Too long (more than 12 chars)
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("postal_code", serializer.errors)
+
     def test_validate_postal_code_formatting(self):
-        """Test postal code formatting (returns with space)."""
+        """Test postal code formatting (uppercase, normalized spaces)."""
         from apps.jobs.serializers import JobCreateSerializer
 
         data = {
@@ -1045,7 +1051,7 @@ class JobCreateSerializerValidationTests(TestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "postal_code": "m5h2n2",
+            "postal_code": "m5h 2n2",  # lowercase Canadian code
         }
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertTrue(serializer.is_valid())
@@ -1067,6 +1073,42 @@ class JobCreateSerializerValidationTests(TestCase):
         serializer = JobCreateSerializer(data=data, context={"request": self.request})
         self.assertTrue(serializer.is_valid(), serializer.errors)
         self.assertEqual(serializer.validated_data.get("postal_code"), "")
+
+    def test_validate_postal_code_international_formats(self):
+        """Test postal code validation accepts various international formats."""
+        from apps.jobs.serializers import JobCreateSerializer
+
+        # Valid international postal codes
+        valid_codes = [
+            ("12345", "12345"),  # Indonesia, USA (5 digits)
+            ("M5H 2N2", "M5H 2N2"),  # Canada
+            ("SW1A 1AA", "SW1A 1AA"),  # UK
+            ("100-0001", "100-0001"),  # Japan
+            ("10115", "10115"),  # Germany
+            ("2000", "2000"),  # Australia (4 digits)
+            ("01310-100", "01310-100"),  # Brazil
+            ("ABC", "ABC"),  # 3 char minimum
+            ("123456789012", "123456789012"),  # 12 char maximum
+        ]
+
+        for code, expected in valid_codes:
+            data = {
+                "title": "Test",
+                "description": "Test",
+                "estimated_budget": "50.00",
+                "category_id": str(self.category.public_id),
+                "city_id": str(self.city.public_id),
+                "address": "123 Main St",
+                "postal_code": code,
+            }
+            serializer = JobCreateSerializer(
+                data=data, context={"request": self.request}
+            )
+            self.assertTrue(
+                serializer.is_valid(),
+                f"Should accept postal code: {code}, errors: {serializer.errors}",
+            )
+            self.assertEqual(serializer.validated_data["postal_code"], expected)
 
     def test_validate_inactive_category(self):
         """Test validation fails with inactive category."""
@@ -1246,10 +1288,10 @@ class JobUpdateSerializerValidationTests(TestCase):
         self.assertIn("city_id", serializer.errors)
 
     def test_update_postal_code_validation(self):
-        """Test postal code validation in update."""
+        """Test postal code validation in update with invalid characters."""
         from apps.jobs.serializers import JobUpdateSerializer
 
-        data = {"postal_code": "INVALID"}
+        data = {"postal_code": "A1A@1A1"}  # Contains special character
 
         serializer = JobUpdateSerializer(
             self.job, data=data, partial=True, context={"request": self.request}
@@ -1557,10 +1599,10 @@ class JobUpdateSerializerValidationTests(TestCase):
         self.assertEqual(result, [{"title": "Test"}])
 
     def test_update_postal_code_formatting(self):
-        """Test postal code formatting in update."""
+        """Test postal code formatting in update (uppercase, normalized)."""
         from apps.jobs.serializers import JobUpdateSerializer
 
-        data = {"postal_code": "a1a1a1"}
+        data = {"postal_code": "a1a 1a1"}  # lowercase Canadian code
 
         serializer = JobUpdateSerializer(
             self.job, data=data, partial=True, context={"request": self.request}

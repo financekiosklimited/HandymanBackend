@@ -103,7 +103,7 @@ class Job(BaseModel):
     )
     city = models.ForeignKey("City", on_delete=models.PROTECT, related_name="jobs")
     address = models.TextField()
-    postal_code = models.CharField(max_length=7, blank=True)
+    postal_code = models.CharField(max_length=12, blank=True)
     latitude = models.DecimalField(
         max_digits=9, decimal_places=6, null=True, blank=True
     )

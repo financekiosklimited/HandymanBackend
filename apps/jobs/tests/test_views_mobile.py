@@ -10548,7 +10548,7 @@ class DirectOfferSerializerValidationTests(APITestCase):
         self.assertEqual(response.data["data"]["tasks"][0]["title"], "Valid task")
 
     def test_create_direct_offer_invalid_postal_code_length(self):
-        """Test validation error for invalid postal code length."""
+        """Test validation error for invalid postal code length (too short)."""
         self.client.force_authenticate(user=self.homeowner)
         data = {
             "target_handyman_id": str(self.handyman.public_id),
@@ -10558,7 +10558,7 @@ class DirectOfferSerializerValidationTests(APITestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "postal_code": "ABC",  # Too short
+            "postal_code": "AB",  # Too short (less than 3 chars)
         }
 
         response = self.client.post(self.list_url, data, format="json")
@@ -10567,7 +10567,7 @@ class DirectOfferSerializerValidationTests(APITestCase):
         self.assertIn("postal_code", response.data["errors"])
 
     def test_create_direct_offer_invalid_postal_code_format(self):
-        """Test validation error for invalid postal code format."""
+        """Test validation error for invalid postal code format (special characters)."""
         self.client.force_authenticate(user=self.homeowner)
         data = {
             "target_handyman_id": str(self.handyman.public_id),
@@ -10577,7 +10577,7 @@ class DirectOfferSerializerValidationTests(APITestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "postal_code": "123456",  # Invalid format (should be A1A1A1)
+            "postal_code": "A1A@1A1",  # Invalid format (contains special character)
         }
 
         response = self.client.post(self.list_url, data, format="json")
@@ -10599,7 +10599,7 @@ class DirectOfferSerializerValidationTests(APITestCase):
             "category_id": str(self.category.public_id),
             "city_id": str(self.city.public_id),
             "address": "123 Main St",
-            "postal_code": "m5v2h1",  # lowercase, no space
+            "postal_code": "m5v 2h1",  # lowercase Canadian code
         }
 
         response = self.client.post(self.list_url, data, format="json")
