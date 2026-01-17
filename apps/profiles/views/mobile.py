@@ -456,9 +456,10 @@ class HomeownerNearbyHandymanListView(APIView):
         # Popularity score: rating * 2 + log10(review_count + 1) * 1.5
         # Rating (0-5) contributes up to 10 points
         # Review count uses log scale to prevent dominance
+        # PostgreSQL LOG(base, value) = log_base(value), so Log(10, x) = log_10(x)
         popularity_score = Coalesce(
             F("rating"), Value(0.0), output_field=FloatField()
-        ) * Value(2.0) + Log(F("review_count") + Value(1), Value(10)) * Value(1.5)
+        ) * Value(2.0) + Log(Value(10), F("review_count") + Value(1)) * Value(1.5)
 
         handymen = handymen.annotate(
             popularity_score=popularity_score,
@@ -764,9 +765,10 @@ class GuestHandymanListView(APIView):
         ).select_related("user")
 
         # Popularity score: rating * 2 + log10(review_count + 1) * 1.5
+        # PostgreSQL LOG(base, value) = log_base(value), so Log(10, x) = log_10(x)
         popularity_score = Coalesce(
             F("rating"), Value(0.0), output_field=FloatField()
-        ) * Value(2.0) + Log(F("review_count") + Value(1), Value(10)) * Value(1.5)
+        ) * Value(2.0) + Log(Value(10), F("review_count") + Value(1)) * Value(1.5)
 
         handymen = handymen.annotate(
             popularity_score=popularity_score,
