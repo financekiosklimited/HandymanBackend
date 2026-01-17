@@ -70,6 +70,11 @@ class Notification(BaseModel):
         ("reimbursement_submitted", "Reimbursement Submitted"),
         ("reimbursement_approved", "Reimbursement Approved"),
         ("reimbursement_rejected", "Reimbursement Rejected"),
+        ("direct_offer_received", "Direct Offer Received"),
+        ("direct_offer_accepted", "Direct Offer Accepted"),
+        ("direct_offer_rejected", "Direct Offer Rejected"),
+        ("direct_offer_cancelled", "Direct Offer Cancelled"),
+        ("direct_offer_expired", "Direct Offer Expired"),
     ]
 
     user = models.ForeignKey(
