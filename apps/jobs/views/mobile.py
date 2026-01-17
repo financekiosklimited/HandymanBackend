@@ -3371,7 +3371,7 @@ class HomeownerJobDashboardView(BaseHomeownerOngoingView):
         tags=["Mobile Homeowner Ongoing Jobs"],
         examples=[
             OpenApiExample(
-                "Success Response - No Active Session, Not Reviewed",
+                "Success Response - Job from Application",
                 value={
                     "message": "Dashboard data retrieved successfully",
                     "data": {
@@ -3400,6 +3400,8 @@ class HomeownerJobDashboardView(BaseHomeownerOngoingView):
                                 "avatar_url": None,
                                 "rating": 4.8,
                             },
+                            "source": "application",
+                            "source_id": "223e4567-e89b-12d3-a456-426614174050",
                             "created_at": "2024-01-15T10:30:00Z",
                         },
                         "tasks_progress": {
@@ -3466,7 +3468,7 @@ class HomeownerJobDashboardView(BaseHomeownerOngoingView):
                 status_codes=["200"],
             ),
             OpenApiExample(
-                "Success Response - Completed Job With Review",
+                "Success Response - Job from Direct Offer",
                 value={
                     "message": "Dashboard data retrieved successfully",
                     "data": {
@@ -3495,6 +3497,8 @@ class HomeownerJobDashboardView(BaseHomeownerOngoingView):
                                 "avatar_url": None,
                                 "rating": 4.8,
                             },
+                            "source": "direct_offer",
+                            "source_id": None,
                             "created_at": "2024-01-15T10:30:00Z",
                         },
                         "tasks_progress": {
@@ -3688,6 +3692,18 @@ class HomeownerJobDashboardView(BaseHomeownerOngoingView):
                     }
                     if job.assigned_handyman
                     and hasattr(job.assigned_handyman, "handyman_profile")
+                    else None
+                ),
+                "source": "direct_offer" if job.is_direct_offer else "application",
+                "source_id": (
+                    None
+                    if job.is_direct_offer
+                    else str(
+                        job.applications.filter(status="approved")
+                        .values_list("public_id", flat=True)
+                        .first()
+                    )
+                    if job.applications.filter(status="approved").exists()
                     else None
                 ),
                 "created_at": job.created_at,
@@ -3903,7 +3919,7 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
         tags=["Mobile Handyman Ongoing Jobs"],
         examples=[
             OpenApiExample(
-                "Success Response - No Active Session, Not Reviewed",
+                "Success Response - Job from Application",
                 value={
                     "message": "Dashboard data retrieved successfully",
                     "data": {
@@ -3932,6 +3948,8 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                                 "avatar_url": None,
                                 "rating": 4.5,
                             },
+                            "source": "application",
+                            "source_id": "223e4567-e89b-12d3-a456-426614174050",
                             "created_at": "2024-01-15T10:30:00Z",
                         },
                         "tasks_progress": {
@@ -3999,7 +4017,7 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                 status_codes=["200"],
             ),
             OpenApiExample(
-                "Success Response - Completed Job With Reviews",
+                "Success Response - Job from Direct Offer",
                 value={
                     "message": "Dashboard data retrieved successfully",
                     "data": {
@@ -4028,6 +4046,8 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                                 "avatar_url": None,
                                 "rating": 4.5,
                             },
+                            "source": "direct_offer",
+                            "source_id": None,
                             "created_at": "2024-01-15T10:30:00Z",
                         },
                         "tasks_progress": {
@@ -4245,6 +4265,22 @@ class HandymanJobDashboardView(BaseHandymanOngoingView):
                         "avatar_url": None,
                         "rating": None,
                     }
+                ),
+                "source": "direct_offer" if job.is_direct_offer else "application",
+                "source_id": (
+                    None
+                    if job.is_direct_offer
+                    else str(
+                        job.applications.filter(
+                            status="approved", handyman=request.user
+                        )
+                        .values_list("public_id", flat=True)
+                        .first()
+                    )
+                    if job.applications.filter(
+                        status="approved", handyman=request.user
+                    ).exists()
+                    else None
                 ),
                 "created_at": job.created_at,
             },

@@ -2307,6 +2307,15 @@ class JobDashboardJobInfoSerializer(serializers.ModelSerializer):
     homeowner = serializers.SerializerMethodField(
         help_text="Homeowner information including rating"
     )
+    source = serializers.CharField(
+        read_only=True,
+        help_text="Source of the job: 'direct_offer' or 'application'",
+    )
+    source_id = serializers.UUIDField(
+        read_only=True,
+        allow_null=True,
+        help_text="UUID of the job application if source is 'application', null if 'direct_offer'",
+    )
 
     class Meta:
         model = Job
@@ -2326,6 +2335,8 @@ class JobDashboardJobInfoSerializer(serializers.ModelSerializer):
             "completion_requested_at",
             "completed_at",
             "homeowner",
+            "source",
+            "source_id",
             "created_at",
         ]
         read_only_fields = fields
@@ -2414,6 +2425,15 @@ class HomeownerJobDashboardJobInfoSerializer(serializers.ModelSerializer):
     handyman = serializers.SerializerMethodField(
         help_text="Assigned handyman information including rating"
     )
+    source = serializers.CharField(
+        read_only=True,
+        help_text="Source of the job: 'direct_offer' or 'application'",
+    )
+    source_id = serializers.UUIDField(
+        read_only=True,
+        allow_null=True,
+        help_text="UUID of the job application if source is 'application', null if 'direct_offer'",
+    )
 
     class Meta:
         model = Job
@@ -2433,6 +2453,8 @@ class HomeownerJobDashboardJobInfoSerializer(serializers.ModelSerializer):
             "completion_requested_at",
             "completed_at",
             "handyman",
+            "source",
+            "source_id",
             "created_at",
         ]
         read_only_fields = fields

@@ -7237,6 +7237,63 @@ class HandymanJobDashboardViewTests(APITestCase):
         self.assertEqual(3, data["homeowner_review"]["rating"])
         self.assertEqual("", data["homeowner_review"]["comment"])
 
+    def test_get_dashboard_source_application(self):
+        """Test dashboard shows source as 'application' for jobs from applications."""
+        # Default job in setUp is not a direct offer
+        self.assertFalse(self.job.is_direct_offer)
+
+        # Create an approved job application
+        application = JobApplication.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            status="approved",
+            predicted_hours=Decimal("5.00"),
+        )
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        self.assertIn("source", data["job"])
+        self.assertIn("source_id", data["job"])
+        self.assertEqual(data["job"]["source"], "application")
+        self.assertEqual(data["job"]["source_id"], str(application.public_id))
+
+    def test_get_dashboard_source_direct_offer(self):
+        """Test dashboard shows source as 'direct_offer' for direct offer jobs."""
+        # Make the job a direct offer
+        self.job.is_direct_offer = True
+        self.job.target_handyman = self.handyman
+        self.job.offer_status = "accepted"
+        self.job.save()
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        self.assertIn("source", data["job"])
+        self.assertIn("source_id", data["job"])
+        self.assertEqual(data["job"]["source"], "direct_offer")
+        self.assertIsNone(data["job"]["source_id"])
+
+    def test_get_dashboard_source_application_without_approved_application(self):
+        """Test dashboard shows null source_id when no approved application exists."""
+        # Default job is not a direct offer and has no applications
+        self.assertFalse(self.job.is_direct_offer)
+
+        self.client.force_authenticate(user=self.handyman)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        self.assertEqual(data["job"]["source"], "application")
+        self.assertIsNone(data["job"]["source_id"])
+
 
 class HandymanJobDashboardSerializerTests(APITestCase):
     """Test cases for HandymanJobDashboardSerializer."""
@@ -8254,6 +8311,63 @@ class HomeownerJobDashboardViewTests(APITestCase):
         data = response.data["data"]
 
         self.assertIsNone(data["job"]["handyman"])
+
+    def test_get_dashboard_source_application(self):
+        """Test dashboard shows source as 'application' for jobs from applications."""
+        # Default job in setUp is not a direct offer
+        self.assertFalse(self.job.is_direct_offer)
+
+        # Create an approved job application
+        application = JobApplication.objects.create(
+            job=self.job,
+            handyman=self.handyman,
+            status="approved",
+            predicted_hours=Decimal("5.00"),
+        )
+
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        self.assertIn("source", data["job"])
+        self.assertIn("source_id", data["job"])
+        self.assertEqual(data["job"]["source"], "application")
+        self.assertEqual(data["job"]["source_id"], str(application.public_id))
+
+    def test_get_dashboard_source_direct_offer(self):
+        """Test dashboard shows source as 'direct_offer' for direct offer jobs."""
+        # Make the job a direct offer
+        self.job.is_direct_offer = True
+        self.job.target_handyman = self.handyman
+        self.job.offer_status = "accepted"
+        self.job.save()
+
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        self.assertIn("source", data["job"])
+        self.assertIn("source_id", data["job"])
+        self.assertEqual(data["job"]["source"], "direct_offer")
+        self.assertIsNone(data["job"]["source_id"])
+
+    def test_get_dashboard_source_application_without_approved_application(self):
+        """Test dashboard shows null source_id when no approved application exists."""
+        # Default job is not a direct offer and has no applications
+        self.assertFalse(self.job.is_direct_offer)
+
+        self.client.force_authenticate(user=self.homeowner)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+
+        self.assertEqual(data["job"]["source"], "application")
+        self.assertIsNone(data["job"]["source_id"])
 
 
 class HomeownerJobDashboardJobInfoSerializerTests(APITestCase):
