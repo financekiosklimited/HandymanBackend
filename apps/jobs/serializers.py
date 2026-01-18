@@ -1469,7 +1469,14 @@ class HomeownerJobApplicationListSerializer(serializers.ModelSerializer):
         """
         if hasattr(obj.handyman, "handyman_profile"):
             profile = obj.handyman.handyman_profile
-            return HandymanProfileSerializer(profile).data
+            return {
+                "public_id": obj.handyman.public_id,
+                "display_name": profile.display_name,
+                "avatar_url": profile.avatar_url,
+                "rating": profile.rating,
+                "review_count": profile.review_count,
+                "hourly_rate": profile.hourly_rate,
+            }
         return None
 
 
