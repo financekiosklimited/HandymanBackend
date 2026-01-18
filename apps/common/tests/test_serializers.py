@@ -982,3 +982,128 @@ class NormalizeAttachmentsPayloadTests(TestCase):
 
         self.assertEqual(result["custom_list"], ["val1", "val2"])
         self.assertEqual(result["single_value"], "single")
+
+
+class ParseIndexedTasksTests(TestCase):
+    """Test cases for parse_indexed_tasks function."""
+
+    def test_parse_indexed_tasks_bracket_format(self):
+        """Test parsing tasks with bracket format."""
+        from django.http import QueryDict
+
+        from apps.common.serializers import parse_indexed_tasks
+
+        request_data = QueryDict(mutable=True)
+        request_data["tasks[0][title]"] = "Task 1"
+        request_data["tasks[0][description]"] = "Description 1"
+        request_data["tasks[1][title]"] = "Task 2"
+
+        result = parse_indexed_tasks(request_data)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["title"], "Task 1")
+        self.assertEqual(result[0]["description"], "Description 1")
+        self.assertEqual(result[1]["title"], "Task 2")
+
+    def test_parse_indexed_tasks_dot_format(self):
+        """Test parsing tasks with dot format."""
+        from django.http import QueryDict
+
+        from apps.common.serializers import parse_indexed_tasks
+
+        request_data = QueryDict(mutable=True)
+        request_data["tasks[0].title"] = "Task 1"
+        request_data["tasks[0].description"] = "Description 1"
+        request_data["tasks[1].title"] = "Task 2"
+
+        result = parse_indexed_tasks(request_data)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["title"], "Task 1")
+        self.assertEqual(result[0]["description"], "Description 1")
+        self.assertEqual(result[1]["title"], "Task 2")
+
+    def test_parse_indexed_tasks_no_separator_format(self):
+        """Test parsing tasks with no separator format."""
+        from django.http import QueryDict
+
+        from apps.common.serializers import parse_indexed_tasks
+
+        request_data = QueryDict(mutable=True)
+        request_data["tasks[0]title"] = "Task 1"
+        request_data["tasks[0]description"] = "Description 1"
+        request_data["tasks[1]title"] = "Task 2"
+
+        result = parse_indexed_tasks(request_data)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["title"], "Task 1")
+        self.assertEqual(result[0]["description"], "Description 1")
+        self.assertEqual(result[1]["title"], "Task 2")
+
+    def test_parse_indexed_tasks_with_none_values(self):
+        """Test parsing tasks with None values (covers branch 361->353)."""
+
+        from apps.common.serializers import parse_indexed_tasks
+
+        # Mock QueryDict that returns None for certain keys
+        class MockQueryDict:
+            def __init__(self):
+                self._data = {
+                    "tasks[0][title]": "Task 1",
+                    "tasks[0][description]": None,  # This should be skipped
+                    "tasks[1][title]": "Task 2",
+                }
+
+            def keys(self):
+                return self._data.keys()
+
+            def get(self, key):
+                return self._data.get(key)
+
+        request_data = MockQueryDict()
+        result = parse_indexed_tasks(request_data)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["title"], "Task 1")
+        # description should not be in result[0] since value was None
+        self.assertNotIn("description", result[0])
+        self.assertEqual(result[1]["title"], "Task 2")
+
+    def test_parse_indexed_tasks_sparse_indexes(self):
+        """Test parsing tasks with sparse indexes (covers branch 371->370)."""
+        from django.http import QueryDict
+
+        from apps.common.serializers import parse_indexed_tasks
+
+        request_data = QueryDict(mutable=True)
+        request_data["tasks[0][title]"] = "Task 1"
+        request_data["tasks[2][title]"] = "Task 3"  # Skip index 1
+
+        result = parse_indexed_tasks(request_data)
+
+        # Should have 2 tasks, not 3 (index 1 is skipped)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["title"], "Task 1")
+        self.assertEqual(result[1]["title"], "Task 3")
+
+    def test_parse_indexed_tasks_empty(self):
+        """Test parsing with no tasks returns empty list."""
+        from django.http import QueryDict
+
+        from apps.common.serializers import parse_indexed_tasks
+
+        request_data = QueryDict(mutable=True)
+        result = parse_indexed_tasks(request_data)
+
+        self.assertEqual(result, [])
+
+    def test_parse_indexed_tasks_without_keys_method(self):
+        """Test parsing with data that has no keys() method."""
+        from apps.common.serializers import parse_indexed_tasks
+
+        # Object without keys() method
+        request_data = "not a dict"
+        result = parse_indexed_tasks(request_data)
+
+        self.assertEqual(result, [])

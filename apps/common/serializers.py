@@ -318,9 +318,65 @@ def parse_indexed_attachments(request_data, request_files):
     return result
 
 
+def parse_indexed_tasks(request_data):
+    """
+    Parse indexed task fields from multipart form data.
+
+    Converts:
+        tasks[0][title], tasks[0][description]     (bracket format)
+        tasks[0].title, tasks[0].description       (dot format)
+        tasks[0]title, tasks[0]description         (no separator)
+        ...
+
+    Into:
+        [
+            {"title": "Task 1", "description": "Desc 1"},
+            {"title": "Task 2", "description": "Desc 2"},
+        ]
+
+    Args:
+        request_data: request.data (QueryDict or dict)
+
+    Returns:
+        list of task dicts
+    """
+    tasks = {}
+
+    # Pattern: tasks[0][title], tasks[0].title, or tasks[0]title
+    import re
+
+    # Support all formats: tasks[0][title], tasks[0].title, tasks[0]title
+    pattern = re.compile(r"^tasks\[(\d+)\][\[\.]?(\w+)[\]]?$")
+
+    # request_data might be a QueryDict or regular dict
+    data_keys = request_data.keys() if hasattr(request_data, "keys") else []
+    for key in data_keys:
+        match = pattern.match(key)
+        if match:
+            idx = int(match.group(1))
+            field = match.group(2)
+            if idx not in tasks:
+                tasks[idx] = {}
+            value = request_data.get(key)
+            if value is not None:
+                tasks[idx][field] = value
+
+    # Convert to sorted list
+    if not tasks:
+        return []
+
+    max_idx = max(tasks.keys())
+    result = []
+    for i in range(max_idx + 1):
+        if i in tasks:
+            result.append(tasks[i])
+
+    return result
+
+
 def normalize_attachments_payload(request, field_name="attachments", list_fields=None):
     """
-    Normalize request data to include indexed attachment payloads.
+    Normalize request data to include indexed attachment and task payloads.
 
     Args:
         request: DRF request
@@ -346,10 +402,19 @@ def normalize_attachments_payload(request, field_name="attachments", list_fields
     else:
         data.update(request.data)
 
+    # Parse indexed attachments
     attachments = parse_indexed_attachments(request.data, request.FILES)
     if attachments:
         data[field_name] = attachments
     else:
         data.pop(field_name, None)
+
+    # Parse indexed tasks
+    tasks = parse_indexed_tasks(request.data)
+    if tasks:
+        data["tasks"] = tasks
+    elif "tasks" not in data or not data.get("tasks"):
+        # Remove empty tasks field if it exists
+        data.pop("tasks", None)
 
     return data

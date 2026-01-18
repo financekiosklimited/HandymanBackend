@@ -11705,6 +11705,111 @@ class DirectOfferSerializerAttachmentTests(APITestCase):
         self.assertEqual(float(response.data["data"]["latitude"]), 43.6532)
         self.assertEqual(float(response.data["data"]["longitude"]), -79.3832)
 
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_with_indexed_tasks_format_bracket(self, mock_notify):
+        """Test creating direct offer with indexed tasks format (bracket style)."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test indexed tasks",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "tasks[0][title]": "Task 1",
+            "tasks[0][description]": "Description 1",
+            "tasks[1][title]": "Task 2",
+            "tasks[1][description]": "Description 2",
+            "tasks[2][title]": "Task 3",
+        }
+
+        response = self.client.post(self.list_url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data["data"]["tasks"]), 3)
+        self.assertEqual(response.data["data"]["tasks"][0]["title"], "Task 1")
+        self.assertEqual(
+            response.data["data"]["tasks"][0]["description"], "Description 1"
+        )
+        self.assertEqual(response.data["data"]["tasks"][1]["title"], "Task 2")
+        self.assertEqual(
+            response.data["data"]["tasks"][1]["description"], "Description 2"
+        )
+        self.assertEqual(response.data["data"]["tasks"][2]["title"], "Task 3")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_with_indexed_tasks_format_no_separator(
+        self, mock_notify
+    ):
+        """Test creating direct offer with indexed tasks format (no separator style)."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test indexed tasks no separator",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "tasks[0]title": "Task 1",
+            "tasks[0]description": "Description 1",
+            "tasks[1]title": "Task 2",
+            "tasks[2]title": "Task 3",
+        }
+
+        response = self.client.post(self.list_url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data["data"]["tasks"]), 3)
+        self.assertEqual(response.data["data"]["tasks"][0]["title"], "Task 1")
+        self.assertEqual(
+            response.data["data"]["tasks"][0]["description"], "Description 1"
+        )
+        self.assertEqual(response.data["data"]["tasks"][1]["title"], "Task 2")
+        self.assertEqual(response.data["data"]["tasks"][2]["title"], "Task 3")
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_create_direct_offer_with_indexed_tasks_format_dot_notation(
+        self, mock_notify
+    ):
+        """Test creating direct offer with indexed tasks format (dot notation style, same as attachments)."""
+        self.client.force_authenticate(user=self.homeowner)
+        data = {
+            "target_handyman_id": str(self.handyman.public_id),
+            "title": "Fix faucet",
+            "description": "Test indexed tasks dot notation",
+            "estimated_budget": "100.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "tasks[0].title": "Task 1",
+            "tasks[0].description": "Description 1",
+            "tasks[1].title": "Task 2",
+            "tasks[1].description": "Description 2",
+            "tasks[2].title": "Task 3",
+        }
+
+        response = self.client.post(self.list_url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data["data"]["tasks"]), 3)
+        self.assertEqual(response.data["data"]["tasks"][0]["title"], "Task 1")
+        self.assertEqual(
+            response.data["data"]["tasks"][0]["description"], "Description 1"
+        )
+        self.assertEqual(response.data["data"]["tasks"][1]["title"], "Task 2")
+        self.assertEqual(
+            response.data["data"]["tasks"][1]["description"], "Description 2"
+        )
+        self.assertEqual(response.data["data"]["tasks"][2]["title"], "Task 3")
+
 
 class DirectOfferCreateSerializerUnitTests(TestCase):
     """Unit tests for DirectOfferCreateSerializer validate_attachments method."""
@@ -11753,4 +11858,12 @@ class DirectOfferCreateSerializerUnitTests(TestCase):
 
         serializer = DirectOfferCreateSerializer()
         result = serializer.validate_attachments(None)
+        self.assertEqual(result, [])
+
+    def test_validate_tasks_with_none(self):
+        """Test validate_tasks returns empty list for None input."""
+        from apps.jobs.serializers import DirectOfferCreateSerializer
+
+        serializer = DirectOfferCreateSerializer()
+        result = serializer.validate_tasks(None)
         self.assertEqual(result, [])
