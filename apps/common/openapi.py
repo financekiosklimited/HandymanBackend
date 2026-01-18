@@ -24,6 +24,46 @@ def pagination_meta_example(
     }
 
 
+def reviews_meta_example(
+    page=1,
+    page_size=20,
+    total_count=15,
+    total_pages=1,
+    has_next=False,
+    has_previous=False,
+    average=4.8,
+    star_5=12,
+    star_4=2,
+    star_3=1,
+    star_2=0,
+    star_1=0,
+):
+    """
+    Helper function to generate consistent reviews meta examples with rating_stats.
+    """
+    return {
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "has_next": has_next,
+            "has_previous": has_previous,
+        },
+        "rating_stats": {
+            "average": average,
+            "total_count": total_count,
+            "distribution": {
+                "5": star_5,
+                "4": star_4,
+                "3": star_3,
+                "2": star_2,
+                "1": star_1,
+            },
+        },
+    }
+
+
 # Common Error Response Examples
 VALIDATION_ERROR_EXAMPLE = OpenApiExample(
     "Validation Error Response",

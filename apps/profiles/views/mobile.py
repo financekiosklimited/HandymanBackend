@@ -2,7 +2,7 @@
 Mobile profile views.
 """
 
-from django.db.models import Case, F, FloatField, IntegerField, Value, When
+from django.db.models import Case, Count, F, FloatField, IntegerField, Q, Value, When
 from django.db.models.functions import ACos, Coalesce, Cos, Log, Radians, Sin
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema
@@ -20,6 +20,7 @@ from apps.common.openapi import (
     UNAUTHORIZED_EXAMPLE,
     VALIDATION_ERROR_EXAMPLE,
     pagination_meta_example,
+    reviews_meta_example,
 )
 from apps.common.responses import (
     not_found_response,
@@ -38,6 +39,8 @@ from ..serializers import (
     HandymanProfileResponseSerializer,
     HandymanProfileSerializer,
     HandymanProfileUpdateSerializer,
+    HandymanReviewListResponseSerializer,
+    HandymanReviewListSerializer,
     HomeownerHandymanDetailResponseSerializer,
     HomeownerHandymanDetailSerializer,
     HomeownerHandymanListResponseSerializer,
@@ -402,6 +405,7 @@ class HomeownerNearbyHandymanListView(APIView):
                             "display_name": "John Handyman",
                             "avatar_url": "https://example.com/avatar.jpg",
                             "rating": 4.5,
+                            "review_count": 25,
                             "hourly_rate": 75.0,
                             "distance_km": 2.1,
                             "is_bookmarked": False,
@@ -423,6 +427,7 @@ class HomeownerNearbyHandymanListView(APIView):
                             "display_name": "John Handyman",
                             "avatar_url": "https://example.com/avatar.jpg",
                             "rating": 4.5,
+                            "review_count": 25,
                             "hourly_rate": 75.0,
                             "distance_km": None,
                             "is_bookmarked": True,
@@ -612,8 +617,11 @@ class HomeownerHandymanDetailView(APIView):
                     "data": {
                         "public_id": "123e4567-e89b-12d3-a456-426614174000",
                         "display_name": "John Handyman",
+                        "avatar_url": "https://example.com/avatar.jpg",
                         "rating": 4.5,
+                        "review_count": 25,
                         "hourly_rate": 75.0,
+                        "is_bookmarked": False,
                     },
                     "errors": None,
                     "meta": None,
@@ -749,6 +757,7 @@ class GuestHandymanListView(APIView):
                             "display_name": "John Handyman",
                             "avatar_url": "https://example.com/avatar.jpg",
                             "rating": 4.5,
+                            "review_count": 25,
                             "hourly_rate": 75.0,
                             "distance_km": 2.1,
                             "is_bookmarked": False,
@@ -770,6 +779,7 @@ class GuestHandymanListView(APIView):
                             "display_name": "John Handyman",
                             "avatar_url": "https://example.com/avatar.jpg",
                             "rating": 4.5,
+                            "review_count": 25,
                             "hourly_rate": 75.0,
                             "distance_km": None,
                             "is_bookmarked": False,
@@ -942,7 +952,9 @@ class GuestHandymanDetailView(APIView):
                         "display_name": "John Handyman",
                         "avatar_url": None,
                         "rating": 4.5,
+                        "review_count": 25,
                         "hourly_rate": 75.0,
+                        "is_bookmarked": False,
                     },
                     "errors": None,
                     "meta": None,
@@ -1027,4 +1039,354 @@ class HandymanCategoryListView(APIView):
         serializer = HandymanCategorySerializer(categories, many=True)
         return success_response(
             serializer.data, message="Categories retrieved successfully"
+        )
+
+
+class HomeownerHandymanReviewListView(APIView):
+    """
+    View for listing reviews of a specific handyman for homeowners.
+    Returns reviews from homeowners (reviewer_type="homeowner") with censored reviewer names.
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_homeowner_handyman_reviews_list",
+        responses={
+            200: HandymanReviewListResponseSerializer,
+            401: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        parameters=[
+            OpenApiParameter(
+                name="page",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Page number (default: 1)",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="page_size",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Items per page, max 100 (default: 20)",
+                required=False,
+            ),
+        ],
+        description=(
+            "List reviews for a specific handyman. "
+            "Only shows reviews from homeowners with censored reviewer names for privacy. "
+            "Reviews are ordered by created_at descending (newest first). "
+            "Requires authenticated homeowner with verified email."
+        ),
+        summary="List handyman reviews",
+        tags=["Mobile Homeowner Handymen"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Reviews retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "reviewer_avatar_url": "https://example.com/avatar.jpg",
+                            "reviewer_display_name": "J*** D**",
+                            "rating": 5,
+                            "comment": "Excellent work! Very professional.",
+                            "created_at": "2024-01-15T10:30:00Z",
+                        },
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                            "reviewer_avatar_url": None,
+                            "reviewer_display_name": "M*** S****",
+                            "rating": 4,
+                            "comment": None,
+                            "created_at": "2024-01-14T08:15:00Z",
+                        },
+                    ],
+                    "errors": None,
+                    "meta": reviews_meta_example(
+                        total_count=25,
+                        total_pages=2,
+                        has_next=True,
+                        average=4.8,
+                        star_5=20,
+                        star_4=3,
+                        star_3=2,
+                        star_2=0,
+                        star_1=0,
+                    ),
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def get(self, request, public_id):
+        """List reviews for a handyman."""
+        from apps.jobs.models import Review
+
+        # Verify handyman exists and is visible
+        try:
+            profile = HandymanProfile.objects.select_related("user").get(
+                user__public_id=public_id,
+                is_approved=True,
+                is_active=True,
+                is_available=True,
+            )
+        except HandymanProfile.DoesNotExist:
+            return not_found_response("Handyman not found")
+
+        # Get reviews from homeowners for this handyman
+        reviews = (
+            Review.objects.filter(
+                reviewee=profile.user,
+                reviewer_type="homeowner",
+            )
+            .select_related("reviewer__homeowner_profile")
+            .order_by("-created_at")
+        )
+
+        # Calculate rating stats (before pagination)
+        rating_stats = reviews.aggregate(
+            total_count=Count("id"),
+            star_5=Count("id", filter=Q(rating=5)),
+            star_4=Count("id", filter=Q(rating=4)),
+            star_3=Count("id", filter=Q(rating=3)),
+            star_2=Count("id", filter=Q(rating=2)),
+            star_1=Count("id", filter=Q(rating=1)),
+        )
+
+        total_count = rating_stats["total_count"]
+
+        # Calculate average rating
+        if total_count > 0:
+            total_stars = (
+                rating_stats["star_5"] * 5
+                + rating_stats["star_4"] * 4
+                + rating_stats["star_3"] * 3
+                + rating_stats["star_2"] * 2
+                + rating_stats["star_1"] * 1
+            )
+            average_rating = round(total_stars / total_count, 1)
+        else:
+            average_rating = 0.0
+
+        # Pagination
+        page = int(request.query_params.get("page", 1))
+        page_size = min(int(request.query_params.get("page_size", 20)), 100)
+        total_pages = (
+            (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        )
+
+        start = (page - 1) * page_size
+        end = start + page_size
+        reviews_page = reviews[start:end]
+
+        serializer = HandymanReviewListSerializer(reviews_page, many=True)
+
+        meta = {
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "total_count": total_count,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+            },
+            "rating_stats": {
+                "average": average_rating,
+                "total_count": total_count,
+                "distribution": {
+                    "5": rating_stats["star_5"],
+                    "4": rating_stats["star_4"],
+                    "3": rating_stats["star_3"],
+                    "2": rating_stats["star_2"],
+                    "1": rating_stats["star_1"],
+                },
+            },
+        }
+
+        return success_response(
+            serializer.data, message="Reviews retrieved successfully", meta=meta
+        )
+
+
+class GuestHandymanReviewListView(APIView):
+    """
+    View for listing reviews of a specific handyman for guest users.
+    Returns reviews from homeowners (reviewer_type="homeowner") with censored reviewer names.
+    No authentication required.
+    """
+
+    authentication_classes = []
+    permission_classes = [
+        GuestPlatformGuardPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_guest_handyman_reviews_list",
+        responses={
+            200: HandymanReviewListResponseSerializer,
+            404: OpenApiTypes.OBJECT,
+        },
+        parameters=[
+            OpenApiParameter(
+                name="page",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Page number (default: 1)",
+                required=False,
+            ),
+            OpenApiParameter(
+                name="page_size",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Items per page, max 100 (default: 20)",
+                required=False,
+            ),
+        ],
+        description=(
+            "List reviews for a specific handyman (no authentication required). "
+            "Only shows reviews from homeowners with censored reviewer names for privacy. "
+            "Reviews are ordered by created_at descending (newest first)."
+        ),
+        summary="Guest - List handyman reviews",
+        tags=["Mobile Guest Handymen"],
+        examples=[
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Reviews retrieved successfully",
+                    "data": [
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "reviewer_avatar_url": "https://example.com/avatar.jpg",
+                            "reviewer_display_name": "J*** D**",
+                            "rating": 5,
+                            "comment": "Excellent work! Very professional.",
+                            "created_at": "2024-01-15T10:30:00Z",
+                        },
+                        {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174001",
+                            "reviewer_avatar_url": None,
+                            "reviewer_display_name": "M*** S****",
+                            "rating": 4,
+                            "comment": None,
+                            "created_at": "2024-01-14T08:15:00Z",
+                        },
+                    ],
+                    "errors": None,
+                    "meta": reviews_meta_example(
+                        total_count=25,
+                        total_pages=2,
+                        has_next=True,
+                        average=4.8,
+                        star_5=20,
+                        star_4=3,
+                        star_3=2,
+                        star_2=0,
+                        star_1=0,
+                    ),
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def get(self, request, public_id):
+        """List reviews for a handyman (guest access)."""
+        from apps.jobs.models import Review
+
+        # Verify handyman exists and is visible
+        try:
+            profile = HandymanProfile.objects.select_related("user").get(
+                user__public_id=public_id,
+                is_approved=True,
+                is_active=True,
+                is_available=True,
+            )
+        except HandymanProfile.DoesNotExist:
+            return not_found_response("Handyman not found")
+
+        # Get reviews from homeowners for this handyman
+        reviews = (
+            Review.objects.filter(
+                reviewee=profile.user,
+                reviewer_type="homeowner",
+            )
+            .select_related("reviewer__homeowner_profile")
+            .order_by("-created_at")
+        )
+
+        # Calculate rating stats (before pagination)
+        rating_stats = reviews.aggregate(
+            total_count=Count("id"),
+            star_5=Count("id", filter=Q(rating=5)),
+            star_4=Count("id", filter=Q(rating=4)),
+            star_3=Count("id", filter=Q(rating=3)),
+            star_2=Count("id", filter=Q(rating=2)),
+            star_1=Count("id", filter=Q(rating=1)),
+        )
+
+        total_count = rating_stats["total_count"]
+
+        # Calculate average rating
+        if total_count > 0:
+            total_stars = (
+                rating_stats["star_5"] * 5
+                + rating_stats["star_4"] * 4
+                + rating_stats["star_3"] * 3
+                + rating_stats["star_2"] * 2
+                + rating_stats["star_1"] * 1
+            )
+            average_rating = round(total_stars / total_count, 1)
+        else:
+            average_rating = 0.0
+
+        # Pagination
+        page = int(request.query_params.get("page", 1))
+        page_size = min(int(request.query_params.get("page_size", 20)), 100)
+        total_pages = (
+            (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        )
+
+        start = (page - 1) * page_size
+        end = start + page_size
+        reviews_page = reviews[start:end]
+
+        serializer = HandymanReviewListSerializer(reviews_page, many=True)
+
+        meta = {
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "total_count": total_count,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+            },
+            "rating_stats": {
+                "average": average_rating,
+                "total_count": total_count,
+                "distribution": {
+                    "5": rating_stats["star_5"],
+                    "4": rating_stats["star_4"],
+                    "3": rating_stats["star_3"],
+                    "2": rating_stats["star_2"],
+                    "1": rating_stats["star_1"],
+                },
+            },
+        }
+
+        return success_response(
+            serializer.data, message="Reviews retrieved successfully", meta=meta
         )

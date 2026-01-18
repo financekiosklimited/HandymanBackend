@@ -935,6 +935,40 @@ class GenerateDummyDataCoverageTests(TestCase):
         self.assertTrue(attachments.exists())
         self.assertEqual(attachments.first().file_type, "document")
 
+    def test_application_attachments_document_path(self):
+        """Test lines 1332-1334: primary document attachment path."""
+        from apps.common.management.commands.generate_dummy_data import Command
+        from apps.jobs.models import City, JobApplicationAttachment, JobCategory
+
+        homeowners, handymen = self._create_test_users(1, 1)
+        category = JobCategory.objects.first()
+        city = City.objects.first()
+
+        job = self._create_job(homeowners[0], category, city)
+
+        cmd = Command()
+        cmd.now = timezone.now()
+
+        # Both documents and job_images exist, use_document=True (< 0.6)
+        shared_assets = {
+            "documents": ["dummy/doc.pdf"],
+            "job_images": ["dummy/img.jpg"],
+        }
+
+        with patch(
+            "random.random", return_value=0.4
+        ):  # < 0.6 = use_document=True (lines 1332-1334)
+            with patch("random.randint", return_value=1):  # 1 attachment
+                stats = cmd._create_applications(
+                    [job], handymen, shared_assets, [category]
+                )
+
+        # Verify attachment was created from documents
+        self.assertGreaterEqual(stats["attachments"], 1)
+        attachments = JobApplicationAttachment.objects.all()
+        self.assertTrue(attachments.exists())
+        self.assertEqual(attachments.first().file_type, "document")
+
     def test_application_attachments_skip_no_assets(self):
         """Test line 1343: skip application attachments when no assets."""
         from apps.common.management.commands.generate_dummy_data import Command

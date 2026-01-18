@@ -35,6 +35,11 @@ urlpatterns = [
         mobile_views.HomeownerHandymanDetailView.as_view(),
         name="mobile_homeowner_handyman_detail",
     ),
+    path(
+        "homeowner/handymen/<uuid:public_id>/reviews/",
+        mobile_views.HomeownerHandymanReviewListView.as_view(),
+        name="mobile_homeowner_handyman_reviews",
+    ),
     # Guest handyman endpoints (no authentication required)
     path(
         "guest/handymen/",
@@ -45,5 +50,10 @@ urlpatterns = [
         "guest/handymen/<uuid:public_id>/",
         mobile_views.GuestHandymanDetailView.as_view(),
         name="mobile_guest_handyman_detail",
+    ),
+    path(
+        "guest/handymen/<uuid:public_id>/reviews/",
+        mobile_views.GuestHandymanReviewListView.as_view(),
+        name="mobile_guest_handyman_reviews",
     ),
 ]

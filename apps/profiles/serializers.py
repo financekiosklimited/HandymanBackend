@@ -237,6 +237,7 @@ class HomeownerHandymanListSerializer(serializers.ModelSerializer):
         allow_null=True,
         coerce_to_string=False,
     )
+    review_count = serializers.IntegerField(read_only=True)
     hourly_rate = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -260,6 +261,7 @@ class HomeownerHandymanListSerializer(serializers.ModelSerializer):
             "display_name",
             "avatar_url",
             "rating",
+            "review_count",
             "hourly_rate",
             "distance_km",
             "is_bookmarked",
@@ -294,6 +296,7 @@ class HomeownerHandymanDetailSerializer(serializers.ModelSerializer):
         allow_null=True,
         coerce_to_string=False,
     )
+    review_count = serializers.IntegerField(read_only=True)
     hourly_rate = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -312,6 +315,7 @@ class HomeownerHandymanDetailSerializer(serializers.ModelSerializer):
             "display_name",
             "avatar_url",
             "rating",
+            "review_count",
             "hourly_rate",
             "is_bookmarked",
         ]
@@ -353,4 +357,60 @@ GuestHandymanDetailResponseSerializer = create_response_serializer(
 # Handyman Category List Response
 HandymanCategoryListResponseSerializer = create_list_response_serializer(
     HandymanCategorySerializer, "HandymanCategoryListResponse"
+)
+
+
+class HandymanReviewListSerializer(serializers.Serializer):
+    """
+    Serializer for listing reviews of a handyman (public view with censored reviewer info).
+
+    Only shows reviews from homeowners (reviewer_type="homeowner").
+    Reviewer name is censored: "John Doe" → "J*** D*"
+    """
+
+    public_id = serializers.UUIDField(read_only=True)
+    reviewer_avatar_url = serializers.SerializerMethodField()
+    reviewer_display_name = serializers.SerializerMethodField()
+    rating = serializers.IntegerField(read_only=True)
+    comment = serializers.SerializerMethodField()
+    created_at = serializers.DateTimeField(read_only=True)
+
+    def get_reviewer_avatar_url(self, obj):
+        """Return reviewer's (homeowner) avatar URL."""
+        if hasattr(obj.reviewer, "homeowner_profile"):
+            return obj.reviewer.homeowner_profile.avatar_url
+        return None
+
+    def get_reviewer_display_name(self, obj):
+        """Return censored name: 'John Doe' → 'J*** D*'"""
+        if hasattr(obj.reviewer, "homeowner_profile"):
+            name = obj.reviewer.homeowner_profile.display_name
+            return self._censor_name(name)
+        return None
+
+    def get_comment(self, obj):
+        """Return comment or None if empty."""
+        return obj.comment if obj.comment else None
+
+    def _censor_name(self, name):
+        """
+        Censor name: 'John Doe' → 'J*** D*'
+
+        Each word is censored by keeping the first letter and replacing
+        the rest with asterisks.
+        """
+        if not name:
+            return None
+        parts = name.split()
+        censored_parts = []
+        for part in parts:
+            if len(part) <= 1:
+                censored_parts.append(part)
+            else:
+                censored_parts.append(part[0] + "*" * (len(part) - 1))
+        return " ".join(censored_parts)
+
+
+HandymanReviewListResponseSerializer = create_list_response_serializer(
+    HandymanReviewListSerializer, "HandymanReviewListResponse"
 )

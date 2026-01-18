@@ -1,5 +1,7 @@
 """Tests for mobile profile views."""
 
+from decimal import Decimal
+
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -1204,6 +1206,738 @@ class MobileGuestHandymanDetailViewTests(APITestCase):
         """Test web platform cannot access mobile guest endpoint."""
         user = User.objects.create_user(
             email="webuser_detail@example.com",
+            password="testpass123",
+        )
+        user.token_payload = {
+            "plat": "web",
+            "active_role": None,
+            "roles": [],
+            "email_verified": False,
+        }
+        self.client.force_authenticate(user=user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class MobileHandymanListReviewCountTests(APITestCase):
+    """Test cases for review_count field in handyman list/detail APIs."""
+
+    def setUp(self):
+        """Set up test data."""
+        # Homeowner user
+        self.homeowner_user = User.objects.create_user(
+            email="homeowner_rc@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.homeowner_user, role="homeowner")
+        self.homeowner_user.email_verified_at = "2024-01-01T00:00:00Z"
+        self.homeowner_user.save()
+        self.homeowner_user.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+        }
+        HomeownerProfile.objects.create(
+            user=self.homeowner_user,
+            display_name="Test Homeowner",
+        )
+
+        # Handyman user
+        self.handyman_user = User.objects.create_user(
+            email="handyman_rc@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman_user, role="handyman")
+        self.handyman = HandymanProfile.objects.create(
+            user=self.handyman_user,
+            display_name="Review Count Handyman",
+            hourly_rate="75.00",
+            latitude="43.651070",
+            longitude="-79.347015",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            rating=4.5,
+            review_count=25,
+        )
+
+    def test_homeowner_list_handymen_includes_review_count(self):
+        """Test homeowner list handymen includes review_count field."""
+        self.client.force_authenticate(user=self.homeowner_user)
+        response = self.client.get("/api/v1/mobile/homeowner/handymen/nearby/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertIn("review_count", response.data["data"][0])
+        self.assertEqual(response.data["data"][0]["review_count"], 25)
+
+    def test_homeowner_detail_handymen_includes_review_count(self):
+        """Test homeowner handyman detail includes review_count field."""
+        self.client.force_authenticate(user=self.homeowner_user)
+        url = f"/api/v1/mobile/homeowner/handymen/{self.handyman.user.public_id}/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("review_count", response.data["data"])
+        self.assertEqual(response.data["data"]["review_count"], 25)
+
+    def test_guest_list_handymen_includes_review_count(self):
+        """Test guest list handymen includes review_count field."""
+        response = self.client.get("/api/v1/mobile/guest/handymen/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertIn("review_count", response.data["data"][0])
+        self.assertEqual(response.data["data"][0]["review_count"], 25)
+
+    def test_guest_detail_handymen_includes_review_count(self):
+        """Test guest handyman detail includes review_count field."""
+        url = f"/api/v1/mobile/guest/handymen/{self.handyman.user.public_id}/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("review_count", response.data["data"])
+        self.assertEqual(response.data["data"]["review_count"], 25)
+
+
+class MobileHomeownerHandymanReviewListViewTests(APITestCase):
+    """Test cases for mobile HomeownerHandymanReviewListView."""
+
+    def setUp(self):
+        """Set up test data."""
+        from apps.jobs.models import City, Job, JobCategory, Review
+
+        # Homeowner user (viewer)
+        self.viewer_user = User.objects.create_user(
+            email="viewer@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.viewer_user, role="homeowner")
+        self.viewer_user.email_verified_at = "2024-01-01T00:00:00Z"
+        self.viewer_user.save()
+        self.viewer_user.token_payload = {
+            "plat": "mobile",
+            "active_role": "homeowner",
+            "roles": ["homeowner"],
+            "email_verified": True,
+        }
+        HomeownerProfile.objects.create(
+            user=self.viewer_user,
+            display_name="Viewer Homeowner",
+        )
+
+        # Handyman user (being reviewed)
+        self.handyman_user = User.objects.create_user(
+            email="handyman_reviewed@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman_user, role="handyman")
+        self.handyman = HandymanProfile.objects.create(
+            user=self.handyman_user,
+            display_name="Reviewed Handyman",
+            hourly_rate="75.00",
+            latitude="43.651070",
+            longitude="-79.347015",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+        )
+
+        # Reviewer homeowners
+        self.reviewer1 = User.objects.create_user(
+            email="reviewer1@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.reviewer1, role="homeowner")
+        self.reviewer1_profile = HomeownerProfile.objects.create(
+            user=self.reviewer1,
+            display_name="John Doe",
+        )
+
+        self.reviewer2 = User.objects.create_user(
+            email="reviewer2@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.reviewer2, role="homeowner")
+        self.reviewer2_profile = HomeownerProfile.objects.create(
+            user=self.reviewer2,
+            display_name="Mary Smith",
+        )
+
+        self.reviewer3 = User.objects.create_user(
+            email="reviewer3@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.reviewer3, role="homeowner")
+        self.reviewer3_profile = HomeownerProfile.objects.create(
+            user=self.reviewer3,
+            display_name="A",  # Single character name
+        )
+
+        # Job category and city
+        self.category = JobCategory.objects.create(
+            name="Test Category",
+            slug="test-category",
+        )
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            is_active=True,
+        )
+
+        # Create jobs and reviews
+        self.job1 = Job.objects.create(
+            homeowner=self.reviewer1,
+            assigned_handyman=self.handyman_user,
+            title="Job 1",
+            description="Test job 1 description",
+            estimated_budget=Decimal("100.00"),
+            address="123 Main St",
+            category=self.category,
+            city=self.city,
+            status="completed",
+        )
+        self.review1 = Review.objects.create(
+            job=self.job1,
+            reviewer=self.reviewer1,
+            reviewee=self.handyman_user,
+            reviewer_type="homeowner",
+            rating=5,
+            comment="Excellent work!",
+        )
+
+        self.job2 = Job.objects.create(
+            homeowner=self.reviewer2,
+            assigned_handyman=self.handyman_user,
+            title="Job 2",
+            description="Test job 2 description",
+            estimated_budget=Decimal("150.00"),
+            address="456 Oak Ave",
+            category=self.category,
+            city=self.city,
+            status="completed",
+        )
+        self.review2 = Review.objects.create(
+            job=self.job2,
+            reviewer=self.reviewer2,
+            reviewee=self.handyman_user,
+            reviewer_type="homeowner",
+            rating=4,
+            comment="",  # Empty comment
+        )
+
+        self.job3 = Job.objects.create(
+            homeowner=self.reviewer3,
+            assigned_handyman=self.handyman_user,
+            title="Job 3",
+            description="Test job 3 description",
+            estimated_budget=Decimal("200.00"),
+            address="789 Pine Rd",
+            category=self.category,
+            city=self.city,
+            status="completed",
+        )
+        self.review3 = Review.objects.create(
+            job=self.job3,
+            reviewer=self.reviewer3,
+            reviewee=self.handyman_user,
+            reviewer_type="homeowner",
+            rating=3,
+            comment="Good job",
+        )
+
+        self.url = (
+            f"/api/v1/mobile/homeowner/handymen/{self.handyman.user.public_id}/reviews/"
+        )
+
+    def test_list_reviews_success(self):
+        """Test successfully listing handyman reviews."""
+        self.client.force_authenticate(user=self.viewer_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Reviews retrieved successfully")
+        self.assertEqual(len(response.data["data"]), 3)
+
+    def test_list_reviews_ordered_by_created_at_desc(self):
+        """Test reviews are ordered by created_at descending (newest first)."""
+        self.client.force_authenticate(user=self.viewer_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = response.data["data"]
+        # Reviews should be ordered from newest to oldest
+        created_dates = [r["created_at"] for r in results]
+        self.assertEqual(created_dates, sorted(created_dates, reverse=True))
+
+    def test_list_reviews_censored_name(self):
+        """Test reviewer names are censored correctly."""
+        self.client.force_authenticate(user=self.viewer_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = response.data["data"]
+        display_names = [r["reviewer_display_name"] for r in results]
+
+        # "John Doe" -> "J*** D**"
+        self.assertIn("J*** D**", display_names)
+        # "Mary Smith" -> "M*** S****"
+        self.assertIn("M*** S****", display_names)
+        # "A" -> "A" (single char stays same)
+        self.assertIn("A", display_names)
+
+    def test_list_reviews_empty_comment_returns_null(self):
+        """Test empty comment returns null."""
+        self.client.force_authenticate(user=self.viewer_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Find review2 which has empty comment
+        for review in response.data["data"]:
+            if review["rating"] == 4:  # review2 has rating 4
+                self.assertIsNone(review["comment"])
+                break
+
+    def test_list_reviews_non_empty_comment_returned(self):
+        """Test non-empty comment is returned correctly."""
+        self.client.force_authenticate(user=self.viewer_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Find review1 which has comment "Excellent work!"
+        for review in response.data["data"]:
+            if review["rating"] == 5:  # review1 has rating 5
+                self.assertEqual(review["comment"], "Excellent work!")
+                break
+
+    def test_list_reviews_includes_expected_fields(self):
+        """Test response includes all expected fields."""
+        self.client.force_authenticate(user=self.viewer_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        for review in response.data["data"]:
+            self.assertIn("public_id", review)
+            self.assertIn("reviewer_avatar_url", review)
+            self.assertIn("reviewer_display_name", review)
+            self.assertIn("rating", review)
+            self.assertIn("comment", review)
+            self.assertIn("created_at", review)
+
+    def test_list_reviews_pagination(self):
+        """Test pagination works correctly."""
+        self.client.force_authenticate(user=self.viewer_user)
+        response = self.client.get(f"{self.url}?page=1&page_size=2")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+        self.assertEqual(response.data["meta"]["pagination"]["total_count"], 3)
+        self.assertEqual(response.data["meta"]["pagination"]["total_pages"], 2)
+        self.assertTrue(response.data["meta"]["pagination"]["has_next"])
+        self.assertFalse(response.data["meta"]["pagination"]["has_previous"])
+
+        # Get second page
+        response = self.client.get(f"{self.url}?page=2&page_size=2")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertFalse(response.data["meta"]["pagination"]["has_next"])
+        self.assertTrue(response.data["meta"]["pagination"]["has_previous"])
+
+    def test_list_reviews_rating_stats(self):
+        """Test rating_stats is included in meta."""
+        self.client.force_authenticate(user=self.viewer_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify rating_stats structure
+        self.assertIn("rating_stats", response.data["meta"])
+        rating_stats = response.data["meta"]["rating_stats"]
+
+        self.assertIn("average", rating_stats)
+        self.assertIn("total_count", rating_stats)
+        self.assertIn("distribution", rating_stats)
+
+        # Verify distribution structure
+        distribution = rating_stats["distribution"]
+        self.assertIn("5", distribution)
+        self.assertIn("4", distribution)
+        self.assertIn("3", distribution)
+        self.assertIn("2", distribution)
+        self.assertIn("1", distribution)
+
+        # Verify values based on setUp data (ratings: 5, 4, 3)
+        self.assertEqual(rating_stats["total_count"], 3)
+        self.assertEqual(distribution["5"], 1)
+        self.assertEqual(distribution["4"], 1)
+        self.assertEqual(distribution["3"], 1)
+        self.assertEqual(distribution["2"], 0)
+        self.assertEqual(distribution["1"], 0)
+
+        # Verify average calculation: (5 + 4 + 3) / 3 = 4.0
+        self.assertEqual(rating_stats["average"], 4.0)
+
+    def test_list_reviews_rating_stats_empty(self):
+        """Test rating_stats with no reviews."""
+        from apps.jobs.models import Review
+
+        Review.objects.all().delete()
+
+        self.client.force_authenticate(user=self.viewer_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        rating_stats = response.data["meta"]["rating_stats"]
+        self.assertEqual(rating_stats["average"], 0.0)
+        self.assertEqual(rating_stats["total_count"], 0)
+        self.assertEqual(rating_stats["distribution"]["5"], 0)
+        self.assertEqual(rating_stats["distribution"]["4"], 0)
+        self.assertEqual(rating_stats["distribution"]["3"], 0)
+        self.assertEqual(rating_stats["distribution"]["2"], 0)
+        self.assertEqual(rating_stats["distribution"]["1"], 0)
+
+    def test_list_reviews_handyman_not_found(self):
+        """Test returns 404 when handyman not found."""
+        self.client.force_authenticate(user=self.viewer_user)
+        url = "/api/v1/mobile/homeowner/handymen/00000000-0000-0000-0000-000000000000/reviews/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.data["message"], "Handyman not found")
+
+    def test_list_reviews_handyman_not_visible(self):
+        """Test returns 404 when handyman is not visible."""
+        self.client.force_authenticate(user=self.viewer_user)
+
+        # Not approved
+        self.handyman.is_approved = False
+        self.handyman.save()
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Not active
+        self.handyman.is_approved = True
+        self.handyman.is_active = False
+        self.handyman.save()
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Not available
+        self.handyman.is_active = True
+        self.handyman.is_available = False
+        self.handyman.save()
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_list_reviews_unauthenticated(self):
+        """Test unauthenticated request returns 401."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_list_reviews_empty_list(self):
+        """Test returns empty list when no reviews exist."""
+        from apps.jobs.models import Review
+
+        # Delete all reviews
+        Review.objects.all().delete()
+
+        self.client.force_authenticate(user=self.viewer_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+        self.assertEqual(response.data["meta"]["pagination"]["total_count"], 0)
+
+    def test_list_reviews_only_homeowner_reviews(self):
+        """Test only reviews from homeowners are returned."""
+        from apps.jobs.models import Job, Review
+
+        # Create a review from handyman (should not be included)
+        another_homeowner = User.objects.create_user(
+            email="another_homeowner@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=another_homeowner, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=another_homeowner,
+            display_name="Another Homeowner",
+        )
+
+        job = Job.objects.create(
+            homeowner=another_homeowner,
+            assigned_handyman=self.handyman_user,
+            title="Job for handyman review",
+            description="Test job for handyman review",
+            estimated_budget=Decimal("100.00"),
+            address="123 Test St",
+            category=self.category,
+            city=self.city,
+            status="completed",
+        )
+
+        # Handyman reviews homeowner (should not appear in handyman's reviews)
+        Review.objects.create(
+            job=job,
+            reviewer=self.handyman_user,
+            reviewee=another_homeowner,
+            reviewer_type="handyman",
+            rating=5,
+            comment="Great homeowner!",
+        )
+
+        self.client.force_authenticate(user=self.viewer_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should still only have 3 reviews (from homeowners)
+        self.assertEqual(len(response.data["data"]), 3)
+
+    def test_list_reviews_reviewer_without_homeowner_profile(self):
+        """Test reviewer without homeowner_profile returns None for avatar and name."""
+        from apps.jobs.models import Job, Review
+
+        # Create reviewer without homeowner profile
+        reviewer_no_profile = User.objects.create_user(
+            email="no_profile_reviewer@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=reviewer_no_profile, role="homeowner")
+        # Note: NOT creating HomeownerProfile for this user
+
+        job = Job.objects.create(
+            homeowner=reviewer_no_profile,
+            assigned_handyman=self.handyman_user,
+            title="Job without profile",
+            description="Test job without profile",
+            estimated_budget=Decimal("100.00"),
+            address="123 No Profile St",
+            category=self.category,
+            city=self.city,
+            status="completed",
+        )
+        Review.objects.create(
+            job=job,
+            reviewer=reviewer_no_profile,
+            reviewee=self.handyman_user,
+            reviewer_type="homeowner",
+            rating=2,
+            comment="Review from user without profile",
+        )
+
+        self.client.force_authenticate(user=self.viewer_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Find the review with rating 2 (from reviewer without profile)
+        for review in response.data["data"]:
+            if review["rating"] == 2:
+                self.assertIsNone(review["reviewer_avatar_url"])
+                self.assertIsNone(review["reviewer_display_name"])
+                break
+
+    def test_list_reviews_reviewer_with_empty_display_name(self):
+        """Test reviewer with empty display_name returns None."""
+        from apps.jobs.models import Job, Review
+
+        # Create reviewer with empty display_name
+        reviewer_empty_name = User.objects.create_user(
+            email="empty_name_reviewer@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=reviewer_empty_name, role="homeowner")
+        HomeownerProfile.objects.create(
+            user=reviewer_empty_name,
+            display_name="",  # Empty display name
+        )
+
+        job = Job.objects.create(
+            homeowner=reviewer_empty_name,
+            assigned_handyman=self.handyman_user,
+            title="Job with empty name",
+            description="Test job with empty name",
+            estimated_budget=Decimal("100.00"),
+            address="456 Empty Name Ave",
+            category=self.category,
+            city=self.city,
+            status="completed",
+        )
+        Review.objects.create(
+            job=job,
+            reviewer=reviewer_empty_name,
+            reviewee=self.handyman_user,
+            reviewer_type="homeowner",
+            rating=1,
+            comment="Review from user with empty name",
+        )
+
+        self.client.force_authenticate(user=self.viewer_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Find the review with rating 1 (from reviewer with empty name)
+        for review in response.data["data"]:
+            if review["rating"] == 1:
+                self.assertIsNone(review["reviewer_display_name"])
+                break
+
+
+class MobileGuestHandymanReviewListViewTests(APITestCase):
+    """Test cases for mobile GuestHandymanReviewListView (no auth required)."""
+
+    def setUp(self):
+        """Set up test data."""
+        from apps.jobs.models import City, Job, JobCategory, Review
+
+        # Handyman user (being reviewed)
+        self.handyman_user = User.objects.create_user(
+            email="handyman_guest_review@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.handyman_user, role="handyman")
+        self.handyman = HandymanProfile.objects.create(
+            user=self.handyman_user,
+            display_name="Guest Reviewed Handyman",
+            hourly_rate="75.00",
+            latitude="43.651070",
+            longitude="-79.347015",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+        )
+
+        # Reviewer homeowner
+        self.reviewer = User.objects.create_user(
+            email="guest_reviewer@example.com",
+            password="testpass123",
+        )
+        UserRole.objects.create(user=self.reviewer, role="homeowner")
+        self.reviewer_profile = HomeownerProfile.objects.create(
+            user=self.reviewer,
+            display_name="Jane Wilson",
+        )
+
+        # Job category and city
+        self.category = JobCategory.objects.create(
+            name="Guest Test Category",
+            slug="guest-test-category",
+        )
+        self.city = City.objects.create(
+            name="Vancouver",
+            province="British Columbia",
+            province_code="BC",
+            slug="vancouver-bc",
+            is_active=True,
+        )
+
+        # Create job and review
+        self.job = Job.objects.create(
+            homeowner=self.reviewer,
+            assigned_handyman=self.handyman_user,
+            title="Guest Review Job",
+            description="Test guest review job",
+            estimated_budget=Decimal("75.00"),
+            address="456 Guest Ave",
+            category=self.category,
+            city=self.city,
+            status="completed",
+        )
+        self.review = Review.objects.create(
+            job=self.job,
+            reviewer=self.reviewer,
+            reviewee=self.handyman_user,
+            reviewer_type="homeowner",
+            rating=5,
+            comment="Amazing service!",
+        )
+
+        self.url = (
+            f"/api/v1/mobile/guest/handymen/{self.handyman.user.public_id}/reviews/"
+        )
+
+    def test_list_reviews_no_auth_required(self):
+        """Test listing reviews without authentication succeeds."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Reviews retrieved successfully")
+
+    def test_list_reviews_returns_correct_data(self):
+        """Test reviews return expected fields."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+        review = response.data["data"][0]
+        self.assertEqual(review["rating"], 5)
+        self.assertEqual(review["comment"], "Amazing service!")
+        # "Jane Wilson" -> "J*** W*****"
+        self.assertEqual(review["reviewer_display_name"], "J*** W*****")
+
+    def test_list_reviews_pagination(self):
+        """Test pagination metadata is included."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("pagination", response.data["meta"])
+        self.assertEqual(response.data["meta"]["pagination"]["total_count"], 1)
+
+    def test_list_reviews_rating_stats(self):
+        """Test rating_stats is included in meta for guest endpoint."""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify rating_stats structure
+        self.assertIn("rating_stats", response.data["meta"])
+        rating_stats = response.data["meta"]["rating_stats"]
+
+        self.assertIn("average", rating_stats)
+        self.assertIn("total_count", rating_stats)
+        self.assertIn("distribution", rating_stats)
+
+        # Verify distribution structure
+        distribution = rating_stats["distribution"]
+        self.assertIn("5", distribution)
+        self.assertIn("4", distribution)
+        self.assertIn("3", distribution)
+        self.assertIn("2", distribution)
+        self.assertIn("1", distribution)
+
+        # Verify values based on setUp data (1 review with rating 5)
+        self.assertEqual(rating_stats["total_count"], 1)
+        self.assertEqual(distribution["5"], 1)
+        self.assertEqual(distribution["4"], 0)
+        self.assertEqual(distribution["3"], 0)
+        self.assertEqual(distribution["2"], 0)
+        self.assertEqual(distribution["1"], 0)
+        self.assertEqual(rating_stats["average"], 5.0)
+
+    def test_list_reviews_rating_stats_empty(self):
+        """Test rating_stats with no reviews for guest endpoint."""
+        from apps.jobs.models import Review
+
+        Review.objects.all().delete()
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        rating_stats = response.data["meta"]["rating_stats"]
+        self.assertEqual(rating_stats["average"], 0.0)
+        self.assertEqual(rating_stats["total_count"], 0)
+        self.assertEqual(rating_stats["distribution"]["5"], 0)
+        self.assertEqual(rating_stats["distribution"]["4"], 0)
+        self.assertEqual(rating_stats["distribution"]["3"], 0)
+        self.assertEqual(rating_stats["distribution"]["2"], 0)
+        self.assertEqual(rating_stats["distribution"]["1"], 0)
+
+    def test_list_reviews_handyman_not_found(self):
+        """Test returns 404 when handyman not found."""
+        url = "/api/v1/mobile/guest/handymen/00000000-0000-0000-0000-000000000000/reviews/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.data["message"], "Handyman not found")
+
+    def test_list_reviews_handyman_not_visible(self):
+        """Test returns 404 when handyman is not visible."""
+        self.handyman.is_approved = False
+        self.handyman.save()
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_list_reviews_web_platform_blocked(self):
+        """Test web platform cannot access mobile guest endpoint."""
+        user = User.objects.create_user(
+            email="webuser_review@example.com",
             password="testpass123",
         )
         user.token_payload = {
