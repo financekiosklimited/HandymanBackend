@@ -1428,6 +1428,7 @@ class HandymanProfileSerializer(serializers.Serializer):
     rating = serializers.DecimalField(
         max_digits=3, decimal_places=2, coerce_to_string=False, read_only=True
     )
+    review_count = serializers.IntegerField(read_only=True)
     hourly_rate = serializers.DecimalField(
         max_digits=10, decimal_places=2, coerce_to_string=False, read_only=True
     )

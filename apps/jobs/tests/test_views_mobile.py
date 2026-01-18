@@ -3710,6 +3710,19 @@ class HomeownerJobApplicationDetailViewTests(APITestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_get_application_detail_includes_review_count(self):
+        """Test handyman_profile in application detail includes review_count."""
+        # Update handyman profile with review_count
+        handyman_profile = self.handyman.handyman_profile
+        handyman_profile.review_count = 42
+        handyman_profile.save()
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("handyman_profile", response.data["data"])
+        self.assertIn("review_count", response.data["data"]["handyman_profile"])
+        self.assertEqual(response.data["data"]["handyman_profile"]["review_count"], 42)
+
 
 class HomeownerApplicationRejectViewTests(APITestCase):
     """Test cases for homeowner ApplicationRejectView."""
