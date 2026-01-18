@@ -788,6 +788,49 @@ class GenerateDummyDataCoverageTests(TestCase):
         self.assertIn(handyman_review.rating, [1, 2, 3, 4, 5])
         self.assertIsNotNone(handyman_review.comment)
 
+    def test_reviews_dedupe_profile_updates(self):
+        """Test lines 1575->1580, 1580->1570: skip duplicate profile updates."""
+        from apps.common.management.commands.generate_dummy_data import Command
+        from apps.jobs.models import City, JobCategory
+
+        # Create 1 homeowner and 1 handyman with 2 completed jobs
+        # This tests that profile updates are deduped (same user in multiple jobs)
+        homeowners, handymen = self._create_test_users(1, 1)
+        category = JobCategory.objects.first()
+        city = City.objects.first()
+
+        # Create 2 completed jobs with the same handyman and homeowner
+        job1 = self._create_job(
+            homeowners[0],
+            category,
+            city,
+            status="completed",
+            assigned_handyman=handymen[0],
+        )
+        job2 = self._create_job(
+            homeowners[0],
+            category,
+            city,
+            status="completed",
+            assigned_handyman=handymen[0],
+        )
+
+        cmd = Command()
+        cmd.now = timezone.now()
+
+        # Should create 4 reviews (2 per job)
+        review_count = cmd._create_reviews([job1, job2])
+
+        self.assertEqual(review_count, 4)
+
+        # Verify handyman profile was updated (review_count should be 2)
+        handymen[0].handyman_profile.refresh_from_db()
+        self.assertEqual(handymen[0].handyman_profile.review_count, 2)
+
+        # Verify homeowner profile was updated (review_count should be 2)
+        homeowners[0].homeowner_profile.refresh_from_db()
+        self.assertEqual(homeowners[0].homeowner_profile.review_count, 2)
+
     def test_daily_report_no_job_tasks(self):
         """Test line 1510 branch: job without tasks."""
         from apps.common.management.commands.generate_dummy_data import Command

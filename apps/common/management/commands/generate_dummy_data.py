@@ -1528,6 +1528,8 @@ class Command(BaseCommand):
 
     def _create_reviews(self, completed_jobs):
         """Create mutual reviews for completed jobs."""
+        from apps.jobs.services import review_service
+
         review_count = 0
 
         for job in completed_jobs:
@@ -1560,6 +1562,24 @@ class Command(BaseCommand):
                 comment=random.choice(HANDYMAN_REVIEW_COMMENTS),
             )
             review_count += 1
+
+        # Update review_count for all handymen and homeowners who received reviews
+        updated_handymen = set()
+        updated_homeowners = set()
+
+        for job in completed_jobs:
+            if not job.assigned_handyman:
+                continue
+
+            # Update handyman profile (receives reviews from homeowners)
+            if job.assigned_handyman.id not in updated_handymen:
+                review_service.update_profile_rating(job.assigned_handyman, "homeowner")
+                updated_handymen.add(job.assigned_handyman.id)
+
+            # Update homeowner profile (receives reviews from handymen)
+            if job.homeowner.id not in updated_homeowners:
+                review_service.update_profile_rating(job.homeowner, "handyman")
+                updated_homeowners.add(job.homeowner.id)
 
         return review_count
 
