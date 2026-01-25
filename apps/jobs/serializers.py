@@ -1870,7 +1870,10 @@ class WorkSessionStartSerializer(serializers.Serializer):
         help_text="GPS accuracy in meters (optional)",
     )
     start_photo = serializers.ImageField(
-        help_text="Photo taken at start of work",
+        required=False,
+        allow_null=True,
+        default=None,
+        help_text="Photo taken at start of work (optional)",
     )
 
     def validate_start_latitude(self, value):
@@ -1915,7 +1918,10 @@ class WorkSessionStopSerializer(serializers.Serializer):
         help_text="GPS accuracy in meters (optional)",
     )
     end_photo = serializers.ImageField(
-        help_text="Photo taken at end of work",
+        required=False,
+        allow_null=True,
+        default=None,
+        help_text="Photo taken at end of work (optional)",
     )
 
     def validate_end_latitude(self, value):

@@ -368,7 +368,9 @@ class WorkSession(BaseModel):
     start_latitude = models.DecimalField(max_digits=12, decimal_places=9)
     start_longitude = models.DecimalField(max_digits=12, decimal_places=9)
     start_accuracy = models.FloatField(null=True, blank=True)
-    start_photo = models.ImageField(upload_to="work-sessions/start-photos/%Y/%m/%d/")
+    start_photo = models.ImageField(
+        upload_to="work-sessions/start-photos/%Y/%m/%d/", null=True, blank=True
+    )
 
     # End location & photo (captured on STOP)
     end_latitude = models.DecimalField(
