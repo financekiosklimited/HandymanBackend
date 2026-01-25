@@ -422,16 +422,13 @@ class ChatService:
         if conversation.job:
             data["job_id"] = str(conversation.job.public_id)
 
-        # Send notification
+        # Send push notification only (no DB insert for chat messages)
         try:
-            notification_service.create_and_send_notification(
+            notification_service.send_push_notification(
                 user=recipient,
-                notification_type="chat_message_received",
                 title=title,
                 body=body,
-                target_role=recipient_role,
                 data=data,
-                triggered_by=message.sender,
             )
         except Exception as e:
             logger.error(f"Failed to send chat notification: {e}")

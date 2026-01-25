@@ -472,8 +472,8 @@ class ChatServiceSendMessageTests(TestCase):
         self.assertEqual(self.conversation.handyman_unread_count, 1)
         self.assertEqual(self.conversation.homeowner_unread_count, 0)
 
-        # Check notification sent
-        mock_notification.create_and_send_notification.assert_called_once()
+        # Check push notification sent (no DB insert for chat)
+        mock_notification.send_push_notification.assert_called_once()
 
     @patch("apps.chat.services.notification_service")
     def test_send_text_message_as_handyman(self, mock_notification):
@@ -1573,8 +1573,8 @@ class ChatServiceSendMessageWithAttachmentsTests(TestCase):
             attachments=[image],
         )
 
-        # Check notification was sent with "Sent an attachment" body
-        call_args = mock_notification.create_and_send_notification.call_args
+        # Check push notification was sent with "Sent an attachment" body
+        call_args = mock_notification.send_push_notification.call_args
         self.assertEqual(call_args.kwargs["body"], "Sent an attachment")
 
     @patch("apps.chat.services.notification_service")
@@ -1587,7 +1587,7 @@ class ChatServiceSendMessageWithAttachmentsTests(TestCase):
             content="Test message",
         )
 
-        call_args = mock_notification.create_and_send_notification.call_args
+        call_args = mock_notification.send_push_notification.call_args
         self.assertIn("job_id", call_args.kwargs["data"])
         self.assertEqual(call_args.kwargs["data"]["job_id"], str(self.job.public_id))
 
@@ -1646,7 +1646,7 @@ class ChatServiceNotificationFailureTests(TestCase):
     @patch("apps.chat.services.notification_service")
     def test_notification_failure_does_not_fail_send_message(self, mock_notification):
         """Test that notification failure doesn't prevent message from being sent."""
-        mock_notification.create_and_send_notification.side_effect = Exception(
+        mock_notification.send_push_notification.side_effect = Exception(
             "Notification failed"
         )
 
@@ -1717,8 +1717,8 @@ class ChatServiceDisplayNameFallbackTests(TestCase):
             content="Test message",
         )
 
-        # Check notification was sent with email prefix in title
-        call_args = mock_notification.create_and_send_notification.call_args
+        # Check push notification was sent with email prefix in title
+        call_args = mock_notification.send_push_notification.call_args
         self.assertIn("homeowner", call_args.kwargs["title"])
 
     @patch("apps.chat.services.notification_service")
@@ -1739,8 +1739,8 @@ class ChatServiceDisplayNameFallbackTests(TestCase):
             content="Test message",
         )
 
-        # Check notification was sent with email prefix in title
-        call_args = mock_notification.create_and_send_notification.call_args
+        # Check push notification was sent with email prefix in title
+        call_args = mock_notification.send_push_notification.call_args
         self.assertIn("homeowner", call_args.kwargs["title"])
 
 
@@ -1797,7 +1797,7 @@ class ChatServiceSendMessageInGeneralConversationTests(TestCase):
             content="Hello!",
         )
 
-        call_args = mock_notification.create_and_send_notification.call_args
+        call_args = mock_notification.send_push_notification.call_args
         self.assertNotIn("job_id", call_args.kwargs["data"])
 
 
