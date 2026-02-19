@@ -1,5 +1,6 @@
 """Tests for job services."""
 
+from builtins import __import__ as builtin_import
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
@@ -233,6 +234,77 @@ class JobApplicationServiceTests(TestCase):
 
         with self.assertRaisesRegex(ValidationError, "pending applications"):
             self.service.approve_application(self.homeowner, application)
+
+    @patch("apps.payments.services.kyc_service.is_handyman_eligible")
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_approve_application_requires_kyc_when_enforced(
+        self, mock_notify, mock_is_eligible
+    ):
+        application = self.service.apply_to_job(self.handyman, self.job)
+        mock_notify.reset_mock()
+        self.job.payment_mode = "stripe_required"
+        self.job.save(update_fields=["payment_mode", "updated_at"])
+        mock_is_eligible.return_value = False
+
+        with patch(
+            "apps.payments.services.job_payment_service.ensure_job_authorized",
+            return_value=None,
+        ):
+            with self.settings(
+                STRIPE_KYC_ENFORCED=True,
+                STRIPE_AUTHORIZATION_ENFORCED=False,
+            ):
+                with self.assertRaisesRegex(
+                    ValidationError, "must complete Stripe verification"
+                ):
+                    self.service.approve_application(self.homeowner, application)
+
+        mock_notify.assert_not_called()
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_approve_application_import_error_fallback(self, mock_notify):
+        application = self.service.apply_to_job(self.handyman, self.job)
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "apps.payments.services":
+                raise ImportError("payments unavailable")
+            return builtin_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            self.service.approve_application(self.homeowner, application)
+
+        application.refresh_from_db()
+        self.assertEqual(application.status, "approved")
+
+    @patch("apps.payments.services.kyc_service.is_handyman_eligible")
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_approve_application_kyc_enforced_with_eligible_handyman(
+        self, mock_notify, mock_is_eligible
+    ):
+        application = self.service.apply_to_job(self.handyman, self.job)
+        mock_notify.reset_mock()
+        self.job.payment_mode = "stripe_required"
+        self.job.save(update_fields=["payment_mode", "updated_at"])
+        mock_is_eligible.return_value = True
+
+        with patch(
+            "apps.payments.services.job_payment_service.ensure_job_authorized",
+            return_value=None,
+        ):
+            with self.settings(
+                STRIPE_KYC_ENFORCED=True,
+                STRIPE_AUTHORIZATION_ENFORCED=False,
+            ):
+                self.service.approve_application(self.homeowner, application)
+
+        application.refresh_from_db()
+        self.assertEqual(application.status, "approved")
 
     @patch(
         "apps.notifications.services.NotificationService.create_and_send_notification"
@@ -489,6 +561,25 @@ class OngoingServicesTests(TestCase):
         self.assertEqual(self.job.status, "completed")
         self.assertEqual(mock_notify.call_count, 2)
 
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_approve_completion_import_error_fallback(self, mock_notify):
+        self.job.status = "pending_completion"
+        self.job.save(update_fields=["status", "updated_at", "status_at"])
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "apps.payments.services":
+                raise ImportError("payments unavailable")
+            return builtin_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            job_completion_service.approve_completion(self.homeowner, self.job)
+
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, "completed")
+        self.assertEqual(mock_notify.call_count, 1)
+
     def test_completion_wrong_owner(self):
         with self.assertRaises(ValidationError):
             job_completion_service.approve_completion(
@@ -517,6 +608,153 @@ class OngoingServicesTests(TestCase):
         dispute.refresh_from_db()
         self.assertEqual(dispute.status, "resolved_pay_handyman")
         self.assertGreaterEqual(mock_notify.call_count, 1)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_resolve_dispute_financial_outcome_refund_negative(self, mock_notify):
+        self.job.status = "pending_completion"
+        self.job.save(update_fields=["status", "updated_at", "status_at"])
+        dispute = dispute_service.open_dispute(
+            homeowner=self.homeowner,
+            job=self.job,
+            reason="Issue",
+        )
+        mock_notify.reset_mock()
+
+        with patch(
+            "apps.payments.services.job_payment_service.resolve_dispute_financial",
+            return_value={
+                "action": "refunded_partial",
+                "outcome_amount_cents": 500,
+            },
+        ):
+            dispute_service.resolve_dispute(
+                admin_user=self.homeowner,
+                dispute=dispute,
+                status="resolved_partial_refund",
+                refund_percentage=50,
+            )
+
+        dispute.refresh_from_db()
+        self.assertEqual(dispute.financial_action_status, "success")
+        self.assertEqual(dispute.financial_outcome_amount_cents, -500)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_resolve_dispute_financial_outcome_positive(self, mock_notify):
+        self.job.status = "pending_completion"
+        self.job.save(update_fields=["status", "updated_at", "status_at"])
+        dispute = dispute_service.open_dispute(
+            homeowner=self.homeowner,
+            job=self.job,
+            reason="Issue",
+        )
+        mock_notify.reset_mock()
+
+        with patch(
+            "apps.payments.services.job_payment_service.resolve_dispute_financial",
+            return_value={
+                "action": "captured_full",
+                "outcome_amount_cents": 900,
+            },
+        ):
+            dispute_service.resolve_dispute(
+                admin_user=self.homeowner,
+                dispute=dispute,
+                status="resolved_pay_handyman",
+            )
+
+        dispute.refresh_from_db()
+        self.assertEqual(dispute.financial_action_status, "success")
+        self.assertEqual(dispute.financial_outcome_amount_cents, 900)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_resolve_dispute_financial_outcome_none(self, mock_notify):
+        self.job.status = "pending_completion"
+        self.job.save(update_fields=["status", "updated_at", "status_at"])
+        dispute = dispute_service.open_dispute(
+            homeowner=self.homeowner,
+            job=self.job,
+            reason="Issue",
+        )
+        mock_notify.reset_mock()
+
+        with patch(
+            "apps.payments.services.job_payment_service.resolve_dispute_financial",
+            return_value={
+                "action": "captured_full",
+                "outcome_amount_cents": None,
+            },
+        ):
+            dispute_service.resolve_dispute(
+                admin_user=self.homeowner,
+                dispute=dispute,
+                status="resolved_pay_handyman",
+            )
+
+        dispute.refresh_from_db()
+        self.assertEqual(dispute.financial_action_status, "success")
+        self.assertIsNone(dispute.financial_outcome_amount_cents)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_resolve_dispute_financial_failure_raises_validation_error(
+        self, mock_notify
+    ):
+        self.job.status = "pending_completion"
+        self.job.save(update_fields=["status", "updated_at", "status_at"])
+        dispute = dispute_service.open_dispute(
+            homeowner=self.homeowner,
+            job=self.job,
+            reason="Issue",
+        )
+        mock_notify.reset_mock()
+
+        with patch(
+            "apps.payments.services.job_payment_service.resolve_dispute_financial",
+            side_effect=RuntimeError("financial failed"),
+        ):
+            with self.assertRaisesRegex(
+                ValidationError, "Failed to resolve dispute financially"
+            ):
+                dispute_service.resolve_dispute(
+                    admin_user=self.homeowner,
+                    dispute=dispute,
+                    status="resolved_pay_handyman",
+                )
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_resolve_dispute_import_error_legacy_exempt(self, mock_notify):
+        self.job.status = "pending_completion"
+        self.job.save(update_fields=["status", "updated_at", "status_at"])
+        dispute = dispute_service.open_dispute(
+            homeowner=self.homeowner,
+            job=self.job,
+            reason="Issue",
+        )
+        mock_notify.reset_mock()
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "apps.payments.services":
+                raise ImportError("payments unavailable")
+            return builtin_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            dispute_service.resolve_dispute(
+                admin_user=self.homeowner,
+                dispute=dispute,
+                status="resolved_pay_handyman",
+            )
+
+        dispute.refresh_from_db()
+        self.assertEqual(dispute.financial_action_status, "legacy_exempt")
 
     def test_dispute_wrong_homeowner(self):
         """Test that a homeowner cannot open dispute for another homeowner's job."""
@@ -2327,6 +2565,100 @@ class DirectOfferServiceTests(TestCase):
         call_kwargs = mock_notify.call_args.kwargs
         self.assertEqual(call_kwargs["user"], self.homeowner)
         self.assertEqual(call_kwargs["notification_type"], "direct_offer_accepted")
+
+    @patch("apps.payments.services.kyc_service.is_handyman_eligible")
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_accept_offer_requires_kyc_when_enforced(
+        self, mock_notify, mock_is_eligible
+    ):
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+        job.payment_mode = "stripe_required"
+        job.save(update_fields=["payment_mode", "updated_at"])
+        mock_is_eligible.return_value = False
+
+        with patch(
+            "apps.payments.services.job_payment_service.ensure_job_authorized",
+            return_value=None,
+        ):
+            with self.settings(
+                STRIPE_KYC_ENFORCED=True,
+                STRIPE_AUTHORIZATION_ENFORCED=False,
+            ):
+                with self.assertRaisesRegex(
+                    ValidationError, "complete Stripe verification"
+                ):
+                    self.service.accept_offer(self.handyman, job)
+
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_accept_offer_import_error_fallback(self, mock_notify):
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+        mock_notify.reset_mock()
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "apps.payments.services":
+                raise ImportError("payments unavailable")
+            return builtin_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            updated_job = self.service.accept_offer(self.handyman, job)
+
+        self.assertEqual(updated_job.offer_status, "accepted")
+
+    @patch("apps.payments.services.kyc_service.is_handyman_eligible")
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_accept_offer_kyc_enforced_with_eligible_handyman(
+        self, mock_notify, mock_is_eligible
+    ):
+        job = self.service.create_direct_offer(
+            homeowner=self.homeowner,
+            target_handyman=self.handyman,
+            title="Fix leaky faucet",
+            description="Test",
+            estimated_budget=100,
+            category=self.category,
+            city=self.city,
+            address="123 Main St",
+        )
+        job.payment_mode = "stripe_required"
+        job.save(update_fields=["payment_mode", "updated_at"])
+        mock_notify.reset_mock()
+        mock_is_eligible.return_value = True
+
+        with patch(
+            "apps.payments.services.job_payment_service.ensure_job_authorized",
+            return_value=None,
+        ):
+            with self.settings(
+                STRIPE_KYC_ENFORCED=True,
+                STRIPE_AUTHORIZATION_ENFORCED=False,
+            ):
+                updated_job = self.service.accept_offer(self.handyman, job)
+
+        self.assertEqual(updated_job.offer_status, "accepted")
 
     @patch(
         "apps.notifications.services.NotificationService.create_and_send_notification"

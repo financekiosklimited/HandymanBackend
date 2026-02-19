@@ -1,5 +1,7 @@
 import json
+from builtins import __import__ as builtin_import
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.utils import timezone
@@ -63,6 +65,23 @@ class DashboardTests(TestCase):
         self.assertEqual(card_map["Open Disputes"], 0)
         self.assertEqual(card_map["Active Work Sessions"], 0)
         self.assertEqual(card_map["Pending Applications"], 1)
+        self.assertIn("Auth Pending Capture", card_map)
+        self.assertIn("Failed Withdrawals", card_map)
+        self.assertIn("Failed Stripe Events", card_map)
+
+    def test_get_kpi_cards_without_payments_module(self):
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "apps.payments.models":
+                raise ImportError("payments unavailable")
+            return builtin_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            cards = get_kpi_cards()
+
+        card_titles = [card["title"] for card in cards]
+        self.assertNotIn("Auth Pending Capture", card_titles)
+        self.assertNotIn("Failed Withdrawals", card_titles)
+        self.assertNotIn("Failed Stripe Events", card_titles)
 
     def test_get_user_signups_chart_data(self):
         # Create a user 31 days ago (should not be in chart)

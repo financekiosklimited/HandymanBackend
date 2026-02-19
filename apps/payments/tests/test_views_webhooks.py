@@ -48,3 +48,15 @@ class StripeWebhookViewTests(APITestCase):
             StripeEventLog.objects.filter(stripe_event_id="evt_123dup").count(),
             1,
         )
+
+    @override_settings(STRIPE_ENABLED=False)
+    def test_webhook_rejects_invalid_event_payload(self):
+        payload = {"id": "", "type": "", "data": {"object": {}}}
+        response = self.client.post(
+            "/api/v1/webhooks/stripe/",
+            data=json.dumps(payload),
+            content_type="application/json",
+            HTTP_STRIPE_SIGNATURE="test-signature",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["message"], "Webhook rejected")
