@@ -24,6 +24,8 @@ urlpatterns = [
     path("api/v1/mobile/", include("apps.notifications.urls.mobile")),
     path("api/v1/mobile/", include("apps.chat.urls.mobile")),
     path("api/v1/mobile/", include("apps.bookmarks.urls.mobile")),
+    path("api/v1/mobile/", include("apps.payments.urls.mobile")),
+    path("api/v1/webhooks/", include("apps.payments.urls.webhooks")),
     # API Schema and Documentation
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path(

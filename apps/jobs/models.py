@@ -92,6 +92,11 @@ class Job(BaseModel):
         ("converted", "Converted to Public"),
     ]
 
+    PAYMENT_MODE_CHOICES = [
+        ("legacy_exempt", "Legacy Exempt"),
+        ("stripe_required", "Stripe Required"),
+    ]
+
     homeowner = models.ForeignKey(
         "accounts.User", on_delete=models.CASCADE, related_name="jobs"
     )
@@ -111,6 +116,13 @@ class Job(BaseModel):
         max_digits=9, decimal_places=6, null=True, blank=True
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="draft")
+    payment_mode = models.CharField(
+        max_length=20,
+        choices=PAYMENT_MODE_CHOICES,
+        default="stripe_required",
+        db_index=True,
+        help_text="Controls whether Stripe-managed payment flow is required.",
+    )
     status_at = models.DateTimeField(
         null=True,
         blank=True,
@@ -182,6 +194,7 @@ class Job(BaseModel):
             models.Index(fields=["target_handyman"]),
             models.Index(fields=["offer_status"]),
             models.Index(fields=["offer_expires_at"]),
+            models.Index(fields=["payment_mode"]),
         ]
 
     def __str__(self):
@@ -596,6 +609,25 @@ class JobDispute(BaseModel):
     refund_percentage = models.PositiveIntegerField(
         null=True, blank=True, help_text="Refund percentage (0-100)"
     )
+    financial_outcome_amount_cents = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Final financial outcome amount in cents after dispute resolution. "
+            "Positive values indicate payout/capture, negative values indicate refund."
+        ),
+    )
+    financial_action_status = models.CharField(
+        max_length=30,
+        choices=[
+            ("not_started", "Not Started"),
+            ("success", "Success"),
+            ("failed", "Failed"),
+            ("legacy_exempt", "Legacy Exempt"),
+        ],
+        default="not_started",
+    )
+    financial_action_error = models.TextField(blank=True)
 
     # Auto-resolution deadline (3 days)
     resolution_deadline = models.DateTimeField()
@@ -609,6 +641,7 @@ class JobDispute(BaseModel):
             models.Index(fields=["job"]),
             models.Index(fields=["status"]),
             models.Index(fields=["resolution_deadline"]),
+            models.Index(fields=["financial_action_status"]),
         ]
         permissions = [
             ("can_manage_disputes", "Can resolve and manage job disputes"),

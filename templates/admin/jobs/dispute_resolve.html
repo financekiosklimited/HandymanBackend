@@ -276,6 +276,39 @@
             <!-- Right Column: Resolution Form -->
             <div class="lg:col-span-1">
                 <div class="sticky top-6">
+                    {% if payment_summary %}
+                    {% component "unfold/components/card.html" with class="overflow-hidden mb-6" %}
+                        <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-cyan-50 dark:bg-cyan-900/30">
+                            <h2 class="text-lg font-semibold text-cyan-900 dark:text-cyan-100 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-xl">payments</span>
+                                {% trans "Payment Snapshot" %}
+                            </h2>
+                        </div>
+                        <div class="p-6 space-y-3 text-sm">
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-500 dark:text-gray-400">{% trans "Status" %}</span>
+                                <span class="font-semibold text-gray-900 dark:text-white">{{ payment_summary.status }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-500 dark:text-gray-400">{% trans "Authorized" %}</span>
+                                <span class="font-semibold text-gray-900 dark:text-white">${{ payment_summary.authorized }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-500 dark:text-gray-400">{% trans "Capturable" %}</span>
+                                <span class="font-semibold text-gray-900 dark:text-white">${{ payment_summary.capturable }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-500 dark:text-gray-400">{% trans "Captured" %}</span>
+                                <span class="font-semibold text-gray-900 dark:text-white">${{ payment_summary.captured }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-gray-500 dark:text-gray-400">{% trans "Platform Fee" %}</span>
+                                <span class="font-semibold text-gray-900 dark:text-white">${{ payment_summary.platform_fee }}</span>
+                            </div>
+                        </div>
+                    {% endcomponent %}
+                    {% endif %}
+
                     {% component "unfold/components/card.html" with class="overflow-hidden" %}
                         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-primary-50 dark:bg-primary-900/30">
                             <h2 class="text-lg font-semibold text-primary-900 dark:text-primary-100 flex items-center gap-2">

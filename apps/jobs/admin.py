@@ -59,10 +59,36 @@ def get_dispute_dashboard_data():
         ).count(),
     }
 
+    try:
+        from apps.payments.models import JobPayment
+
+        kpis.update(
+            {
+                "authorized_pending_capture": JobPayment.objects.filter(
+                    status="authorized"
+                ).count(),
+                "failed_financial_actions": JobDispute.objects.filter(
+                    financial_action_status="failed"
+                ).count(),
+                "unresolved_chargebacks": JobPayment.objects.filter(
+                    status="disputed"
+                ).count(),
+            }
+        )
+    except Exception:
+        kpis.update(
+            {
+                "authorized_pending_capture": 0,
+                "failed_financial_actions": 0,
+                "unresolved_chargebacks": 0,
+            }
+        )
+
     disputes = pending_disputes.select_related(
         "job",
         "job__homeowner",
         "job__assigned_handyman",
+        "job__payment",
         "initiated_by",
     ).order_by("resolution_deadline")
 
@@ -895,6 +921,8 @@ class JobDisputeAdmin(ModelAdmin):
         "job_link",
         "initiated_by_link",
         "status_display",
+        "financial_status_display",
+        "financial_outcome_display",
         "deadline_display",
         "resolved_at",
         "refund_percentage",
@@ -926,6 +954,9 @@ class JobDisputeAdmin(ModelAdmin):
                     "resolved_by",
                     "resolved_at",
                     "refund_percentage",
+                    "financial_action_status",
+                    "financial_outcome_amount_cents",
+                    "financial_action_error",
                     "resolution_deadline",
                 )
             },
@@ -1000,6 +1031,30 @@ class JobDisputeAdmin(ModelAdmin):
             )
         else:
             return deadline.strftime("%Y-%m-%d %H:%M")
+
+    @display(description="Financial")
+    def financial_status_display(self, obj):
+        styles = {
+            "not_started": ("gray", "Not Started"),
+            "success": ("green", "Success"),
+            "failed": ("red", "Failed"),
+            "legacy_exempt": ("blue", "Legacy"),
+        }
+        color, label = styles.get(
+            obj.financial_action_status, ("gray", obj.financial_action_status)
+        )
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{}</span>',
+            color,
+            label,
+        )
+
+    @display(description="Outcome")
+    def financial_outcome_display(self, obj):
+        if obj.financial_outcome_amount_cents is None:
+            return "-"
+        amount = obj.financial_outcome_amount_cents / 100
+        return f"${amount:.2f}"
 
     # -------------------------------------------------------------------------
     # Custom URLs and Views
@@ -1087,6 +1142,21 @@ class JobDisputeAdmin(ModelAdmin):
 
         # Get related data for context
         job = dispute.job
+        payment_summary = None
+        try:
+            payment = getattr(job, "payment", None)
+            if payment:
+                payment_summary = {
+                    "status": payment.status,
+                    "authorized": payment.authorized_amount_cents / 100,
+                    "capturable": payment.capturable_amount_cents / 100,
+                    "captured": payment.captured_amount_cents / 100,
+                    "platform_fee": payment.platform_fee_cents / 100,
+                    "currency": payment.currency,
+                }
+        except Exception:
+            payment_summary = None
+
         work_sessions = job.work_sessions.select_related("handyman").order_by(
             "-started_at"
         )[:5]
@@ -1114,6 +1184,7 @@ class JobDisputeAdmin(ModelAdmin):
             "is_overdue": is_overdue,
             "is_due_soon": is_due_soon,
             "now": now,
+            "payment_summary": payment_summary,
         }
         return render(request, "admin/jobs/dispute_resolve.html", context)
 
