@@ -1,7 +1,7 @@
 [project]
-name = "solutionbank"
+name = "handymankiosk"
 version = "0.1.0"
-description = "SolutionBank Backend"
+description = "HandymanKiosk Backend"
 readme = "README.md"
 requires-python = ">=3.13.7"
 dependencies = [

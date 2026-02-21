@@ -31,6 +31,9 @@ env = environ.Env(
     REIMBURSEMENT_RESERVE_PERCENT=(int, 30),
     STRIPE_INSTANT_PAYOUT_FEE_PERCENT=(int, 1),
     STRIPE_COUNTRY=(str, "CA"),
+    STRIPE_CONNECT_REFRESH_DEEP_LINK=(str, "handymankiosk://kyc/connect/refresh"),
+    STRIPE_CONNECT_RETURN_DEEP_LINK=(str, "handymankiosk://kyc/connect/return"),
+    STRIPE_IDENTITY_RETURN_DEEP_LINK=(str, "handymankiosk://kyc/identity/return"),
 )
 
 # Take environment variables from .env file
@@ -261,6 +264,15 @@ STRIPE_WITHDRAW_ENABLED = env("STRIPE_WITHDRAW_ENABLED")
 PLATFORM_FEE_PERCENT = env("PLATFORM_FEE_PERCENT")
 REIMBURSEMENT_RESERVE_PERCENT = env("REIMBURSEMENT_RESERVE_PERCENT")
 STRIPE_INSTANT_PAYOUT_FEE_PERCENT = env("STRIPE_INSTANT_PAYOUT_FEE_PERCENT")
+STRIPE_CONNECT_REFRESH_DEEP_LINK = env(
+    "STRIPE_CONNECT_REFRESH_DEEP_LINK", default="handymankiosk://kyc/connect/refresh"
+)
+STRIPE_CONNECT_RETURN_DEEP_LINK = env(
+    "STRIPE_CONNECT_RETURN_DEEP_LINK", default="handymankiosk://kyc/connect/return"
+)
+STRIPE_IDENTITY_RETURN_DEEP_LINK = env(
+    "STRIPE_IDENTITY_RETURN_DEEP_LINK", default="handymankiosk://kyc/identity/return"
+)
 
 
 # DRF Configuration
@@ -312,7 +324,7 @@ REST_FRAMEWORK = {
 
 # Spectacular settings
 SPECTACULAR_SETTINGS = {
-    "TITLE": "SolutionBank API",
+    "TITLE": "HandymanKiosk API",
     "DESCRIPTION": """
     Authentication: JWT Bearer Token with RS256 signatures
     Platform Support: Web and Mobile platforms with separate endpoints
@@ -362,8 +374,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Unfold Admin Configuration
 UNFOLD = {
     "DASHBOARD_CALLBACK": "apps.common.dashboard.dashboard_callback",
-    "SITE_TITLE": "SolutionBank Admin",
-    "SITE_HEADER": "SolutionBank",
+    "SITE_TITLE": "HandymanKiosk Admin",
+    "SITE_HEADER": "HandymanKiosk",
     "SITE_URL": "/",
     "SITE_SYMBOL": "speed",  # Material icon symbol for sidebar
     "SHOW_HISTORY": True,

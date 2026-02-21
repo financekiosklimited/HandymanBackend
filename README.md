@@ -1,4 +1,4 @@
-# SolutionBank Backend API
+# HandymanKiosk Backend API
 
 Django REST API for a home services marketplace connecting homeowners with handymen.
 

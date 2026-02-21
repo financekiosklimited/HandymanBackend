@@ -13,6 +13,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     # Health check
     path("health/", health_check, name="health_check"),
+    # Stripe public redirect pages for mobile deep-link return
+    path("stripe/", include("apps.payments.urls.redirects")),
     # API routes
     path("api/v1/web/", include("apps.authn.urls.web")),
     path("api/v1/web/", include("apps.profiles.urls.web")),

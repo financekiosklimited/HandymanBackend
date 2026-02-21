@@ -1,4 +1,4 @@
-# SolutionBank Deployment Guide
+# HandymanKiosk Deployment Guide
 
 Deploy the Django backend on Coolify.
 

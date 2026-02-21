@@ -6,7 +6,7 @@
 # Quick start: make setup
 
 # Variables
-UV := uv
+UV := VIRTUAL_ENV= uv
 MANAGE := $(UV) run python manage.py
 
 # Colors for output

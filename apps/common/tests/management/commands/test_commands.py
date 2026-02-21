@@ -385,6 +385,51 @@ class GenerateDummyDataCoverageTests(TestCase):
         # Attachments should still be created using images as fallback
         self.assertGreaterEqual(stats["attachments"], 0)
 
+    def test_job_attachments_use_video_when_available(self):
+        """Test lines 1238-1240: use video_thumbs and set video duration."""
+        from apps.common.management.commands.generate_dummy_data import Command
+        from apps.jobs.models import City, JobCategory
+
+        homeowners, handymen = self._create_test_users(1, 1)
+        category = JobCategory.objects.first()
+        city = City.objects.first()
+
+        cmd = Command()
+        cmd.now = timezone.now()
+
+        shared_assets = {
+            "job_images": ["dummy/job1.jpg"],
+            "video_thumbs": ["dummy/video1.mp4"],
+        }
+
+        def weighted_choice_side_effect(weights):
+            if all(isinstance(key, str) for key in weights):
+                return "open"
+            return 1
+
+        with patch("apps.common.management.commands.generate_dummy_data.NUM_JOBS", 1):
+            with patch(
+                "apps.common.management.commands.generate_dummy_data.DIRECT_OFFER_PERCENT",
+                0,
+            ):
+                with patch.object(
+                    cmd, "_weighted_choice", side_effect=weighted_choice_side_effect
+                ):
+                    with patch("random.random", return_value=0.9):  # force video path
+                        jobs, _stats = cmd._create_jobs(
+                            homeowners,
+                            handymen,
+                            [category],
+                            [city],
+                            shared_assets,
+                        )
+
+        attachment = jobs[0].attachments.first()
+        self.assertIsNotNone(attachment)
+        self.assertEqual(attachment.file_type, "video")
+        self.assertEqual(attachment.file_name, "video1.mp4")
+        self.assertIsNotNone(attachment.duration_seconds)
+
     def test_application_skip_direct_offer_target(self):
         """Test line 1279: skip handyman that is target of direct offer."""
         from apps.common.management.commands.generate_dummy_data import Command
