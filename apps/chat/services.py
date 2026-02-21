@@ -394,11 +394,9 @@ class ChatService:
         # Determine recipient
         if sender_role == "homeowner":
             recipient = conversation.handyman
-            recipient_role = "handyman"
             sender_name = self._get_display_name(conversation.homeowner, "homeowner")
         else:
             recipient = conversation.homeowner
-            recipient_role = "homeowner"
             sender_name = self._get_display_name(conversation.handyman, "handyman")
 
         # Prepare notification content

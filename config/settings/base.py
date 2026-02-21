@@ -23,6 +23,17 @@ env = environ.Env(
     EMAIL_USE_TLS=(bool, True),
     EMAIL_USE_SSL=(bool, False),
     AWS_S3_SIGNATURE_VERSION=(str, "s3v4"),
+    STRIPE_ENABLED=(bool, False),
+    STRIPE_KYC_ENFORCED=(bool, False),
+    STRIPE_AUTHORIZATION_ENFORCED=(bool, False),
+    STRIPE_WITHDRAW_ENABLED=(bool, False),
+    PLATFORM_FEE_PERCENT=(int, 10),
+    REIMBURSEMENT_RESERVE_PERCENT=(int, 30),
+    STRIPE_INSTANT_PAYOUT_FEE_PERCENT=(int, 1),
+    STRIPE_COUNTRY=(str, "CA"),
+    STRIPE_CONNECT_REFRESH_DEEP_LINK=(str, "handymankiosk://kyc/connect/refresh"),
+    STRIPE_CONNECT_RETURN_DEEP_LINK=(str, "handymankiosk://kyc/connect/return"),
+    STRIPE_IDENTITY_RETURN_DEEP_LINK=(str, "handymankiosk://kyc/identity/return"),
 )
 
 # Take environment variables from .env file
@@ -69,6 +80,7 @@ LOCAL_APPS = [
     "apps.notifications",
     "apps.chat",
     "apps.bookmarks",
+    "apps.payments",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -230,6 +242,38 @@ TWILIO_VERIFY_SERVICE_SID = env("TWILIO_VERIFY_SERVICE_SID", default=None)
 FIREBASE_CREDENTIALS_PATH = env("FIREBASE_CREDENTIALS_PATH", default=None)
 FIREBASE_CREDENTIALS_JSON = env("FIREBASE_CREDENTIALS_JSON", default=None)
 
+# Stripe Configuration
+STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY", default=None)
+STRIPE_PUBLISHABLE_KEY = env("STRIPE_PUBLISHABLE_KEY", default=None)
+STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET", default=None)
+STRIPE_CONNECT_REFRESH_URL = env(
+    "STRIPE_CONNECT_REFRESH_URL", default="https://example.com/connect/refresh"
+)
+STRIPE_CONNECT_RETURN_URL = env(
+    "STRIPE_CONNECT_RETURN_URL", default="https://example.com/connect/return"
+)
+STRIPE_IDENTITY_RETURN_URL = env(
+    "STRIPE_IDENTITY_RETURN_URL", default="https://example.com/identity/return"
+)
+STRIPE_DEFAULT_CURRENCY = env("STRIPE_DEFAULT_CURRENCY", default="cad")
+STRIPE_COUNTRY = env("STRIPE_COUNTRY", default="CA")
+STRIPE_ENABLED = env("STRIPE_ENABLED")
+STRIPE_KYC_ENFORCED = env("STRIPE_KYC_ENFORCED")
+STRIPE_AUTHORIZATION_ENFORCED = env("STRIPE_AUTHORIZATION_ENFORCED")
+STRIPE_WITHDRAW_ENABLED = env("STRIPE_WITHDRAW_ENABLED")
+PLATFORM_FEE_PERCENT = env("PLATFORM_FEE_PERCENT")
+REIMBURSEMENT_RESERVE_PERCENT = env("REIMBURSEMENT_RESERVE_PERCENT")
+STRIPE_INSTANT_PAYOUT_FEE_PERCENT = env("STRIPE_INSTANT_PAYOUT_FEE_PERCENT")
+STRIPE_CONNECT_REFRESH_DEEP_LINK = env(
+    "STRIPE_CONNECT_REFRESH_DEEP_LINK", default="handymankiosk://kyc/connect/refresh"
+)
+STRIPE_CONNECT_RETURN_DEEP_LINK = env(
+    "STRIPE_CONNECT_RETURN_DEEP_LINK", default="handymankiosk://kyc/connect/return"
+)
+STRIPE_IDENTITY_RETURN_DEEP_LINK = env(
+    "STRIPE_IDENTITY_RETURN_DEEP_LINK", default="handymankiosk://kyc/identity/return"
+)
+
 
 # DRF Configuration
 REST_FRAMEWORK = {
@@ -280,7 +324,7 @@ REST_FRAMEWORK = {
 
 # Spectacular settings
 SPECTACULAR_SETTINGS = {
-    "TITLE": "SolutionBank API",
+    "TITLE": "HandymanKiosk API",
     "DESCRIPTION": """
     Authentication: JWT Bearer Token with RS256 signatures
     Platform Support: Web and Mobile platforms with separate endpoints
@@ -330,8 +374,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Unfold Admin Configuration
 UNFOLD = {
     "DASHBOARD_CALLBACK": "apps.common.dashboard.dashboard_callback",
-    "SITE_TITLE": "SolutionBank Admin",
-    "SITE_HEADER": "SolutionBank",
+    "SITE_TITLE": "HandymanKiosk Admin",
+    "SITE_HEADER": "HandymanKiosk",
     "SITE_URL": "/",
     "SITE_SYMBOL": "speed",  # Material icon symbol for sidebar
     "SHOW_HISTORY": True,
@@ -389,6 +433,32 @@ UNFOLD = {
                         "title": "Reimbursements",
                         "icon": "receipt_long",
                         "link": lambda request: "/admin/jobs/jobreimbursement/",
+                    },
+                ],
+            },
+            {
+                "title": "Payments",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Job Payments",
+                        "icon": "payments",
+                        "link": lambda request: "/admin/payments/jobpayment/",
+                    },
+                    {
+                        "title": "Withdrawals",
+                        "icon": "account_balance_wallet",
+                        "link": lambda request: "/admin/payments/withdrawalrequest/",
+                    },
+                    {
+                        "title": "Stripe Events",
+                        "icon": "receipt_long",
+                        "link": lambda request: "/admin/payments/stripeeventlog/",
+                    },
+                    {
+                        "title": "KYC Queue",
+                        "icon": "verified_user",
+                        "link": lambda request: "/admin/payments/handymanidentityverification/",
                     },
                 ],
             },

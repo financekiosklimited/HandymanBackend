@@ -39,6 +39,7 @@ class ProcessOverdueReportsCommandTests(TestCase):
             city=self.city,
             address="123 St",
             status="in_progress",
+            payment_mode="legacy_exempt",
         )
 
     def test_overdue_reports_are_auto_approved(self):
@@ -101,6 +102,7 @@ class ProcessOverdueDisputesCommandTests(TestCase):
             city=self.city,
             address="123 St",
             status="pending_completion",
+            payment_mode="legacy_exempt",
         )
 
     def test_overdue_disputes_are_resolved(self):

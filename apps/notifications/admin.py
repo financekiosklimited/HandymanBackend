@@ -317,7 +317,7 @@ class UserDeviceAdmin(ModelAdmin):
         for device in active_devices:
             sent = firebase_service.send_notification(
                 device_token=device.device_token,
-                title="SolutionBank Test",
+                title="HandymanKiosk Test",
                 body="Push notifications are working correctly.",
                 data={"test": "true"},
             )

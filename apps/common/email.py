@@ -36,7 +36,7 @@ This code will expire in 24 hours.
 If you didn't request this, please ignore this email.
 
 Thanks,
-The SolutionBank Team"""
+The HandymanKiosk Team"""
 
         try:
             send_mail(
@@ -71,7 +71,7 @@ This code will expire in 10 minutes.
 If you didn't request this, please ignore this email.
 
 Thanks,
-The SolutionBank Team"""
+The HandymanKiosk Team"""
 
         try:
             send_mail(
@@ -101,7 +101,7 @@ Welcome to SB! We're excited to have you on board.
 You can now log in to your account and start using our platform.
 
 Thanks,
-The SolutionBank Team"""
+The HandymanKiosk Team"""
 
         try:
             send_mail(

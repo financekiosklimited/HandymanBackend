@@ -5,6 +5,7 @@ Service for managing job applications.
 import logging
 from datetime import timedelta
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -178,6 +179,25 @@ class JobApplicationService:
         # Validate application is pending
         if application.status != "pending":
             raise ValidationError("Only pending applications can be approved.")
+
+        # Ensure Stripe authorization has completed when payment mode requires it
+        try:
+            from apps.payments.services import job_payment_service, kyc_service
+
+            job_payment_service.ensure_job_authorized(job)
+
+            # Enforce handyman KYC eligibility when configured
+            if (
+                getattr(settings, "STRIPE_KYC_ENFORCED", False)
+                and getattr(job, "payment_mode", "legacy_exempt") == "stripe_required"
+            ):
+                if not kyc_service.is_handyman_eligible(application.handyman):
+                    raise ValidationError(
+                        "Assigned handyman must complete Stripe verification before approval."
+                    )
+        except ImportError:
+            # Payments app may be unavailable in limited runtimes
+            pass
 
         # Approve the application
         application.status = "approved"
@@ -905,6 +925,14 @@ class JobCompletionService:
         if job.status != "pending_completion":
             raise ValidationError("Job is not awaiting completion approval.")
 
+        # Capture funds before marking job complete when Stripe flow is required
+        try:
+            from apps.payments.services import job_payment_service
+
+            job_payment_service.capture_for_completion(job)
+        except ImportError:
+            pass
+
         job.status = "completed"
         job.completed_at = timezone.now()
         job.save(update_fields=["status", "completed_at", "updated_at", "status_at"])
@@ -1012,6 +1040,37 @@ class DisputeService:
         dispute.resolved_at = timezone.now()
         dispute.admin_notes = admin_notes
         dispute.refund_percentage = refund_percentage
+        dispute.financial_action_status = "not_started"
+        dispute.financial_action_error = ""
+        dispute.financial_outcome_amount_cents = None
+
+        # Orchestrate Stripe financial outcomes for dispute resolutions
+        try:
+            from apps.payments.services import job_payment_service
+
+            financial_result = job_payment_service.resolve_dispute_financial(
+                dispute=dispute,
+                status=status,
+                refund_percentage=refund_percentage,
+            )
+            if financial_result.get("action") == "legacy_exempt":
+                dispute.financial_action_status = "legacy_exempt"
+            else:
+                dispute.financial_action_status = "success"
+            outcome_amount = financial_result.get("outcome_amount_cents")
+            action = financial_result.get("action")
+            if outcome_amount is not None:
+                if action and "refund" in action:
+                    dispute.financial_outcome_amount_cents = -abs(int(outcome_amount))
+                else:
+                    dispute.financial_outcome_amount_cents = int(outcome_amount)
+        except ImportError:
+            dispute.financial_action_status = "legacy_exempt"
+        except Exception as exc:
+            dispute.financial_action_status = "failed"
+            dispute.financial_action_error = str(exc)
+            raise ValidationError(f"Failed to resolve dispute financially: {exc}")
+
         dispute.save(
             update_fields=[
                 "status",
@@ -1019,6 +1078,9 @@ class DisputeService:
                 "resolved_at",
                 "admin_notes",
                 "refund_percentage",
+                "financial_action_status",
+                "financial_action_error",
+                "financial_outcome_amount_cents",
                 "updated_at",
             ]
         )
@@ -1714,6 +1776,22 @@ class DirectOfferService:
         # Check if offer has expired
         if job.offer_expires_at and timezone.now() > job.offer_expires_at:
             raise ValidationError("This offer has expired.")
+
+        # Ensure Stripe authorization exists for direct-offer acceptance
+        try:
+            from apps.payments.services import job_payment_service, kyc_service
+
+            job_payment_service.ensure_job_authorized(job)
+            if (
+                getattr(settings, "STRIPE_KYC_ENFORCED", False)
+                and getattr(job, "payment_mode", "legacy_exempt") == "stripe_required"
+            ):
+                if not kyc_service.is_handyman_eligible(handyman):
+                    raise ValidationError(
+                        "You must complete Stripe verification before accepting this offer."
+                    )
+        except ImportError:
+            pass
 
         # Accept the offer
         job.offer_status = "accepted"

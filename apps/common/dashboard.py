@@ -23,7 +23,14 @@ def get_kpi_cards():
         WorkSession,
     )
 
-    return [
+    try:
+        from apps.payments.models import JobPayment, StripeEventLog, WithdrawalRequest
+    except Exception:
+        JobPayment = None
+        StripeEventLog = None
+        WithdrawalRequest = None
+
+    cards = [
         {
             "title": "Total Users",
             "metric": User.objects.count(),
@@ -53,6 +60,32 @@ def get_kpi_cards():
             "metric": JobApplication.objects.filter(status="pending").count(),
         },
     ]
+
+    if JobPayment is not None:
+        cards.extend(
+            [
+                {
+                    "title": "Auth Pending Capture",
+                    "metric": JobPayment.objects.filter(status="authorized").count(),
+                },
+                {
+                    "title": "Failed Withdrawals",
+                    "metric": WithdrawalRequest.objects.filter(status="failed").count()
+                    if WithdrawalRequest is not None
+                    else 0,
+                },
+                {
+                    "title": "Failed Stripe Events",
+                    "metric": StripeEventLog.objects.filter(
+                        processing_status="failed"
+                    ).count()
+                    if StripeEventLog is not None
+                    else 0,
+                },
+            ]
+        )
+
+    return cards
 
 
 def get_user_signups_chart_data():

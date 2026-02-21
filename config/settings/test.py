@@ -67,3 +67,11 @@ REST_FRAMEWORK = {
         "1000/sec",
     ),
 }
+
+# Stripe feature flags are forced off by default in tests to avoid
+# environment-dependent behavior. Individual tests explicitly enable
+# what they need via override_settings/self.settings.
+STRIPE_ENABLED = False
+STRIPE_KYC_ENFORCED = False
+STRIPE_AUTHORIZATION_ENFORCED = False
+STRIPE_WITHDRAW_ENABLED = False
