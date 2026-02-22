@@ -5,6 +5,7 @@ from django.utils import timezone
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
+from apps.common.admin_mixins import CSVExportAdminMixin
 from apps.payments.models import (
     HandymanIdentityVerification,
     JobPayment,
@@ -18,14 +19,16 @@ from apps.payments.services import stripe_client_service, stripe_webhook_service
 
 
 @admin.register(StripeCustomerProfile)
-class StripeCustomerProfileAdmin(ModelAdmin):
+class StripeCustomerProfileAdmin(CSVExportAdminMixin, ModelAdmin):
     list_display = ("user", "stripe_customer_id", "currency", "created_at")
+    list_filter = ("currency", "created_at")
     search_fields = ("user__email", "stripe_customer_id")
     ordering = ("-created_at",)
+    date_hierarchy = "created_at"
 
 
 @admin.register(StripeConnectedAccount)
-class StripeConnectedAccountAdmin(ModelAdmin):
+class StripeConnectedAccountAdmin(CSVExportAdminMixin, ModelAdmin):
     list_display = (
         "user",
         "stripe_account_id",
@@ -40,13 +43,15 @@ class StripeConnectedAccountAdmin(ModelAdmin):
         "charges_enabled",
         "payouts_enabled",
         "details_submitted",
+        "created_at",
     )
     search_fields = ("user__email", "stripe_account_id")
     ordering = ("-updated_at",)
+    date_hierarchy = "created_at"
 
 
 @admin.register(HandymanIdentityVerification)
-class HandymanIdentityVerificationAdmin(ModelAdmin):
+class HandymanIdentityVerificationAdmin(CSVExportAdminMixin, ModelAdmin):
     list_display = (
         "user",
         "verification_session_id",
@@ -54,13 +59,14 @@ class HandymanIdentityVerificationAdmin(ModelAdmin):
         "verified_at",
         "updated_at",
     )
-    list_filter = ("status",)
+    list_filter = ("status", "verified_at", "created_at")
     search_fields = ("user__email", "verification_session_id")
     ordering = ("-updated_at",)
+    date_hierarchy = "created_at"
 
 
 @admin.register(JobPayment)
-class JobPaymentAdmin(ModelAdmin):
+class JobPaymentAdmin(CSVExportAdminMixin, ModelAdmin):
     list_display = (
         "job",
         "homeowner_email",
@@ -72,7 +78,15 @@ class JobPaymentAdmin(ModelAdmin):
         "currency",
         "updated_at",
     )
-    list_filter = ("status", "currency")
+    list_filter = (
+        "status",
+        "currency",
+        "customer_profile",
+        "connected_account",
+        "authorized_at",
+        "captured_at",
+        "created_at",
+    )
     search_fields = (
         "job__title",
         "job__homeowner__email",
@@ -80,6 +94,7 @@ class JobPaymentAdmin(ModelAdmin):
         "payment_intent_id",
     )
     ordering = ("-updated_at",)
+    date_hierarchy = "created_at"
 
     @display(description="Homeowner")
     def homeowner_email(self, obj):
@@ -107,7 +122,7 @@ class JobPaymentAdmin(ModelAdmin):
 
 
 @admin.register(PaymentRefund)
-class PaymentRefundAdmin(ModelAdmin):
+class PaymentRefundAdmin(CSVExportAdminMixin, ModelAdmin):
     list_display = (
         "job_payment",
         "stripe_refund_id",
@@ -116,9 +131,10 @@ class PaymentRefundAdmin(ModelAdmin):
         "status",
         "processed_at",
     )
-    list_filter = ("source", "status")
+    list_filter = ("source", "status", "processed_at", "created_at")
     search_fields = ("job_payment__payment_intent_id", "stripe_refund_id")
     ordering = ("-created_at",)
+    date_hierarchy = "created_at"
 
     @display(description="Amount")
     def amount_display(self, obj):
@@ -126,7 +142,7 @@ class PaymentRefundAdmin(ModelAdmin):
 
 
 @admin.register(WithdrawalRequest)
-class WithdrawalRequestAdmin(ModelAdmin):
+class WithdrawalRequestAdmin(CSVExportAdminMixin, ModelAdmin):
     list_display = (
         "handyman",
         "amount_display",
@@ -138,10 +154,11 @@ class WithdrawalRequestAdmin(ModelAdmin):
         "requested_at",
         "processed_at",
     )
-    list_filter = ("status", "method", "currency")
+    list_filter = ("status", "method", "currency", "requested_at", "processed_at")
     search_fields = ("handyman__email", "stripe_payout_id")
     ordering = ("-requested_at",)
     actions = ["retry_failed_withdrawals"]
+    date_hierarchy = "requested_at"
 
     @display(description="Amount")
     def amount_display(self, obj):
@@ -207,7 +224,7 @@ class WithdrawalRequestAdmin(ModelAdmin):
 
 
 @admin.register(StripeEventLog)
-class StripeEventLogAdmin(ModelAdmin):
+class StripeEventLogAdmin(CSVExportAdminMixin, ModelAdmin):
     list_display = (
         "stripe_event_id",
         "event_type",
@@ -215,11 +232,12 @@ class StripeEventLogAdmin(ModelAdmin):
         "processed_at",
         "created_at",
     )
-    list_filter = ("processing_status", "event_type")
+    list_filter = ("processing_status", "event_type", "processed_at", "created_at")
     search_fields = ("stripe_event_id", "event_type")
     ordering = ("-created_at",)
     readonly_fields = ("stripe_event_id", "event_type", "payload_json", "processed_at")
     actions = ["replay_failed_events"]
+    date_hierarchy = "created_at"
 
     @admin.action(description="Replay failed events")
     def replay_failed_events(self, request, queryset):

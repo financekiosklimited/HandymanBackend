@@ -7,6 +7,8 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
 
+from apps.common.admin_mixins import CSVExportAdminMixin
+
 from .models import User, UserRole
 
 
@@ -19,7 +21,7 @@ class UserRoleInline(TabularInline):
 
 
 @admin.register(User)
-class UserAdmin(BaseUserAdmin, ModelAdmin):
+class UserAdmin(CSVExportAdminMixin, BaseUserAdmin, ModelAdmin):
     """
     Admin interface for User model with Unfold styling.
     """
@@ -36,6 +38,8 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
         "is_active",
         "is_staff",
         "is_superuser",
+        "active_role",
+        "is_dummy",
         "email_verified_at",
         "date_joined",
     )
@@ -76,6 +80,7 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
     )
 
     readonly_fields = ("date_joined", "last_login", "public_id")
+    date_hierarchy = "date_joined"
 
     @display(description="Full Name")
     def display_name_field(self, obj):

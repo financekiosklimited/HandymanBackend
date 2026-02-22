@@ -8,6 +8,7 @@ from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
 
 from apps.chat.models import ChatConversation, ChatMessage, ChatMessageAttachment
+from apps.common.admin_mixins import CSVExportAdminMixin
 
 
 class ChatMessageAttachmentInline(TabularInline):
@@ -114,7 +115,7 @@ class ChatMessageInline(TabularInline):
 
 
 @admin.register(ChatConversation)
-class ChatConversationAdmin(ModelAdmin):
+class ChatConversationAdmin(CSVExportAdminMixin, ModelAdmin):
     """Admin interface for ChatConversation model."""
 
     list_display = (
@@ -129,7 +130,7 @@ class ChatConversationAdmin(ModelAdmin):
         "last_message_at",
         "created_at",
     )
-    list_filter = ("conversation_type", "status", "created_at")
+    list_filter = ("conversation_type", "status", "last_message_at", "created_at")
     search_fields = (
         "homeowner__email",
         "handyman__email",
@@ -262,7 +263,7 @@ class ChatConversationAdmin(ModelAdmin):
 
 
 @admin.register(ChatMessage)
-class ChatMessageAdmin(ModelAdmin):
+class ChatMessageAdmin(CSVExportAdminMixin, ModelAdmin):
     """Admin interface for ChatMessage model."""
 
     list_display = (
@@ -275,7 +276,7 @@ class ChatMessageAdmin(ModelAdmin):
         "read_status",
         "created_at",
     )
-    list_filter = ("sender_role", "message_type", "is_read", "created_at")
+    list_filter = ("sender_role", "message_type", "is_read", "read_at", "created_at")
     search_fields = (
         "content",
         "sender__email",

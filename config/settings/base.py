@@ -53,6 +53,7 @@ AUTH_USER_MODEL = "accounts.User"
 # Application definition
 DJANGO_APPS = [
     "unfold",  # Unfold admin theme - must be before django.contrib.admin
+    "unfold.contrib.import_export",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -62,6 +63,7 @@ DJANGO_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
+    "import_export",
     "rest_framework",
     "corsheaders",
     "drf_spectacular",

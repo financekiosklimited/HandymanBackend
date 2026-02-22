@@ -7,6 +7,8 @@ from django.utils.html import format_html
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
+from apps.common.admin_mixins import CSVExportAdminMixin
+
 from .models import HandymanCategory, HandymanProfile, HomeownerProfile
 
 
@@ -24,7 +26,7 @@ class HandymanCategoryAdmin(ModelAdmin):
 
 
 @admin.register(HandymanProfile)
-class HandymanProfileAdmin(ModelAdmin):
+class HandymanProfileAdmin(CSVExportAdminMixin, ModelAdmin):
     """
     Admin interface for HandymanProfile model with Unfold styling.
     """
@@ -47,6 +49,7 @@ class HandymanProfileAdmin(ModelAdmin):
         "is_approved",
         "is_active",
         "is_available",
+        "category",
         "phone_verified_at",
         "created_at",
     )
@@ -140,7 +143,7 @@ class HandymanProfileAdmin(ModelAdmin):
 
 
 @admin.register(HomeownerProfile)
-class HomeownerProfileAdmin(ModelAdmin):
+class HomeownerProfileAdmin(CSVExportAdminMixin, ModelAdmin):
     """
     Admin interface for HomeownerProfile model with Unfold styling.
     """
@@ -153,7 +156,7 @@ class HomeownerProfileAdmin(ModelAdmin):
         "is_phone_verified_display",
         "created_at",
     )
-    list_filter = ("phone_verified_at", "created_at")
+    list_filter = ("phone_verified_at", "user__is_active", "created_at")
     search_fields = (
         "user__email",
         "display_name",

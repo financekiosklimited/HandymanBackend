@@ -27,6 +27,7 @@ dependencies = [
     "twilio>=9.8.8",
     "uvicorn[standard]>=0.37.0",
     "whitenoise>=6.11.0",
+    "django-import-export>=4.4.0",
 ]
 
 [tool.pyright]

@@ -7,6 +7,8 @@ from django.utils import timezone
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
+from apps.common.admin_mixins import CSVExportAdminMixin
+
 from .models import (
     EmailVerificationToken,
     PasswordResetCode,
@@ -14,6 +16,27 @@ from .models import (
     PhoneVerificationCode,
     RefreshSession,
 )
+
+
+class RefreshSessionActiveFilter(admin.SimpleListFilter):
+    """Filter refresh sessions by computed active state."""
+
+    title = "active status"
+    parameter_name = "active_status"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("active", "Active"),
+            ("inactive", "Inactive"),
+        )
+
+    def queryset(self, request, queryset):
+        now = timezone.now()
+        if self.value() == "active":
+            return queryset.filter(revoked_at__isnull=True, expires_at__gt=now)
+        if self.value() == "inactive":
+            return queryset.exclude(revoked_at__isnull=True, expires_at__gt=now)
+        return queryset
 
 
 @admin.register(EmailVerificationToken)
@@ -152,7 +175,7 @@ class PasswordResetTokenAdmin(ModelAdmin):
 
 
 @admin.register(RefreshSession)
-class RefreshSessionAdmin(ModelAdmin):
+class RefreshSessionAdmin(CSVExportAdminMixin, ModelAdmin):
     """
     Admin interface for RefreshSession model.
     """
@@ -167,7 +190,13 @@ class RefreshSessionAdmin(ModelAdmin):
         "revoked_at",
         "created_at",
     )
-    list_filter = ("platform", "revoked_at", "expires_at", "created_at")
+    list_filter = (
+        RefreshSessionActiveFilter,
+        "platform",
+        "revoked_at",
+        "expires_at",
+        "created_at",
+    )
     search_fields = ("user__email", "ip_address", "user_agent")
     ordering = ("-created_at",)
     readonly_fields = ("public_id", "jti_hash", "created_at", "updated_at")

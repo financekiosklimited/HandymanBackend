@@ -10,6 +10,7 @@ from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
 from apps.accounts.models import User
+from apps.common.admin_mixins import CSVExportAdminMixin
 from apps.notifications.models import BroadcastNotification, Notification, UserDevice
 
 
@@ -65,7 +66,7 @@ class BroadcastForm(forms.ModelForm):
 
 
 @admin.register(BroadcastNotification)
-class BroadcastNotificationAdmin(ModelAdmin):
+class BroadcastNotificationAdmin(CSVExportAdminMixin, ModelAdmin):
     """
     Admin interface for BroadcastNotification model.
     """
@@ -80,7 +81,7 @@ class BroadcastNotificationAdmin(ModelAdmin):
         "sent_at",
     )
     autocomplete_fields = ("target_users",)
-    list_filter = ("target_audience", "status", "send_push", "sent_at")
+    list_filter = ("target_audience", "status", "send_push", "sent_at", "created_at")
     search_fields = ("title", "body")
     readonly_fields = (
         "public_id",
@@ -94,6 +95,7 @@ class BroadcastNotificationAdmin(ModelAdmin):
         "updated_at",
     )
     ordering = ("-sent_at", "-created_at")
+    date_hierarchy = "sent_at"
 
     @display(description="Status")
     def status_display(self, obj):
@@ -190,7 +192,7 @@ class BroadcastNotificationAdmin(ModelAdmin):
 
 
 @admin.register(UserDevice)
-class UserDeviceAdmin(ModelAdmin):
+class UserDeviceAdmin(CSVExportAdminMixin, ModelAdmin):
     """
     Admin interface for UserDevice model with Unfold styling.
     """
@@ -203,7 +205,7 @@ class UserDeviceAdmin(ModelAdmin):
         "last_used_at",
         "created_at",
     )
-    list_filter = ("device_type", "is_active", "created_at")
+    list_filter = ("device_type", "is_active", "last_used_at", "created_at")
     search_fields = (
         "user__email",
         "user__first_name",
@@ -345,7 +347,7 @@ class UserDeviceAdmin(ModelAdmin):
 
 
 @admin.register(Notification)
-class NotificationAdmin(ModelAdmin):
+class NotificationAdmin(CSVExportAdminMixin, ModelAdmin):
     """
     Admin interface for Notification model with Unfold styling.
     """
@@ -358,7 +360,13 @@ class NotificationAdmin(ModelAdmin):
         "read_status_display",
         "created_at",
     )
-    list_filter = ("notification_type", "target_role", "is_read", "created_at")
+    list_filter = (
+        "notification_type",
+        "target_role",
+        "is_read",
+        "read_at",
+        "created_at",
+    )
     search_fields = (
         "user__email",
         "user__first_name",

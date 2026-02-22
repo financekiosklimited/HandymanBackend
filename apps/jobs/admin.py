@@ -9,6 +9,8 @@ from django.utils.html import format_html
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
 
+from apps.common.admin_mixins import CSVExportAdminMixin
+
 from .models import (
     City,
     DailyReport,
@@ -448,7 +450,7 @@ class CityAdmin(ModelAdmin):
 
 
 @admin.register(Job)
-class JobAdmin(ModelAdmin):
+class JobAdmin(CSVExportAdminMixin, ModelAdmin):
     """
     Admin interface for Job model with Unfold styling.
     """
@@ -471,10 +473,14 @@ class JobAdmin(ModelAdmin):
     )
     list_filter = (
         "status",
+        "payment_mode",
         "is_direct_offer",
+        "is_dummy",
         "offer_status",
         "category",
         "city__province_code",
+        "assigned_handyman",
+        "target_handyman",
         "created_at",
         "daily_reports__status",
         "disputes__status",
@@ -778,7 +784,7 @@ class DailyReportTaskAdmin(ModelAdmin):
 
 
 @admin.register(WorkSession)
-class WorkSessionAdmin(ModelAdmin):
+class WorkSessionAdmin(CSVExportAdminMixin, ModelAdmin):
     list_display = (
         "job",
         "handyman",
@@ -786,7 +792,7 @@ class WorkSessionAdmin(ModelAdmin):
         "started_at",
         "ended_at",
     )
-    list_filter = ("status", "job", "handyman")
+    list_filter = ("status", "job", "handyman", "started_at", "ended_at", "created_at")
     search_fields = ("job__title", "handyman__email")
     ordering = ("-started_at",)
     autocomplete_fields = ("job", "handyman")
@@ -797,6 +803,7 @@ class WorkSessionAdmin(ModelAdmin):
         "duration_seconds",
     )
     inlines = [WorkSessionMediaInline]
+    date_hierarchy = "started_at"
 
     fieldsets = (
         (
@@ -868,7 +875,7 @@ class WorkSessionMediaAdmin(ModelAdmin):
 
 
 @admin.register(DailyReport)
-class DailyReportAdmin(ModelAdmin):
+class DailyReportAdmin(CSVExportAdminMixin, ModelAdmin):
     list_display = (
         "job",
         "handyman",
@@ -877,7 +884,14 @@ class DailyReportAdmin(ModelAdmin):
         "review_deadline",
         "reviewed_at",
     )
-    list_filter = ("status", "report_date")
+    list_filter = (
+        "status",
+        "report_date",
+        "review_deadline",
+        "job__category",
+        "job__city__province_code",
+        "created_at",
+    )
     search_fields = ("job__title", "handyman__email")
     ordering = ("-report_date",)
     autocomplete_fields = ("job", "handyman", "reviewed_by")
@@ -888,6 +902,7 @@ class DailyReportAdmin(ModelAdmin):
         "reviewed_at",
     )
     inlines = [DailyReportTaskInline]
+    date_hierarchy = "report_date"
 
     fieldsets = (
         (
@@ -916,7 +931,7 @@ class DailyReportAdmin(ModelAdmin):
 
 
 @admin.register(JobDispute)
-class JobDisputeAdmin(ModelAdmin):
+class JobDisputeAdmin(CSVExportAdminMixin, ModelAdmin):
     list_display = (
         "job_link",
         "initiated_by_link",
@@ -927,7 +942,13 @@ class JobDisputeAdmin(ModelAdmin):
         "resolved_at",
         "refund_percentage",
     )
-    list_filter = ("status", DisputeDeadlineFilter)
+    list_filter = (
+        "status",
+        "financial_action_status",
+        "created_at",
+        "resolved_at",
+        DisputeDeadlineFilter,
+    )
     search_fields = ("job__title", "initiated_by__email", "reason")
     ordering = ("-created_at",)
     autocomplete_fields = ("job", "initiated_by", "resolved_by")
@@ -938,6 +959,7 @@ class JobDisputeAdmin(ModelAdmin):
         "resolved_at",
     )
     actions = ["resolve_pay_handyman", "resolve_full_refund", "mark_in_review"]
+    date_hierarchy = "created_at"
 
     fieldsets = (
         (
@@ -1357,7 +1379,7 @@ class JobAttachmentAdmin(ModelAdmin):
 
 
 @admin.register(JobApplication)
-class JobApplicationAdmin(ModelAdmin):
+class JobApplicationAdmin(CSVExportAdminMixin, ModelAdmin):
     """
     Admin interface for JobApplication model with Unfold styling.
     """
@@ -1371,7 +1393,13 @@ class JobApplicationAdmin(ModelAdmin):
         "status_at",
         "created_at",
     )
-    list_filter = ("status", "created_at")
+    list_filter = (
+        "status",
+        "status_at",
+        "job__category",
+        "job__city__province_code",
+        "created_at",
+    )
     search_fields = (
         "job__title",
         "handyman__email",
@@ -1537,7 +1565,7 @@ class JobApplicationAdmin(ModelAdmin):
 
 
 @admin.register(Review)
-class ReviewAdmin(ModelAdmin):
+class ReviewAdmin(CSVExportAdminMixin, ModelAdmin):
     """
     Admin interface for Review model with Unfold styling.
     """
@@ -1552,7 +1580,13 @@ class ReviewAdmin(ModelAdmin):
         "reviewee_email_link",
         "created_at",
     )
-    list_filter = ("reviewer_type", "rating", "created_at")
+    list_filter = (
+        "reviewer_type",
+        "rating",
+        "job__category",
+        "job__city__province_code",
+        "created_at",
+    )
     search_fields = (
         "job__title",
         "reviewer__email",
@@ -1877,7 +1911,7 @@ class JobReimbursementAttachmentInline(TabularInline):
 
 
 @admin.register(JobReimbursement)
-class JobReimbursementAdmin(ModelAdmin):
+class JobReimbursementAdmin(CSVExportAdminMixin, ModelAdmin):
     """Admin interface for JobReimbursement model with Unfold styling."""
 
     list_display = (
@@ -1890,7 +1924,14 @@ class JobReimbursementAdmin(ModelAdmin):
         "reviewed_at",
         "created_at",
     )
-    list_filter = ("status", "category", "created_at")
+    list_filter = (
+        "status",
+        "category",
+        "reviewed_at",
+        "job__category",
+        "job__city__province_code",
+        "created_at",
+    )
     search_fields = ("job__title", "handyman__email", "name")
     ordering = ("-created_at",)
     autocomplete_fields = ("job", "handyman", "category", "reviewed_by")

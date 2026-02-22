@@ -3,11 +3,13 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 
+from apps.common.admin_mixins import CSVExportAdminMixin
+
 from .models import WaitlistEntry
 
 
 @admin.register(WaitlistEntry)
-class WaitlistEntryAdmin(ModelAdmin):
+class WaitlistEntryAdmin(CSVExportAdminMixin, ModelAdmin):
     """Admin interface for waitlist entries - read-only."""
 
     list_display = ("user_name", "email", "user_type", "created_at", "updated_at")
