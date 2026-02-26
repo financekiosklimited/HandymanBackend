@@ -2163,6 +2163,7 @@ class JobApplicationCreateSerializerTests(TestCase):
                 negotiation_reasoning="",
                 materials_data=[],
                 attachments=[],
+                discount_code=None,
             )
             self.assertEqual(application, mock_application)
 
