@@ -24,12 +24,13 @@
 All APIs return: `{"message": "...", "data": {...}, "errors": null, "meta": null}`
 
 ## Workflow
-- **Always run `make format`, `make lint` and `make test` after any code changes**
+- **Always run `make format`, `make lint`, `make test`, and `make coverage` after any code changes**
+- **Coverage must always be 100% for any change. If coverage drops, add/update tests until it returns to 100%.**
 - **New APIs/Changes**:
     - Add detailed OpenAPI spec using `drf-spectacular` decorators (`@extend_schema`) - see below.
     - **MUST** write/update unit tests for any new API or code changes.
     - **MUST** maintain 100% test coverage for any changes.
-    - **MUST** run `make format`, `make lint` and `make test` and ensure they pass. If tests fail, adjust the code or tests until they pass.
+    - **MUST** run `make format`, `make lint`, `make test`, and `make coverage` and ensure they pass. If tests fail or coverage is below 100%, adjust the code or tests until they pass.
 
 ## OpenAPI Documentation Guidelines
 
