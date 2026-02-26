@@ -220,6 +220,8 @@ class JobListSerializer(serializers.ModelSerializer):
             "attachments",
             "applicant_count",
             "homeowner",
+            "discount",
+            "platform_fee_discount_percent",
             "created_at",
             "updated_at",
         ]
@@ -500,6 +502,38 @@ class JobCreateSerializer(serializers.Serializer):
         max_length=MAX_JOB_ITEMS,
         help_text=f"List of tasks to be done (max {MAX_JOB_ITEMS} tasks)",
     )
+    discount_code = serializers.CharField(
+        max_length=50,
+        required=False,
+        allow_blank=True,
+        help_text="Optional discount code to apply to this job (homeowner discounts only)",
+    )
+
+    def validate_discount_code(self, value):
+        """Validate discount code if provided."""
+        if not value:
+            return None
+
+        # Import here to avoid circular imports
+        from apps.discounts.services import discount_service
+
+        request = self.context.get("request")
+        if not request or not request.user:
+            raise serializers.ValidationError(
+                "Authentication required to use discount codes."
+            )
+
+        # Validate the discount code
+        result = discount_service.validate_discount_code(
+            code=value,
+            user=request.user,
+            target_role="homeowner",
+        )
+
+        if not result["valid"]:
+            raise serializers.ValidationError(result["message"])
+
+        return result["discount"]
 
     def validate_estimated_budget(self, value):
         """Validate budget is positive."""
@@ -623,9 +657,17 @@ class JobCreateSerializer(serializers.Serializer):
         city = validated_data.pop("city_id")
         attachments = validated_data.pop("attachments", [])
         tasks = validated_data.pop("tasks", [])
+        discount = validated_data.pop("discount_code", None)
 
         # Get homeowner from context
         homeowner = self.context["request"].user
+
+        # Prepare discount data for job
+        discount_data = {}
+        if discount:
+            discount_data["discount"] = discount
+            if discount.discount_type == "percentage":
+                discount_data["platform_fee_discount_percent"] = discount.discount_value
 
         # Create job, attachments, and tasks in a transaction
         with transaction.atomic():
@@ -634,7 +676,12 @@ class JobCreateSerializer(serializers.Serializer):
                 category=category,
                 city=city,
                 **validated_data,
+                **discount_data,
             )
+
+            # Record discount usage if discount was applied
+            if discount:
+                discount.record_usage(homeowner, job)
 
             # Create job attachments with new indexed format
             for idx, attachment_data in enumerate(attachments):
@@ -1244,6 +1291,39 @@ class JobApplicationCreateSerializer(serializers.Serializer):
         "Use indexed format: attachments[0].file, attachments[0].thumbnail, "
         "attachments[0].duration_seconds. For videos, thumbnail and duration_seconds are required.",
     )
+    discount_code = serializers.CharField(
+        max_length=50,
+        required=False,
+        allow_blank=True,
+        help_text="Optional discount code for handyman (reduces platform fee when hired)",
+    )
+
+    def validate_discount_code(self, value):
+        """Validate discount code if provided."""
+        if not value:
+            return None
+
+        # Import here to avoid circular imports
+        from apps.discounts.services import discount_service
+
+        request = self.context.get("request")
+        if not request or not request.user:
+            raise serializers.ValidationError(
+                "Authentication required to use discount codes."
+            )
+
+        # Validate the discount code
+        result = discount_service.validate_discount_code(
+            code=value,
+            user=request.user,
+            target_role="handyman",
+        )
+
+        if not result["valid"]:
+            raise serializers.ValidationError(result["message"])
+
+        # Return the code (not the discount object) to store in the application
+        return value.upper()
 
     def validate_job_id(self, value):
         """
@@ -1296,6 +1376,7 @@ class JobApplicationCreateSerializer(serializers.Serializer):
         negotiation_reasoning = validated_data.get("negotiation_reasoning", "")
         materials_data = validated_data.get("materials", [])
         attachments = validated_data.get("attachments", [])
+        discount_code = validated_data.get("discount_code")
 
         application = job_application_service.apply_to_job(
             handyman=handyman,
@@ -1305,6 +1386,7 @@ class JobApplicationCreateSerializer(serializers.Serializer):
             negotiation_reasoning=negotiation_reasoning,
             materials_data=materials_data,
             attachments=attachments,
+            discount_code=discount_code,
         )
         return application
 

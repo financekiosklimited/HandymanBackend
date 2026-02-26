@@ -506,12 +506,33 @@ class JobPaymentService:
         ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
         return int(reserve)
 
-    def _calculate_platform_fee_cents(self, service_amount_cents):
+    def _calculate_platform_fee_cents(self, service_amount_cents, job=None):
+        """
+        Calculate platform fee with optional discount from job.
+
+        Args:
+            service_amount_cents: The service amount in cents
+            job: Optional Job object to check for discounts
+
+        Returns:
+            int: Platform fee in cents after discount
+        """
+        base_fee_percent = self._platform_fee_percent()
+
+        # Apply discount if job has one
+        if job and job.discount and job.platform_fee_discount_percent:
+            # Reduce platform fee by discount percentage
+            discount_multiplier = (
+                Decimal("100") - Decimal(str(job.platform_fee_discount_percent))
+            ) / Decimal("100")
+            effective_fee_percent = base_fee_percent * discount_multiplier
+        else:
+            effective_fee_percent = base_fee_percent
+
         fee = (
-            Decimal(service_amount_cents)
-            * self._platform_fee_percent()
-            / Decimal("100")
+            Decimal(service_amount_cents) * effective_fee_percent / Decimal("100")
         ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
         return int(fee)
 
     def _payment_mode_required(self, job):
@@ -605,7 +626,9 @@ class JobPaymentService:
             reserve_cents,
             approved_reimbursement_cents,
         )
-        platform_fee_cents = self._calculate_platform_fee_cents(service_amount_cents)
+        platform_fee_cents = self._calculate_platform_fee_cents(
+            service_amount_cents, job
+        )
 
         existing_payment = JobPayment.objects.filter(job=job).first()
         if existing_payment and existing_payment.status in self.AUTHORIZED_STATUSES:

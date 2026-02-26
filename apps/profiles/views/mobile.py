@@ -795,9 +795,12 @@ class GuestHandymanListView(APIView):
     )
     def get(self, request):
         """List handymen for guest users sorted by popularity and optionally distance."""
+        from apps.jobs.models import JobCategory
+
         latitude = request.query_params.get("latitude")
         longitude = request.query_params.get("longitude")
         search_query = request.query_params.get("search")
+        category_slug = request.query_params.get("category")
 
         # Base queryset: only visible handymen
         handymen = HandymanProfile.objects.filter(
@@ -809,6 +812,15 @@ class GuestHandymanListView(APIView):
         # Search filter
         if search_query:
             handymen = handymen.filter(display_name__icontains=search_query)
+
+        # Category filter
+        if category_slug:
+            try:
+                # Map slug to name via JobCategory (assuming names match HandymanCategory)
+                job_cat = JobCategory.objects.get(slug=category_slug)
+                handymen = handymen.filter(category__name=job_cat.name)
+            except JobCategory.DoesNotExist:
+                handymen = handymen.none()
 
         # Popularity score: rating * 2 + log10(review_count + 1) * 1.5
         # PostgreSQL LOG(base, value) = log_base(value), so Log(10, x) = log_10(x)

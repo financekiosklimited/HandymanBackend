@@ -44,6 +44,7 @@ class JobApplicationService:
         negotiation_reasoning="",
         materials_data=None,
         attachments=None,
+        discount_code=None,
     ) -> JobApplication:
         """
         Create a job application from a handyman to a job.
@@ -56,6 +57,7 @@ class JobApplicationService:
             negotiation_reasoning: Detailed reasoning of negotiation (optional)
             materials_data: List of material dicts with name, price, description (optional)
             attachments: List of file objects (optional)
+            discount_code: Discount code for platform fee reduction (optional)
 
         Returns:
             JobApplication: Created application
@@ -92,6 +94,7 @@ class JobApplicationService:
             predicted_hours=predicted_hours,
             estimated_total_price=estimated_total_price,
             negotiation_reasoning=negotiation_reasoning or "",
+            discount_code=discount_code.upper() if discount_code else "",
         )
 
         # Create materials
@@ -206,6 +209,11 @@ class JobApplicationService:
         # Update job status to in_progress and set assigned handyman
         job.status = "in_progress"
         job.assigned_handyman = application.handyman
+
+        # Apply handyman discount if provided and not already applied
+        if application.discount_code and not application.discount_applied:
+            self._apply_handyman_discount_to_job(application, job)
+
         job.save(
             update_fields=["status", "assigned_handyman", "updated_at", "status_at"]
         )
@@ -267,6 +275,52 @@ class JobApplicationService:
         )
 
         return application
+
+    def _apply_handyman_discount_to_job(self, application: JobApplication, job: Job):
+        """
+        Apply handyman discount to job when application is approved.
+
+        Args:
+            application: The approved application with discount_code
+            job: The job to apply discount to
+        """
+        from apps.discounts.models import Discount
+        from apps.discounts.services import discount_service
+
+        try:
+            # Get the discount by code
+            discount = Discount.objects.get(code=application.discount_code)
+
+            # Validate the discount is still valid for this handyman
+            result = discount_service.validate_discount_code(
+                code=application.discount_code,
+                user=application.handyman,
+                target_role="handyman",
+            )
+
+            if result["valid"]:
+                # Apply discount to job
+                job.discount = discount
+                if discount.discount_type == "percentage":
+                    job.platform_fee_discount_percent = discount.discount_value
+                job.save(update_fields=["discount", "platform_fee_discount_percent"])
+
+                # Record the usage
+                discount.record_usage(application.handyman, job)
+
+                # Mark discount as applied on application
+                application.discount_applied = True
+                application.save(update_fields=["discount_applied"])
+
+                logger.info(
+                    f"Applied discount {discount.code} to job {job.public_id} from application {application.public_id}"
+                )
+        except Discount.DoesNotExist:
+            logger.warning(
+                f"Discount code {application.discount_code} not found for application {application.public_id}"
+            )
+        except Exception as e:
+            logger.error(f"Error applying discount to job {job.public_id}: {str(e)}")
 
     @transaction.atomic
     def reject_application(

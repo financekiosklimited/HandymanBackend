@@ -179,6 +179,23 @@ class Job(BaseModel):
         help_text="Reason for rejection (optional, from handyman)",
     )
 
+    # Discount fields
+    discount = models.ForeignKey(
+        "discounts.Discount",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="jobs",
+        help_text="Discount applied to this job",
+    )
+    platform_fee_discount_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Platform fee discount percentage applied to this job",
+    )
+
     class Meta:
         db_table = "jobs"
         ordering = ["-created_at"]
@@ -195,6 +212,7 @@ class Job(BaseModel):
             models.Index(fields=["offer_status"]),
             models.Index(fields=["offer_expires_at"]),
             models.Index(fields=["payment_mode"]),
+            models.Index(fields=["discount"]),
         ]
 
     def __str__(self):
@@ -691,6 +709,17 @@ class JobApplication(BaseModel):
     )
     negotiation_reasoning = models.TextField(
         blank=True, help_text="Detailed reasoning of negotiation"
+    )
+
+    # Discount fields for handyman
+    discount_code = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Discount code used by handyman (applied when job is assigned)",
+    )
+    discount_applied = models.BooleanField(
+        default=False,
+        help_text="Whether the discount has been applied to the job",
     )
 
     class Meta:
