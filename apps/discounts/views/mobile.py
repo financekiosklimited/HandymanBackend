@@ -104,8 +104,8 @@ class DiscountListView(APIView):
 
         if not role and request.user.is_authenticated:
             # Use user's actual role if authenticated
-            if hasattr(request.user, "role"):
-                role = request.user.role
+            if request.user.active_role:
+                role = request.user.active_role
 
         # Get active discounts
         discounts = discount_service.get_active_discounts(role=role)

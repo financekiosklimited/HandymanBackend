@@ -8,5 +8,5 @@ app_name = "discounts"
 
 urlpatterns = [
     # Mobile API endpoints
-    path("mobile/", include("apps.discounts.urls.mobile", namespace="mobile")),
+    path("discounts/", include("apps.discounts.urls.mobile", namespace="mobile")),
 ]
