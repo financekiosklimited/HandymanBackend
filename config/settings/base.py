@@ -466,6 +466,22 @@ UNFOLD = {
                 ],
             },
             {
+                "title": "Discounts",
+                "separator": False,
+                "items": [
+                    {
+                        "title": "Discount Codes",
+                        "icon": "sell",
+                        "link": lambda request: "/admin/discounts/discount/",
+                    },
+                    {
+                        "title": "Usage History",
+                        "icon": "redeem",
+                        "link": lambda request: "/admin/discounts/userdiscountusage/",
+                    },
+                ],
+            },
+            {
                 "title": "Users & Profiles",
                 "separator": True,
                 "items": [

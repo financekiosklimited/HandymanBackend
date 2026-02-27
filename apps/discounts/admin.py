@@ -112,8 +112,8 @@ class DiscountAdmin(ModelAdmin):
     def code_display(self, obj):
         """Display code in monospace."""
         return format_html(
-            '<code style="font-size: 1.1em; background: #f5f5f5; padding: 2px 6px; '
-            'border-radius: 3px;">{}</code>',
+            '<code style="font-size: 1.1em; background: #f8fafc; color: #0f172a; '
+            'border: 1px solid #cbd5e1; padding: 2px 6px; border-radius: 4px;">{}</code>',
             obj.code,
         )
 
