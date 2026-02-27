@@ -216,6 +216,171 @@ class JobApplicationServiceTests(TestCase):
         for call in mock_notify.call_args_list:
             self.assertEqual(call.kwargs["triggered_by"], self.homeowner)
 
+    @patch(
+        "apps.notifications.services.NotificationService.create_and_send_notification"
+    )
+    def test_approve_application_with_discount_calls_apply_handler(self, mock_notify):
+        """Test approval calls handyman discount application when code exists."""
+        application = self.service.apply_to_job(
+            self.handyman,
+            self.job,
+            discount_code="HAND20",
+        )
+        mock_notify.reset_mock()
+
+        with patch.object(
+            self.service, "_apply_handyman_discount_to_job"
+        ) as mock_apply:
+            self.service.approve_application(self.homeowner, application)
+
+        mock_apply.assert_called_once()
+
+    def test_apply_handyman_discount_to_job_success(self):
+        """Test private helper applies discount, records usage, and marks applied."""
+        from apps.discounts.models import Discount, UserDiscountUsage
+
+        discount = Discount.objects.create(
+            name="Handyman 20",
+            code="HAND20",
+            description="20% fee discount",
+            discount_type="percentage",
+            discount_value=20,
+            target_role="handyman",
+            start_date=timezone.now() - timedelta(days=1),
+            end_date=timezone.now() + timedelta(days=7),
+            is_active=True,
+            max_uses_per_user=2,
+        )
+        application = self.service.apply_to_job(
+            self.handyman,
+            self.job,
+            discount_code=discount.code,
+        )
+
+        self.service._apply_handyman_discount_to_job(application, self.job)
+
+        self.job.refresh_from_db()
+        application.refresh_from_db()
+        self.assertEqual(self.job.discount, discount)
+        self.assertEqual(
+            self.job.platform_fee_discount_percent,
+            discount.discount_value,
+        )
+        self.assertTrue(application.discount_applied)
+        self.assertTrue(
+            UserDiscountUsage.objects.filter(
+                user=self.handyman,
+                discount=discount,
+                job=self.job,
+            ).exists()
+        )
+
+    def test_apply_handyman_discount_to_job_fixed_amount(self):
+        """Test fixed amount discount applies without fee percent snapshot."""
+        from apps.discounts.models import Discount
+
+        discount = Discount.objects.create(
+            name="Handyman Fixed",
+            code="HANDFIX",
+            description="Fixed amount fee discount",
+            discount_type="fixed_amount",
+            discount_value=10,
+            target_role="handyman",
+            start_date=timezone.now() - timedelta(days=1),
+            end_date=timezone.now() + timedelta(days=7),
+            is_active=True,
+        )
+        application = self.service.apply_to_job(
+            self.handyman,
+            self.job,
+            discount_code=discount.code,
+        )
+
+        self.service._apply_handyman_discount_to_job(application, self.job)
+
+        self.job.refresh_from_db()
+        application.refresh_from_db()
+        self.assertEqual(self.job.discount, discount)
+        self.assertIsNone(self.job.platform_fee_discount_percent)
+        self.assertTrue(application.discount_applied)
+
+    def test_apply_handyman_discount_to_job_invalid_validation_skips_apply(self):
+        """Test invalid validation result skips discount application."""
+        from apps.discounts.models import Discount
+
+        discount = Discount.objects.create(
+            name="Handyman 5",
+            code="HAND05",
+            description="5% fee discount",
+            discount_type="percentage",
+            discount_value=5,
+            target_role="handyman",
+            start_date=timezone.now() - timedelta(days=1),
+            end_date=timezone.now() + timedelta(days=7),
+            is_active=True,
+        )
+        application = self.service.apply_to_job(
+            self.handyman,
+            self.job,
+            discount_code=discount.code,
+        )
+
+        with patch(
+            "apps.discounts.services.discount_service.validate_discount_code",
+            return_value={"valid": False, "message": "Already used."},
+        ):
+            self.service._apply_handyman_discount_to_job(application, self.job)
+
+        self.job.refresh_from_db()
+        application.refresh_from_db()
+        self.assertIsNone(self.job.discount)
+        self.assertFalse(application.discount_applied)
+
+    def test_apply_handyman_discount_to_job_missing_discount_is_ignored(self):
+        """Test missing discount code is handled without raising."""
+        application = self.service.apply_to_job(
+            self.handyman,
+            self.job,
+            discount_code="MISSING20",
+        )
+
+        self.service._apply_handyman_discount_to_job(application, self.job)
+
+        self.job.refresh_from_db()
+        application.refresh_from_db()
+        self.assertIsNone(self.job.discount)
+        self.assertFalse(application.discount_applied)
+
+    def test_apply_handyman_discount_to_job_unexpected_error_is_handled(self):
+        """Test helper catches unexpected errors from validation flow."""
+        from apps.discounts.models import Discount
+
+        discount = Discount.objects.create(
+            name="Handyman 15",
+            code="HAND15",
+            description="15% fee discount",
+            discount_type="percentage",
+            discount_value=15,
+            target_role="handyman",
+            start_date=timezone.now() - timedelta(days=1),
+            end_date=timezone.now() + timedelta(days=7),
+            is_active=True,
+        )
+        application = self.service.apply_to_job(
+            self.handyman,
+            self.job,
+            discount_code=discount.code,
+        )
+
+        with patch(
+            "apps.discounts.services.discount_service.validate_discount_code",
+            side_effect=Exception("boom"),
+        ):
+            self.service._apply_handyman_discount_to_job(application, self.job)
+
+        application.refresh_from_db()
+        self.assertFalse(application.discount_applied)
+
     def test_approve_application_wrong_owner(self):
         """Test approving someone else's job application."""
         application = self.service.apply_to_job(self.handyman, self.job)

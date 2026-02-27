@@ -1,9 +1,12 @@
+from datetime import timedelta
 from decimal import Decimal
 from io import BytesIO
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.utils import timezone
 from PIL import Image as PILImage
+from rest_framework import serializers
 from rest_framework.test import APIRequestFactory
 
 from apps.accounts.models import User
@@ -453,6 +456,122 @@ class JobCreateSerializerTests(TestCase):
 
         self.assertEqual(serializer.validate_tasks([]), [])
         self.assertEqual(serializer.validate_tasks(None), [])
+
+    def test_validate_discount_code_requires_auth_context(self):
+        """Test discount validation requires request user in serializer context."""
+        from apps.jobs.serializers import JobCreateSerializer
+
+        serializer = JobCreateSerializer(context={})
+
+        with self.assertRaisesMessage(
+            serializers.ValidationError,
+            "Authentication required to use discount codes.",
+        ):
+            serializer.validate_discount_code("HOME20")
+
+    def test_validate_discount_code_invalid_returns_error(self):
+        """Test invalid discount code returns serializer error."""
+        from unittest.mock import patch
+
+        from apps.jobs.serializers import JobCreateSerializer
+
+        serializer = JobCreateSerializer(context={"request": self.request})
+
+        with patch(
+            "apps.discounts.services.discount_service.validate_discount_code"
+        ) as mock_validate:
+            mock_validate.return_value = {
+                "valid": False,
+                "message": "Invalid discount code.",
+            }
+
+            with self.assertRaisesMessage(
+                serializers.ValidationError,
+                "Invalid discount code.",
+            ):
+                serializer.validate_discount_code("BADCODE")
+
+    def test_create_job_with_discount_applies_fields_and_records_usage(self):
+        """Test creating job with discount applies discount metadata and usage."""
+        from apps.discounts.models import Discount, UserDiscountUsage
+
+        discount = Discount.objects.create(
+            name="Homeowner 20",
+            code="HOME20",
+            description="20% off",
+            discount_type="percentage",
+            discount_value=20,
+            target_role="homeowner",
+            start_date=timezone.now() - timedelta(days=1),
+            end_date=timezone.now() + timedelta(days=7),
+            is_active=True,
+            max_uses_per_user=2,
+        )
+
+        data = {
+            "title": "Fix leaking faucet",
+            "description": "Kitchen faucet is leaking",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "status": "open",
+            "discount_code": "home20",
+        }
+
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        job = serializer.save()
+
+        self.assertEqual(job.discount, discount)
+        self.assertEqual(job.platform_fee_discount_percent, discount.discount_value)
+        self.assertTrue(
+            UserDiscountUsage.objects.filter(
+                user=self.user,
+                discount=discount,
+                job=job,
+            ).exists()
+        )
+
+    def test_validate_discount_code_blank_returns_none(self):
+        """Test blank discount code is treated as not provided."""
+        from apps.jobs.serializers import JobCreateSerializer
+
+        serializer = JobCreateSerializer(context={"request": self.request})
+        self.assertIsNone(serializer.validate_discount_code(""))
+
+    def test_create_job_with_fixed_discount_does_not_set_fee_percent(self):
+        """Test fixed amount discount attaches discount without percent snapshot."""
+        from apps.discounts.models import Discount
+
+        discount = Discount.objects.create(
+            name="Fixed $10",
+            code="FIXED10",
+            description="Fixed amount discount",
+            discount_type="fixed_amount",
+            discount_value=10,
+            target_role="homeowner",
+            start_date=timezone.now() - timedelta(days=1),
+            end_date=timezone.now() + timedelta(days=7),
+            is_active=True,
+        )
+
+        data = {
+            "title": "Fix leaking faucet",
+            "description": "Kitchen faucet is leaking",
+            "estimated_budget": "50.00",
+            "category_id": str(self.category.public_id),
+            "city_id": str(self.city.public_id),
+            "address": "123 Main St",
+            "discount_code": discount.code,
+        }
+
+        serializer = JobCreateSerializer(data=data, context={"request": self.request})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        job = serializer.save()
+
+        self.assertEqual(job.discount, discount)
+        self.assertIsNone(job.platform_fee_discount_percent)
 
 
 class JobUpdateSerializerTests(TestCase):
@@ -2290,6 +2409,74 @@ class JobApplicationCreateSerializerTests(TestCase):
             call_kwargs = mock_apply.call_args.kwargs
             self.assertEqual(len(call_kwargs["attachments"]), 1)
             self.assertEqual(call_kwargs["attachments"][0]["file_type"], "document")
+
+    def test_validate_discount_code_returns_none_when_blank(self):
+        """Test blank discount code returns None."""
+        from apps.jobs.serializers import JobApplicationCreateSerializer
+
+        serializer = JobApplicationCreateSerializer(
+            context={"request": self.factory.post("/")}
+        )
+        self.assertIsNone(serializer.validate_discount_code(""))
+
+    def test_validate_discount_code_requires_auth_context(self):
+        """Test discount validation requires request user in context."""
+        from apps.jobs.serializers import JobApplicationCreateSerializer
+
+        serializer = JobApplicationCreateSerializer(context={})
+
+        with self.assertRaisesMessage(
+            serializers.ValidationError,
+            "Authentication required to use discount codes.",
+        ):
+            serializer.validate_discount_code("HAND20")
+
+    def test_validate_discount_code_invalid_returns_error(self):
+        """Test invalid handyman discount code raises validation error."""
+        from unittest.mock import patch
+
+        from apps.jobs.serializers import JobApplicationCreateSerializer
+
+        request = self.factory.post("/")
+        request.user = self.handyman
+        serializer = JobApplicationCreateSerializer(context={"request": request})
+
+        with patch(
+            "apps.discounts.services.discount_service.validate_discount_code"
+        ) as mock_validate:
+            mock_validate.return_value = {
+                "valid": False,
+                "message": "This discount is only valid for homeowners.",
+            }
+
+            with self.assertRaisesMessage(
+                serializers.ValidationError,
+                "This discount is only valid for homeowners.",
+            ):
+                serializer.validate_discount_code("HOME20")
+
+    def test_validate_discount_code_valid_returns_uppercase(self):
+        """Test valid handyman discount code returns uppercased code."""
+        from unittest.mock import patch
+
+        from apps.jobs.serializers import JobApplicationCreateSerializer
+
+        request = self.factory.post("/")
+        request.user = self.handyman
+        serializer = JobApplicationCreateSerializer(context={"request": request})
+
+        with patch(
+            "apps.discounts.services.discount_service.validate_discount_code"
+        ) as mock_validate:
+            mock_validate.return_value = {
+                "valid": True,
+                "discount": object(),
+                "remaining_uses": 1,
+            }
+
+            value = serializer.validate_discount_code("hand20")
+
+        self.assertEqual(value, "HAND20")
 
 
 class HomeownerJobApplicationListSerializerTests(TestCase):

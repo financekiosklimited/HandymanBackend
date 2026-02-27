@@ -96,6 +96,31 @@ class PaymentServicesTests(TestCase):
         ):
             job_payment_service.ensure_job_authorized(self.job)
 
+    def test_calculate_platform_fee_with_discount_percent(self):
+        """Test platform fee calculation applies job discount percentage."""
+        from apps.discounts.models import Discount
+
+        discount = Discount.objects.create(
+            name="Homeowner 20",
+            code="HOME20",
+            description="20% off platform fee",
+            discount_type="percentage",
+            discount_value=20,
+            target_role="homeowner",
+            start_date=timezone.now() - timedelta(days=1),
+            end_date=timezone.now() + timedelta(days=7),
+            is_active=True,
+        )
+
+        self.job.discount = discount
+        self.job.platform_fee_discount_percent = Decimal("20.00")
+
+        fee_cents = job_payment_service._calculate_platform_fee_cents(
+            10000, job=self.job
+        )
+
+        self.assertEqual(fee_cents, 800)
+
     @override_settings(STRIPE_ENABLED=False, STRIPE_AUTHORIZATION_ENFORCED=True)
     def test_capture_for_completion(self):
         job_payment_service.authorize_for_application(self.homeowner, self.application)

@@ -125,6 +125,46 @@ class DiscountListViewTests(TestCase):
         self.assertIn("HAND15", codes)
         self.assertIn("BOTH10", codes)
 
+    def test_list_discounts_uses_authenticated_user_active_role(self):
+        """Test list uses authenticated user's active role when role query is absent."""
+        user = User.objects.create_user(
+            email="active-role@test.com",
+            password="testpass123",
+            active_role="homeowner",
+        )
+        UserRole.objects.create(user=user, role="homeowner")
+
+        self.client.force_authenticate(user=user)
+
+        url = reverse("discounts:mobile:discount-list")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        codes = [d["code"] for d in response.json()["data"]]
+        self.assertIn("HOME20", codes)
+        self.assertIn("BOTH10", codes)
+        self.assertNotIn("HAND15", codes)
+
+    def test_list_discounts_authenticated_without_active_role_shows_all_active(self):
+        """Test authenticated user without active_role still sees all active discounts."""
+        user = User.objects.create_user(
+            email="no-active-role@test.com",
+            password="testpass123",
+            active_role=None,
+        )
+        UserRole.objects.create(user=user, role="homeowner")
+
+        self.client.force_authenticate(user=user)
+
+        url = reverse("discounts:mobile:discount-list")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        codes = [d["code"] for d in response.json()["data"]]
+        self.assertIn("HOME20", codes)
+        self.assertIn("HAND15", codes)
+        self.assertIn("BOTH10", codes)
+
     def test_list_discounts_response_format(self):
         """Test response format includes all expected fields."""
         url = reverse("discounts:mobile:discount-list")

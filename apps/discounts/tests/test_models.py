@@ -314,6 +314,21 @@ class DiscountModelTests(TestCase):
         self.assertGreaterEqual(days_remaining, 4)
         self.assertLessEqual(days_remaining, 6)
 
+    def test_get_ends_in_days_expired_returns_zero(self):
+        """Test expired discount returns 0 days remaining."""
+        discount = Discount.objects.create(
+            name="Expired Discount",
+            code="EXPIRED0",
+            description="Expired test",
+            discount_type="percentage",
+            discount_value=10,
+            target_role="homeowner",
+            start_date=self.now - timedelta(days=10),
+            end_date=self.now - timedelta(days=1),
+        )
+
+        self.assertEqual(discount.get_ends_in_days(), 0)
+
     def test_get_expiry_text(self):
         """Test get_expiry_text() method."""
         # Create discount ending in exactly 5 days from now (at end of day)
@@ -338,6 +353,84 @@ class DiscountModelTests(TestCase):
         discount.end_date = self.now + timedelta(days=1, hours=12)
         discount.save()
         self.assertEqual(discount.get_expiry_text(), "Ends in 1 day")
+
+    def test_get_expiry_text_expired_is_today_message(self):
+        """Test expired discount returns 'Expires today' message."""
+        discount = Discount.objects.create(
+            name="Expired Discount",
+            code="TODAY00",
+            description="Expired text",
+            discount_type="percentage",
+            discount_value=5,
+            target_role="homeowner",
+            start_date=self.now - timedelta(days=10),
+            end_date=self.now - timedelta(days=1),
+        )
+
+        self.assertEqual(discount.get_expiry_text(), "Expires today")
+
+    def test_clean_with_blank_code_skips_uppercasing(self):
+        """Test clean() does not uppercase when code is blank."""
+        discount = Discount(
+            name="Blank Code Discount",
+            code="",
+            description="Blank code",
+            discount_type="fixed_amount",
+            discount_value=150,
+            target_role="homeowner",
+            start_date=self.now,
+            end_date=self.future,
+        )
+
+        discount.clean()
+        self.assertEqual(discount.code, "")
+
+    def test_clean_with_none_discount_value_skips_value_checks(self):
+        """Test clean() skips value checks when discount_value is None."""
+        discount = Discount(
+            name="None Value Discount",
+            code="noneval",
+            description="No value",
+            discount_type="percentage",
+            discount_value=None,
+            target_role="homeowner",
+            start_date=self.now,
+            end_date=self.future,
+        )
+
+        discount.clean()
+        self.assertEqual(discount.code, "NONEVAL")
+
+    def test_clean_skips_date_comparison_when_start_or_end_missing(self):
+        """Test clean() skips date ordering check if one date is missing."""
+        discount = Discount(
+            name="Missing Start Date",
+            code="missdate",
+            description="Missing start",
+            discount_type="percentage",
+            discount_value=10,
+            target_role="homeowner",
+            start_date=None,
+            end_date=self.future,
+        )
+
+        discount.clean()
+        self.assertEqual(discount.code, "MISSDATE")
+
+    def test_save_with_blank_code_keeps_blank(self):
+        """Test save() with blank code keeps blank value."""
+        discount = Discount.objects.create(
+            name="Blank Save",
+            code="",
+            description="Blank save",
+            discount_type="fixed_amount",
+            discount_value=20,
+            target_role="homeowner",
+            start_date=self.now,
+            end_date=self.future,
+        )
+
+        self.assertEqual(discount.code, "")
 
     def test_get_discount_display_percentage(self):
         """Test get_discount_display() for percentage discount."""

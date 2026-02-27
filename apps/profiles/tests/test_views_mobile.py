@@ -1102,6 +1102,29 @@ class MobileGuestHandymanListViewTests(APITestCase):
         # Distance should be calculated
         self.assertIsNotNone(response.data["data"][0]["distance_km"])
 
+    def test_list_handymen_filter_by_existing_category_slug(self):
+        """Test category slug filter maps JobCategory name to HandymanCategory."""
+        from apps.jobs.models import JobCategory
+        from apps.profiles.models import HandymanCategory
+
+        category = HandymanCategory.objects.create(name="Plumbing")
+        job_category = JobCategory.objects.create(name="Plumbing", slug="plumbing")
+
+        self.handyman_visible.category = category
+        self.handyman_visible.save(update_fields=["category", "updated_at"])
+
+        response = self.client.get(self.url, {"category": job_category.slug})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["display_name"], "Visible Handyman")
+
+    def test_list_handymen_filter_by_unknown_category_slug_returns_empty(self):
+        """Test unknown category slug returns empty result."""
+        response = self.client.get(self.url, {"category": "unknown-category"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"], [])
+        self.assertEqual(response.data["meta"]["pagination"]["total_count"], 0)
+
 
 class MobileGuestHandymanDetailViewTests(APITestCase):
     """Test cases for mobile GuestHandymanDetailView (no auth required)."""
