@@ -86,6 +86,9 @@ class StripeClientServiceCoverageTests(TestCase):
         account = self.service.create_connected_account("a@b.com", "CA", {}, "idem")
         self.assertIn("acct_mock_", account["id"])
         self.assertIn("url", self.service.create_account_link("acct_1", "r", "r", "k"))
+        retrieved = self.service.retrieve_account("acct_1")
+        self.assertEqual(retrieved["id"], "acct_1")
+        self.assertFalse(retrieved["charges_enabled"])
         self.assertIn(
             "vs_mock_",
             self.service.create_identity_session({}, "https://a", "k")["id"],
@@ -121,7 +124,8 @@ class StripeClientServiceCoverageTests(TestCase):
             create=MagicMock(return_value={"id": "cus_1"})
         )
         fake_stripe.Account = SimpleNamespace(
-            create=MagicMock(return_value={"id": "acct_1"})
+            create=MagicMock(return_value={"id": "acct_1"}),
+            retrieve=MagicMock(return_value={"id": "acct_1", "charges_enabled": True}),
         )
         fake_stripe.AccountLink = SimpleNamespace(
             create=MagicMock(return_value={"url": "https://x", "expires_at": 1})
@@ -168,6 +172,10 @@ class StripeClientServiceCoverageTests(TestCase):
         self.assertEqual(
             self.service.create_account_link("acct_1", "r", "r", "k")["url"],
             "https://x",
+        )
+        self.assertEqual(
+            self.service.retrieve_account("acct_1")["id"],
+            "acct_1",
         )
         self.assertEqual(
             self.service.create_identity_session({}, "r", "k")["id"],
@@ -431,6 +439,108 @@ class PaymentDomainServiceCoverageTests(TestCase):
         )
         verification.refresh_from_db()
         self.assertEqual(verification.status, "failed")
+
+    @override_settings(STRIPE_ENABLED=False)
+    def test_get_kyc_status_on_demand_sync_success(self):
+        """On-demand sync updates DB from Stripe when data is stale."""
+        connected = StripeConnectedAccount.objects.create(
+            user=self.handyman,
+            stripe_account_id="acct_sync_test",
+            charges_enabled=False,
+            payouts_enabled=False,
+            details_submitted=False,
+        )
+        # Make the record stale (>30s old)
+        stale_time = timezone.now() - timedelta(seconds=60)
+        StripeConnectedAccount.objects.filter(pk=connected.pk).update(
+            updated_at=stale_time
+        )
+        connected.refresh_from_db()
+
+        with patch(
+            "apps.payments.services.stripe_client_service.retrieve_account",
+            return_value={
+                "id": "acct_sync_test",
+                "charges_enabled": True,
+                "payouts_enabled": True,
+                "details_submitted": True,
+                "requirements": {"currently_due": []},
+                "disabled_reason": "",
+            },
+        ) as mock_retrieve:
+            result = kyc_service.get_kyc_status(self.handyman)
+            mock_retrieve.assert_called_once_with("acct_sync_test")
+
+        self.assertTrue(result["charges_enabled"])
+        self.assertTrue(result["payouts_enabled"])
+        self.assertTrue(result["details_submitted"])
+
+        connected.refresh_from_db()
+        self.assertTrue(connected.charges_enabled)
+        self.assertTrue(connected.payouts_enabled)
+        self.assertTrue(connected.details_submitted)
+
+    @override_settings(STRIPE_ENABLED=False)
+    def test_get_kyc_status_on_demand_sync_failure_falls_back(self):
+        """On-demand sync falls back to DB data when Stripe API fails."""
+        connected = StripeConnectedAccount.objects.create(
+            user=self.handyman,
+            stripe_account_id="acct_fail_test",
+            charges_enabled=False,
+            payouts_enabled=False,
+            details_submitted=True,
+        )
+        stale_time = timezone.now() - timedelta(seconds=60)
+        StripeConnectedAccount.objects.filter(pk=connected.pk).update(
+            updated_at=stale_time
+        )
+        connected.refresh_from_db()
+
+        with patch(
+            "apps.payments.services.stripe_client_service.retrieve_account",
+            side_effect=Exception("Stripe API down"),
+        ) as mock_retrieve:
+            result = kyc_service.get_kyc_status(self.handyman)
+            mock_retrieve.assert_called_once_with("acct_fail_test")
+
+        # Falls back to existing DB data
+        self.assertFalse(result["charges_enabled"])
+        self.assertFalse(result["payouts_enabled"])
+        self.assertTrue(result["details_submitted"])
+
+    @override_settings(STRIPE_ENABLED=False)
+    def test_get_kyc_status_on_demand_sync_throttled(self):
+        """On-demand sync is skipped when data is fresh (<30s old)."""
+        StripeConnectedAccount.objects.create(
+            user=self.handyman,
+            stripe_account_id="acct_throttle_test",
+            charges_enabled=False,
+            payouts_enabled=False,
+            details_submitted=False,
+        )
+        # updated_at is now (fresh), so sync should be skipped
+
+        with patch(
+            "apps.payments.services.stripe_client_service.retrieve_account",
+        ) as mock_retrieve:
+            result = kyc_service.get_kyc_status(self.handyman)
+            mock_retrieve.assert_not_called()
+
+        self.assertFalse(result["charges_enabled"])
+
+    @override_settings(STRIPE_ENABLED=False)
+    def test_get_kyc_status_no_connected_account_skips_sync(self):
+        """On-demand sync is skipped when no connected account exists."""
+        with patch(
+            "apps.payments.services.stripe_client_service.retrieve_account",
+        ) as mock_retrieve:
+            result = kyc_service.get_kyc_status(self.handyman)
+            mock_retrieve.assert_not_called()
+
+        self.assertFalse(result["charges_enabled"])
+        self.assertFalse(result["payouts_enabled"])
+        self.assertFalse(result["details_submitted"])
+        self.assertEqual(result["requirements_due"], [])
 
     @override_settings(STRIPE_ENABLED=False, STRIPE_AUTHORIZATION_ENFORCED=True)
     def test_job_payment_authorization_and_reuse_paths(self):

@@ -111,6 +111,20 @@ class StripeClientService:
         )
         return self._as_dict(account)
 
+    def retrieve_account(self, account_id):
+        """Retrieve connected account details from Stripe."""
+        if not self.is_enabled:
+            return {
+                "id": account_id,
+                "charges_enabled": False,
+                "payouts_enabled": False,
+                "details_submitted": False,
+                "requirements": {"currently_due": []},
+                "disabled_reason": "",
+            }
+        account = self.stripe.Account.retrieve(account_id)
+        return self._as_dict(account)
+
     def create_account_link(self, account_id, refresh_url, return_url, idempotency_key):
         """Create Stripe Connect onboarding link."""
         if not self.is_enabled:
@@ -367,9 +381,27 @@ class KycService:
         }
 
     def get_kyc_status(self, handyman):
-        """Return consolidated KYC status."""
+        """Return consolidated KYC status, syncing from Stripe if stale."""
         connected = StripeConnectedAccount.objects.filter(user=handyman).first()
         identity = HandymanIdentityVerification.objects.filter(user=handyman).first()
+
+        # On-demand sync: if connected account exists and data is stale (>30s),
+        # fetch latest state directly from Stripe API.
+        if connected and connected.stripe_account_id:
+            stale_threshold = timezone.now() - timedelta(seconds=30)
+            if connected.updated_at < stale_threshold:
+                try:
+                    account_data = stripe_client_service.retrieve_account(
+                        connected.stripe_account_id
+                    )
+                    self.sync_connected_account_state(account_data)
+                    connected.refresh_from_db()
+                except Exception:
+                    logger.warning(
+                        "Failed to sync connected account %s from Stripe",
+                        connected.stripe_account_id,
+                        exc_info=True,
+                    )
 
         identity_status = identity.status if identity else "pending"
         charges_enabled = bool(connected.charges_enabled) if connected else False
