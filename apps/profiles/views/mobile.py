@@ -1,9 +1,10 @@
-"""
-Mobile profile views.
-"""
+"""Mobile profile views."""
+
+import uuid
 
 from django.db.models import Case, Count, F, FloatField, IntegerField, Q, Value, When
 from django.db.models.functions import ACos, Coalesce, Cos, Log, Radians, Sin
+from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema
 from rest_framework.permissions import IsAuthenticated
@@ -16,6 +17,7 @@ from apps.authn.permissions import (
     RoleGuardPermission,
 )
 from apps.common.openapi import (
+    FORBIDDEN_EXAMPLE,
     NOT_FOUND_EXAMPLE,
     UNAUTHORIZED_EXAMPLE,
     VALIDATION_ERROR_EXAMPLE,
@@ -28,12 +30,20 @@ from apps.common.responses import (
     validation_error_response,
 )
 
-from ..models import HandymanCategory, HandymanProfile, HomeownerProfile
+from ..models import (
+    GuestLocationSnapshot,
+    HandymanCategory,
+    HandymanProfile,
+    HomeownerProfile,
+)
 from ..serializers import (
     GuestHandymanDetailResponseSerializer,
     GuestHandymanDetailSerializer,
     GuestHandymanListResponseSerializer,
     GuestHandymanListSerializer,
+    GuestLocationRefreshRequestSerializer,
+    GuestLocationRefreshResponseSerializer,
+    GuestLocationSnapshotSerializer,
     HandymanCategoryListResponseSerializer,
     HandymanCategorySerializer,
     HandymanProfileResponseSerializer,
@@ -48,7 +58,31 @@ from ..serializers import (
     HomeownerProfileResponseSerializer,
     HomeownerProfileSerializer,
     HomeownerProfileUpdateSerializer,
+    ProfileLocationRefreshRequestSerializer,
+    ProfileLocationRefreshResponseSerializer,
+    ProfileLocationSnapshotSerializer,
 )
+from ..services import profile_location_service
+
+
+def _refresh_profile_location(profile, validated_data):
+    """Persist refreshed profile coordinates and canonical city."""
+    profile.latitude = validated_data["latitude"]
+    profile.longitude = validated_data["longitude"]
+    profile.current_city = profile_location_service.resolve_nearest_city(
+        validated_data["latitude"],
+        validated_data["longitude"],
+    )
+    profile.last_location_updated_at = timezone.now()
+    profile.save(
+        update_fields=[
+            "latitude",
+            "longitude",
+            "current_city",
+            "last_location_updated_at",
+        ]
+    )
+    return profile
 
 
 class HomeownerProfileView(APIView):
@@ -315,6 +349,248 @@ class HandymanProfileView(APIView):
         return validation_error_response(serializer.errors)
 
 
+class HomeownerProfileLocationRefreshView(APIView):
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_homeowner_profile_location_refresh",
+        request=ProfileLocationRefreshRequestSerializer,
+        responses={
+            200: ProfileLocationRefreshResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Refresh homeowner profile location via mobile app. "
+            "Accepts coordinates only, derives canonical city server-side, and "
+            "updates the persisted location snapshot. Requires authenticated "
+            "user with homeowner role and verified email."
+        ),
+        summary="Refresh homeowner location",
+        tags=["Mobile Homeowner Profile"],
+        examples=[
+            OpenApiExample(
+                "Refresh Request",
+                value={
+                    "latitude": "43.651070",
+                    "longitude": "-79.347015",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Location refreshed successfully",
+                    "data": {
+                        "latitude": "43.651070",
+                        "longitude": "-79.347015",
+                        "current_city": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "name": "Toronto",
+                            "province": "Ontario",
+                            "province_code": "ON",
+                            "slug": "toronto-on",
+                        },
+                        "last_location_updated_at": "2026-04-06T12:00:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request):
+        """Refresh homeowner persisted location snapshot."""
+        try:
+            profile = request.user.homeowner_profile
+        except HomeownerProfile.DoesNotExist:
+            return not_found_response("Profile not found")
+
+        serializer = ProfileLocationRefreshRequestSerializer(data=request.data)
+        if serializer.is_valid():
+            _refresh_profile_location(profile, serializer.validated_data)
+            response_serializer = ProfileLocationSnapshotSerializer(profile)
+            return success_response(
+                response_serializer.data,
+                message="Location refreshed successfully",
+            )
+
+        return validation_error_response(serializer.errors)
+
+
+class HandymanProfileLocationRefreshView(APIView):
+    permission_classes = [
+        IsAuthenticated,
+        PlatformGuardPermission,
+        RoleGuardPermission,
+        EmailVerifiedPermission,
+    ]
+
+    @extend_schema(
+        operation_id="mobile_handyman_profile_location_refresh",
+        request=ProfileLocationRefreshRequestSerializer,
+        responses={
+            200: ProfileLocationRefreshResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Refresh handyman profile location via mobile app. "
+            "Accepts coordinates only, derives canonical city server-side, and "
+            "updates the persisted location snapshot. Requires authenticated "
+            "user with handyman role and verified email."
+        ),
+        summary="Refresh handyman location",
+        tags=["Mobile Handyman Profile"],
+        examples=[
+            OpenApiExample(
+                "Refresh Request",
+                value={
+                    "latitude": "43.651070",
+                    "longitude": "-79.347015",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Location refreshed successfully",
+                    "data": {
+                        "latitude": "43.651070",
+                        "longitude": "-79.347015",
+                        "current_city": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "name": "Toronto",
+                            "province": "Ontario",
+                            "province_code": "ON",
+                            "slug": "toronto-on",
+                        },
+                        "last_location_updated_at": "2026-04-06T12:00:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            UNAUTHORIZED_EXAMPLE,
+            NOT_FOUND_EXAMPLE,
+        ],
+    )
+    def post(self, request):
+        """Refresh handyman persisted location snapshot."""
+        try:
+            profile = request.user.handyman_profile
+        except HandymanProfile.DoesNotExist:
+            return not_found_response("Profile not found")
+
+        serializer = ProfileLocationRefreshRequestSerializer(data=request.data)
+        if serializer.is_valid():
+            _refresh_profile_location(profile, serializer.validated_data)
+            response_serializer = ProfileLocationSnapshotSerializer(profile)
+            return success_response(
+                response_serializer.data,
+                message="Location refreshed successfully",
+            )
+
+        return validation_error_response(serializer.errors)
+
+
+class GuestLocationRefreshView(APIView):
+    authentication_classes = []
+    permission_classes = [GuestPlatformGuardPermission]
+
+    @extend_schema(
+        operation_id="mobile_guest_location_refresh",
+        request=GuestLocationRefreshRequestSerializer,
+        responses={
+            200: GuestLocationRefreshResponseSerializer,
+            400: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+        },
+        description=(
+            "Refresh guest location via mobile app without authentication. "
+            "Accepts coordinates, optionally accepts a device token, derives "
+            "canonical city server-side, and persists a guest location snapshot."
+        ),
+        summary="Refresh guest location",
+        tags=["Mobile Guest Profile"],
+        examples=[
+            OpenApiExample(
+                "Refresh Request",
+                value={
+                    "latitude": "43.651070",
+                    "longitude": "-79.347015",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Success Response",
+                value={
+                    "message": "Location refreshed successfully",
+                    "data": {
+                        "device_token": "guest-device-token",
+                        "latitude": "43.651070",
+                        "longitude": "-79.347015",
+                        "current_city": {
+                            "public_id": "123e4567-e89b-12d3-a456-426614174000",
+                            "name": "Toronto",
+                            "province": "Ontario",
+                            "province_code": "ON",
+                            "slug": "toronto-on",
+                        },
+                        "last_location_updated_at": "2026-04-06T12:00:00Z",
+                    },
+                    "errors": None,
+                    "meta": None,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            VALIDATION_ERROR_EXAMPLE,
+            FORBIDDEN_EXAMPLE,
+        ],
+    )
+    def post(self, request):
+        """Refresh guest persisted location snapshot."""
+        serializer = GuestLocationRefreshRequestSerializer(data=request.data)
+        if serializer.is_valid():
+            device_token = serializer.validated_data.get("device_token")
+            snapshot = None
+
+            if device_token:
+                snapshot = GuestLocationSnapshot.objects.filter(
+                    device_token=device_token
+                ).first()
+
+            if snapshot is None:
+                snapshot = GuestLocationSnapshot.objects.create(
+                    device_token=str(uuid.uuid4())
+                )
+
+            _refresh_profile_location(snapshot, serializer.validated_data)
+            response_serializer = GuestLocationSnapshotSerializer(snapshot)
+            return success_response(
+                response_serializer.data,
+                message="Location refreshed successfully",
+            )
+
+        return validation_error_response(serializer.errors)
+
+
 class HomeownerNearbyHandymanListView(APIView):
     permission_classes = [
         IsAuthenticated,
@@ -458,7 +734,7 @@ class HomeownerNearbyHandymanListView(APIView):
             is_approved=True,
             is_active=True,
             is_available=True,
-        ).select_related("user")
+        ).select_related("user", "current_city")
 
         # Search filter
         if search_query:
@@ -807,7 +1083,7 @@ class GuestHandymanListView(APIView):
             is_approved=True,
             is_active=True,
             is_available=True,
-        ).select_related("user")
+        ).select_related("user", "current_city")
 
         # Search filter
         if search_query:

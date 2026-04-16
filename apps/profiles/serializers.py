@@ -8,6 +8,7 @@ from apps.common.serializers import (
     create_list_response_serializer,
     create_response_serializer,
 )
+from apps.jobs.serializers import CitySerializer
 from apps.profiles.models import HandymanCategory, HandymanProfile, HomeownerProfile
 
 
@@ -211,6 +212,78 @@ class HandymanProfileUpdateSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class ProfileLocationRefreshRequestSerializer(serializers.Serializer):
+    """Serializer for authenticated profile location refresh requests."""
+
+    latitude = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        required=False,
+        allow_null=True,
+    )
+    longitude = serializers.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        required=False,
+        allow_null=True,
+    )
+
+    def validate(self, attrs):
+        """Validate coordinate pair and coordinate ranges."""
+        latitude = attrs.get("latitude")
+        longitude = attrs.get("longitude")
+
+        if latitude is None and longitude is None:
+            raise serializers.ValidationError("Latitude and longitude are required.")
+
+        if (latitude is None) != (longitude is None):
+            raise serializers.ValidationError(
+                "Both latitude and longitude must be provided together."
+            )
+
+        if latitude is not None and not (-90 <= latitude <= 90):
+            raise serializers.ValidationError(
+                {"latitude": "Latitude must be between -90 and 90."}
+            )
+
+        if longitude is not None and not (-180 <= longitude <= 180):
+            raise serializers.ValidationError(
+                {"longitude": "Longitude must be between -180 and 180."}
+            )
+
+        return attrs
+
+
+class ProfileLocationSnapshotSerializer(serializers.Serializer):
+    """Serializer for persisted profile location snapshot responses."""
+
+    latitude = serializers.DecimalField(max_digits=9, decimal_places=6, read_only=True)
+    longitude = serializers.DecimalField(max_digits=9, decimal_places=6, read_only=True)
+    current_city = CitySerializer(read_only=True, allow_null=True)
+    last_location_updated_at = serializers.DateTimeField(
+        read_only=True, allow_null=True
+    )
+
+
+class GuestLocationRefreshRequestSerializer(ProfileLocationRefreshRequestSerializer):
+    """Serializer for guest location refresh requests."""
+
+    device_token = serializers.CharField(required=False, allow_blank=False)
+
+    def validate(self, attrs):
+        """Require coordinates for guest location refresh requests."""
+        attrs = super().validate(attrs)
+        if attrs.get("latitude") is None and attrs.get("longitude") is None:
+            raise serializers.ValidationError("Latitude and longitude are required.")
+        return attrs
+
+
+class GuestLocationSnapshotSerializer(ProfileLocationSnapshotSerializer):
+    """Serializer for persisted guest location snapshot responses."""
+
+    device_token = serializers.CharField(read_only=True)
+
+
 # Response serializers with envelope format
 HomeownerProfileResponseSerializer = create_response_serializer(
     HomeownerProfileSerializer, "HomeownerProfileResponse"
@@ -218,6 +291,14 @@ HomeownerProfileResponseSerializer = create_response_serializer(
 
 HandymanProfileResponseSerializer = create_response_serializer(
     HandymanProfileSerializer, "HandymanProfileResponse"
+)
+
+ProfileLocationRefreshResponseSerializer = create_response_serializer(
+    ProfileLocationSnapshotSerializer, "ProfileLocationRefreshResponse"
+)
+
+GuestLocationRefreshResponseSerializer = create_response_serializer(
+    GuestLocationSnapshotSerializer, "GuestLocationRefreshResponse"
 )
 
 
@@ -250,6 +331,7 @@ class HomeownerHandymanListSerializer(serializers.ModelSerializer):
         allow_null=True,
         help_text="Distance from user location in kilometers.",
     )
+    city = CitySerializer(source="current_city", read_only=True, allow_null=True)
     is_bookmarked = serializers.SerializerMethodField(
         help_text="Whether this handyman is bookmarked by the current homeowner"
     )
@@ -264,6 +346,7 @@ class HomeownerHandymanListSerializer(serializers.ModelSerializer):
             "review_count",
             "hourly_rate",
             "distance_km",
+            "city",
             "is_bookmarked",
         ]
         read_only_fields = fields

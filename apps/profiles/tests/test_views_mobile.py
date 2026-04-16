@@ -6,7 +6,13 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import User, UserRole
-from apps.profiles.models import HandymanCategory, HandymanProfile, HomeownerProfile
+from apps.jobs.models import City
+from apps.profiles.models import (
+    GuestLocationSnapshot,
+    HandymanCategory,
+    HandymanProfile,
+    HomeownerProfile,
+)
 
 
 class MobileHandymanCategoryListViewTests(APITestCase):
@@ -70,6 +76,7 @@ class MobileHomeownerProfileViewTests(APITestCase):
     def setUp(self):
         """Set up test data."""
         self.url = "/api/v1/mobile/homeowner/profile"
+        self.refresh_url = "/api/v1/mobile/homeowner/profile/location/refresh/"
         self.user = User.objects.create_user(
             email="homeowner@example.com",
             password="testpass123",
@@ -180,6 +187,92 @@ class MobileHomeownerProfileViewTests(APITestCase):
         self.assertEqual(response.data["message"], "Validation failed")
         self.assertIn("display_name", response.data["errors"])
 
+    def test_refresh_location_success(self):
+        """Test homeowner location refresh persists coordinates and canonical city."""
+        City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            latitude=Decimal("43.653226"),
+            longitude=Decimal("-79.383184"),
+            is_active=True,
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            self.refresh_url,
+            {"latitude": "43.651070", "longitude": "-79.347015"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Location refreshed successfully")
+        self.assertIsNone(response.data["errors"])
+        self.assertIsNone(response.data["meta"])
+        self.assertEqual(response.data["data"]["latitude"], "43.651070")
+        self.assertEqual(response.data["data"]["longitude"], "-79.347015")
+        self.assertEqual(response.data["data"]["current_city"]["slug"], "toronto-on")
+        self.assertIsNotNone(response.data["data"]["last_location_updated_at"])
+
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.latitude, Decimal("43.651070"))
+        self.assertEqual(self.profile.longitude, Decimal("-79.347015"))
+        self.assertEqual(self.profile.current_city.slug, "toronto-on")
+        self.assertIsNotNone(self.profile.last_location_updated_at)
+
+    def test_refresh_location_validation_error(self):
+        """Test homeowner location refresh rejects malformed coordinate payloads."""
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            self.refresh_url,
+            {"latitude": "43.651070"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["message"], "Validation failed")
+        self.assertIn("non_field_errors", response.data["errors"])
+
+        self.profile.refresh_from_db()
+        self.assertIsNone(self.profile.latitude)
+        self.assertIsNone(self.profile.longitude)
+        self.assertIsNone(self.profile.current_city)
+        self.assertIsNone(self.profile.last_location_updated_at)
+
+    def test_refresh_location_empty_payload_validation_error(self):
+        """Test homeowner location refresh rejects empty payloads."""
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(self.refresh_url, {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["message"], "Validation failed")
+        self.assertIn("non_field_errors", response.data["errors"])
+
+        self.profile.refresh_from_db()
+        self.assertIsNone(self.profile.latitude)
+        self.assertIsNone(self.profile.longitude)
+        self.assertIsNone(self.profile.current_city)
+        self.assertIsNone(self.profile.last_location_updated_at)
+
+    def test_refresh_location_profile_not_found_returns_error(self):
+        """Test homeowner location refresh returns 404 when profile is missing."""
+        self.profile.delete()
+        user = User.objects.get(pk=self.user.pk)
+        user.token_payload = self.user.token_payload
+        self.client.force_authenticate(user=user)
+
+        response = self.client.post(
+            self.refresh_url,
+            {"latitude": "43.651070", "longitude": "-79.347015"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.data["message"], "Profile not found")
+
 
 class MobileHomeownerHandymanDetailViewTests(APITestCase):
     """Test cases for mobile HomeownerHandymanDetailView."""
@@ -266,6 +359,15 @@ class MobileHandymanBrowsingTests(APITestCase):
     def setUp(self):
         """Set up test data."""
         self.url = "/api/v1/mobile/homeowner/handymen/nearby/"
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            latitude="43.653226",
+            longitude="-79.383184",
+            is_active=True,
+        )
         self.user = User.objects.create_user(
             email="homeowner_browse@example.com",
             password="testpass123",
@@ -347,6 +449,65 @@ class MobileHandymanBrowsingTests(APITestCase):
         self.assertEqual(response.data["data"][0]["display_name"], "Nearby Handyman")
         # distance_km should be calculated
         self.assertIsNotNone(response.data["data"][0]["distance_km"])
+
+    def test_list_handymen_with_coordinates_includes_canonical_city(self):
+        """Nearby homeowner list includes canonical city summary when present."""
+        handyman_user = User.objects.create_user(
+            email="handyman_city@example.com", password="password"
+        )
+        UserRole.objects.create(user=handyman_user, role="handyman")
+        HandymanProfile.objects.create(
+            user=handyman_user,
+            display_name="City Handyman",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            latitude=43.651070,
+            longitude=-79.347015,
+            current_city=self.city,
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(f"{self.url}?latitude=43.65&longitude=-79.34")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn("current_city", response.data["data"][0])
+        self.assertEqual(
+            response.data["data"][0]["city"],
+            {
+                "public_id": str(self.city.public_id),
+                "name": "Toronto",
+                "province": "Ontario",
+                "province_code": "ON",
+                "slug": "toronto-on",
+            },
+        )
+        self.assertIsNotNone(response.data["data"][0]["distance_km"])
+
+    def test_list_handymen_without_coordinates_includes_canonical_city(self):
+        """Nearby homeowner list keeps canonical city when request has no coordinates."""
+        handyman_user = User.objects.create_user(
+            email="handyman_city_nocoords@example.com", password="password"
+        )
+        UserRole.objects.create(user=handyman_user, role="handyman")
+        HandymanProfile.objects.create(
+            user=handyman_user,
+            display_name="City Without Request Coords",
+            is_active=True,
+            is_available=True,
+            is_approved=True,
+            latitude=43.651070,
+            longitude=-79.347015,
+            current_city=self.city,
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"][0]["distance_km"], None)
+        self.assertNotIn("current_city", response.data["data"][0])
+        self.assertEqual(response.data["data"][0]["city"]["slug"], "toronto-on")
 
     def test_list_handymen_shows_all_no_radius_filter(self):
         """Test all handymen are returned regardless of distance (no radius filter)."""
@@ -642,6 +803,7 @@ class MobileHandymanProfileViewTests(APITestCase):
     def setUp(self):
         """Set up test data."""
         self.url = "/api/v1/mobile/handyman/profile"
+        self.refresh_url = "/api/v1/mobile/handyman/profile/location/refresh/"
         self.user = User.objects.create_user(
             email="handyman@example.com",
             password="testpass123",
@@ -760,6 +922,225 @@ class MobileHandymanProfileViewTests(APITestCase):
         self.assertEqual(response.data["message"], "Validation failed")
         self.assertIn("display_name", response.data["errors"])
 
+    def test_refresh_location_success(self):
+        """Test handyman location refresh persists coordinates and canonical city."""
+        City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            latitude=Decimal("43.653226"),
+            longitude=Decimal("-79.383184"),
+            is_active=True,
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            self.refresh_url,
+            {"latitude": "43.651070", "longitude": "-79.347015"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Location refreshed successfully")
+        self.assertIsNone(response.data["errors"])
+        self.assertIsNone(response.data["meta"])
+        self.assertEqual(response.data["data"]["latitude"], "43.651070")
+        self.assertEqual(response.data["data"]["longitude"], "-79.347015")
+        self.assertEqual(response.data["data"]["current_city"]["slug"], "toronto-on")
+        self.assertIsNotNone(response.data["data"]["last_location_updated_at"])
+
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.latitude, Decimal("43.651070"))
+        self.assertEqual(self.profile.longitude, Decimal("-79.347015"))
+        self.assertEqual(self.profile.current_city.slug, "toronto-on")
+        self.assertIsNotNone(self.profile.last_location_updated_at)
+
+    def test_refresh_location_validation_error(self):
+        """Test handyman location refresh rejects malformed coordinate payloads."""
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            self.refresh_url,
+            {"latitude": "43.651070"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["message"], "Validation failed")
+        self.assertIn("non_field_errors", response.data["errors"])
+
+        response = self.client.post(
+            self.refresh_url,
+            {"latitude": "100.000000", "longitude": "-79.347015"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["message"], "Validation failed")
+        self.assertIn("latitude", response.data["errors"])
+
+        self.profile.refresh_from_db()
+        self.assertIsNone(self.profile.latitude)
+        self.assertIsNone(self.profile.longitude)
+        self.assertIsNone(self.profile.current_city)
+        self.assertIsNone(self.profile.last_location_updated_at)
+
+    def test_refresh_location_empty_payload_validation_error(self):
+        """Test handyman location refresh rejects empty payloads."""
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(self.refresh_url, {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["message"], "Validation failed")
+        self.assertIn("non_field_errors", response.data["errors"])
+
+        self.profile.refresh_from_db()
+        self.assertIsNone(self.profile.latitude)
+        self.assertIsNone(self.profile.longitude)
+        self.assertIsNone(self.profile.current_city)
+        self.assertIsNone(self.profile.last_location_updated_at)
+
+    def test_refresh_location_profile_not_found_returns_error(self):
+        """Test handyman location refresh returns 404 when profile is missing."""
+        self.profile.delete()
+        user = User.objects.get(pk=self.user.pk)
+        user.token_payload = self.user.token_payload
+        self.client.force_authenticate(user=user)
+
+        response = self.client.post(
+            self.refresh_url,
+            {"latitude": "43.651070", "longitude": "-79.347015"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.data["message"], "Profile not found")
+
+
+class MobileGuestLocationRefreshViewTests(APITestCase):
+    """Test cases for public mobile guest location refresh."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.url = "/api/v1/mobile/guest/location/refresh/"
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            latitude=Decimal("43.653226"),
+            longitude=Decimal("-79.383184"),
+            is_active=True,
+        )
+
+    def test_refresh_location_creates_snapshot_without_token(self):
+        """Test guest refresh creates a snapshot and returns server-issued token."""
+        response = self.client.post(
+            self.url,
+            {"latitude": "43.651070", "longitude": "-79.347015"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["message"], "Location refreshed successfully")
+        self.assertIsNone(response.data["errors"])
+        self.assertIsNone(response.data["meta"])
+        self.assertEqual(response.data["data"]["latitude"], "43.651070")
+        self.assertEqual(response.data["data"]["longitude"], "-79.347015")
+        self.assertEqual(response.data["data"]["current_city"]["slug"], "toronto-on")
+        self.assertIsNotNone(response.data["data"]["last_location_updated_at"])
+        self.assertTrue(response.data["data"]["device_token"])
+
+        self.assertEqual(GuestLocationSnapshot.objects.count(), 1)
+        snapshot = GuestLocationSnapshot.objects.get()
+        self.assertEqual(snapshot.latitude, Decimal("43.651070"))
+        self.assertEqual(snapshot.longitude, Decimal("-79.347015"))
+        self.assertEqual(snapshot.current_city, self.city)
+        self.assertIsNotNone(snapshot.last_location_updated_at)
+        self.assertEqual(snapshot.device_token, response.data["data"]["device_token"])
+
+    def test_refresh_location_updates_existing_snapshot_for_same_token(self):
+        """Test guest refresh updates an existing snapshot when token is known."""
+        snapshot = GuestLocationSnapshot.objects.create(
+            device_token="device-token-123",
+            latitude=Decimal("43.600000"),
+            longitude=Decimal("-79.300000"),
+            current_city=self.city,
+        )
+
+        response = self.client.post(
+            self.url,
+            {
+                "device_token": "device-token-123",
+                "latitude": "43.651070",
+                "longitude": "-79.347015",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"]["device_token"], "device-token-123")
+        self.assertEqual(GuestLocationSnapshot.objects.count(), 1)
+
+        snapshot.refresh_from_db()
+        self.assertEqual(snapshot.latitude, Decimal("43.651070"))
+        self.assertEqual(snapshot.longitude, Decimal("-79.347015"))
+        self.assertEqual(snapshot.current_city, self.city)
+        self.assertIsNotNone(snapshot.last_location_updated_at)
+
+    def test_refresh_location_empty_payload_returns_validation_error(self):
+        """Test guest refresh rejects empty coordinate payloads."""
+        response = self.client.post(self.url, {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["message"], "Validation failed")
+        self.assertIn("non_field_errors", response.data["errors"])
+        self.assertEqual(GuestLocationSnapshot.objects.count(), 0)
+
+    def test_refresh_location_creates_new_snapshot_for_unknown_token(self):
+        """Test guest refresh recreates snapshot when provided token is unknown."""
+        response = self.client.post(
+            self.url,
+            {
+                "device_token": "missing-device-token",
+                "latitude": "43.651070",
+                "longitude": "-79.347015",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotEqual(
+            response.data["data"]["device_token"], "missing-device-token"
+        )
+        self.assertEqual(GuestLocationSnapshot.objects.count(), 1)
+        snapshot = GuestLocationSnapshot.objects.get()
+        self.assertEqual(snapshot.device_token, response.data["data"]["device_token"])
+        self.assertEqual(snapshot.current_city, self.city)
+
+    def test_refresh_location_web_platform_blocked(self):
+        """Test web platform cannot access mobile guest location refresh."""
+        user = User.objects.create_user(
+            email="guest_refresh_web@example.com",
+            password="testpass123",
+        )
+        user.token_payload = {
+            "plat": "web",
+            "active_role": None,
+            "roles": [],
+            "email_verified": False,
+        }
+        self.client.force_authenticate(user=user)
+
+        response = self.client.post(
+            self.url,
+            {"latitude": "43.651070", "longitude": "-79.347015"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(GuestLocationSnapshot.objects.count(), 0)
+
 
 class MobileGuestHandymanListViewTests(APITestCase):
     """Test cases for mobile GuestHandymanListView (no auth required)."""
@@ -767,6 +1148,15 @@ class MobileGuestHandymanListViewTests(APITestCase):
     def setUp(self):
         """Set up test data."""
         self.url = "/api/v1/mobile/guest/handymen/"
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            latitude="43.653226",
+            longitude="-79.383184",
+            is_active=True,
+        )
 
         # Visible handyman (approved, active, available, has coords)
         self.handyman_user_visible = User.objects.create_user(
@@ -782,6 +1172,7 @@ class MobileGuestHandymanListViewTests(APITestCase):
             hourly_rate="75.00",
             latitude="43.651070",
             longitude="-79.347015",
+            current_city=self.city,
             is_active=True,
             is_available=True,
             is_approved=True,
@@ -801,6 +1192,7 @@ class MobileGuestHandymanListViewTests(APITestCase):
             hourly_rate="80.00",
             latitude="43.800000",
             longitude="-79.400000",
+            current_city=self.city,
             is_active=True,
             is_available=True,
             is_approved=True,
@@ -910,6 +1302,18 @@ class MobileGuestHandymanListViewTests(APITestCase):
         for item in response.data["data"]:
             self.assertIn("distance_km", item)
 
+    def test_list_handymen_with_location_includes_canonical_city(self):
+        """Guest nearby list includes canonical city summary with valid coordinates."""
+        response = self.client.get(
+            self.url,
+            {"latitude": "43.651070", "longitude": "-79.347015"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn("current_city", response.data["data"][0])
+        self.assertEqual(response.data["data"][0]["city"]["slug"], "toronto-on")
+        self.assertIn("public_id", response.data["data"][0]["city"])
+
     def test_list_handymen_without_location_no_distance(self):
         """Test distance_km is None when lat/lng not provided."""
         response = self.client.get(self.url)
@@ -972,6 +1376,18 @@ class MobileGuestHandymanListViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         # Should return all visible handymen since coordinates are invalid
         self.assertEqual(len(response.data["data"]), 2)
+
+    def test_list_handymen_invalid_coordinates_preserve_canonical_city(self):
+        """Guest invalid coordinates still return canonical city with no distance."""
+        response = self.client.get(
+            self.url,
+            {"latitude": "invalid", "longitude": "-79.347015"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["data"][0]["distance_km"])
+        self.assertNotIn("current_city", response.data["data"][0])
+        self.assertEqual(response.data["data"][0]["city"]["slug"], "toronto-on")
 
     def test_list_handymen_partial_coordinates(self):
         """Test providing only lat or lng is treated as no coordinates."""

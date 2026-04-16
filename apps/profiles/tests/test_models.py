@@ -3,11 +3,15 @@
 from decimal import Decimal
 from io import BytesIO
 
+from django.apps import apps
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.utils import timezone
 from PIL import Image as PILImage
 
 from apps.accounts.models import User, UserRole
+from apps.jobs.models import City
 from apps.profiles.models import HandymanCategory, HandymanProfile, HomeownerProfile
 
 
@@ -210,6 +214,79 @@ class HandymanProfileModelTests(TestCase):
         self.assertEqual(profile.id_number, "ID123456")
         self.assertEqual(profile.date_of_birth, date(1990, 5, 15))
 
+    def test_handyman_profile_invalid_latitude_validation(self):
+        """Test handyman profile latitude must be between -90 and 90."""
+        profile = HandymanProfile(
+            user=self.user,
+            display_name="Invalid Latitude",
+            latitude=Decimal("91.0"),
+            longitude=Decimal("-79.347015"),
+        )
+
+        with self.assertRaises(ValidationError):
+            profile.full_clean()
+
+    def test_handyman_profile_latitude_without_longitude_validation(self):
+        """Test handyman profile cannot have latitude without longitude."""
+        profile = HandymanProfile(
+            user=self.user,
+            display_name="Missing Longitude",
+            latitude=Decimal("43.651070"),
+        )
+
+        with self.assertRaises(ValidationError):
+            profile.full_clean()
+
+    def test_handyman_profile_invalid_longitude_validation(self):
+        """Test handyman profile longitude must be between -180 and 180."""
+        profile = HandymanProfile(
+            user=self.user,
+            display_name="Invalid Longitude",
+            latitude=Decimal("43.651070"),
+            longitude=Decimal("181.0"),
+        )
+
+        with self.assertRaises(ValidationError):
+            profile.full_clean()
+
+    def test_handyman_profile_valid_coordinates_pass_model_validation(self):
+        """Test handyman profile accepts valid latitude and longitude values."""
+        profile = HandymanProfile(
+            user=self.user,
+            display_name="Valid Coordinates",
+            latitude=Decimal("43.651070"),
+            longitude=Decimal("-79.347015"),
+        )
+
+        profile.full_clean()
+
+    def test_handyman_profile_can_store_canonical_city_and_refresh_timestamp(self):
+        """Test handyman profile stores canonical city metadata for refresh flows."""
+        city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            latitude=Decimal("43.653226"),
+            longitude=Decimal("-79.383184"),
+        )
+        last_location_updated_at = timezone.now()
+
+        profile = HandymanProfile.objects.create(
+            user=self.user,
+            display_name="Located Handyman",
+            latitude=Decimal("43.651070"),
+            longitude=Decimal("-79.347015"),
+            current_city=city,
+            last_location_updated_at=last_location_updated_at,
+        )
+
+        self.assertEqual(profile.current_city, city)
+        self.assertEqual(
+            profile.last_location_updated_at,
+            last_location_updated_at,
+        )
+
 
 class HomeownerProfileModelTests(TestCase):
     """Test cases for HomeownerProfile model."""
@@ -315,3 +392,87 @@ class HomeownerProfileModelTests(TestCase):
             date_of_birth=date(1985, 3, 20),
         )
         self.assertEqual(profile.date_of_birth, date(1985, 3, 20))
+
+    def test_homeowner_profile_can_store_persisted_location_fields(self):
+        """Test homeowner profile stores persisted coordinates and canonical city."""
+        city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            latitude=Decimal("43.653226"),
+            longitude=Decimal("-79.383184"),
+        )
+        last_location_updated_at = timezone.now()
+
+        profile = HomeownerProfile.objects.create(
+            user=self.user,
+            display_name="Located Homeowner",
+            latitude=Decimal("43.651070"),
+            longitude=Decimal("-79.347015"),
+            current_city=city,
+            last_location_updated_at=last_location_updated_at,
+        )
+
+        self.assertEqual(profile.latitude, Decimal("43.651070"))
+        self.assertEqual(profile.longitude, Decimal("-79.347015"))
+        self.assertEqual(profile.current_city, city)
+        self.assertEqual(
+            profile.last_location_updated_at,
+            last_location_updated_at,
+        )
+
+
+class GuestLocationSnapshotModelTests(TestCase):
+    """Test cases for GuestLocationSnapshot model."""
+
+    def test_guest_location_snapshot_can_store_coordinates_and_city(self):
+        """Test guest location snapshot stores coordinates and canonical city."""
+        city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            latitude=Decimal("43.653226"),
+            longitude=Decimal("-79.383184"),
+        )
+
+        try:
+            guest_location_snapshot_model = apps.get_model(
+                "profiles", "GuestLocationSnapshot"
+            )
+        except LookupError:
+            self.fail("GuestLocationSnapshot model is missing")
+
+        snapshot = guest_location_snapshot_model.objects.create(
+            device_token="device-token-123",
+            latitude=Decimal("43.651070"),
+            longitude=Decimal("-79.347015"),
+            current_city=city,
+        )
+
+        self.assertEqual(snapshot.device_token, "device-token-123")
+        self.assertEqual(snapshot.current_city, city)
+        self.assertEqual(snapshot.latitude, Decimal("43.651070"))
+        self.assertEqual(snapshot.longitude, Decimal("-79.347015"))
+
+    def test_guest_location_snapshot_can_store_refresh_timestamp(self):
+        """Test guest location snapshot stores the latest refresh timestamp."""
+        last_location_updated_at = timezone.now()
+
+        try:
+            guest_location_snapshot_model = apps.get_model(
+                "profiles", "GuestLocationSnapshot"
+            )
+        except LookupError:
+            self.fail("GuestLocationSnapshot model is missing")
+
+        snapshot = guest_location_snapshot_model.objects.create(
+            device_token="device-token-456",
+            last_location_updated_at=last_location_updated_at,
+        )
+
+        self.assertEqual(
+            snapshot.last_location_updated_at,
+            last_location_updated_at,
+        )

@@ -2,6 +2,7 @@
 Profile models for different user types.
 """
 
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.common.models import BaseModel
@@ -88,6 +89,14 @@ class HandymanProfile(BaseModel):
         blank=True,
         help_text="Handyman base longitude (used for nearby search)",
     )
+    current_city = models.ForeignKey(
+        "jobs.City",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="handyman_profiles",
+    )
+    last_location_updated_at = models.DateTimeField(null=True, blank=True)
 
     # Listing status
     is_active = models.BooleanField(default=True, db_index=True)
@@ -102,6 +111,23 @@ class HandymanProfile(BaseModel):
     class Meta:
         db_table = "handyman_profiles"
         ordering = ["-created_at"]
+
+    def clean(self):
+        """Validate handyman profile coordinates."""
+        super().clean()
+
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValidationError(
+                "Both latitude and longitude must be provided together."
+            )
+
+        if self.latitude is not None and not (-90 <= self.latitude <= 90):
+            raise ValidationError({"latitude": "Latitude must be between -90 and 90."})
+
+        if self.longitude is not None and not (-180 <= self.longitude <= 180):
+            raise ValidationError(
+                {"longitude": "Longitude must be between -180 and 180."}
+            )
 
     def __str__(self):
         return f"Handyman: {self.display_name}"
@@ -140,6 +166,20 @@ class HomeownerProfile(BaseModel):
     phone_verified_at = models.DateTimeField(null=True, blank=True)
     address = models.TextField(blank=True)
     date_of_birth = models.DateField(null=True, blank=True)
+    latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True
+    )
+    longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True
+    )
+    current_city = models.ForeignKey(
+        "jobs.City",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="homeowner_profiles",
+    )
+    last_location_updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "homeowner_profiles"
@@ -159,3 +199,30 @@ class HomeownerProfile(BaseModel):
         if self.avatar:
             return self.avatar.url
         return None
+
+
+class GuestLocationSnapshot(BaseModel):
+    """Persisted location snapshot for anonymous guest browsing."""
+
+    device_token = models.CharField(max_length=255, unique=True)
+    latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True
+    )
+    longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True
+    )
+    current_city = models.ForeignKey(
+        "jobs.City",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="guest_location_snapshots",
+    )
+    last_location_updated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "guest_location_snapshots"
+        ordering = ["-updated_at"]
+
+    def __str__(self):
+        return self.device_token

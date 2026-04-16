@@ -5,6 +5,7 @@ from decimal import Decimal
 from django.test import TestCase
 
 from apps.accounts.models import User, UserRole
+from apps.jobs.models import City
 from apps.profiles.models import HandymanCategory, HandymanProfile, HomeownerProfile
 from apps.profiles.serializers import (
     HandymanProfileSerializer,
@@ -13,6 +14,7 @@ from apps.profiles.serializers import (
     HomeownerHandymanListSerializer,
     HomeownerProfileSerializer,
     HomeownerProfileUpdateSerializer,
+    ProfileLocationRefreshRequestSerializer,
 )
 
 
@@ -375,6 +377,15 @@ class HomeownerHandymanPublicSerializersTests(TestCase):
     """Test cases for homeowner-facing handymen serializers."""
 
     def setUp(self):
+        self.city = City.objects.create(
+            name="Toronto",
+            province="Ontario",
+            province_code="ON",
+            slug="toronto-on",
+            latitude=Decimal("43.653226"),
+            longitude=Decimal("-79.383184"),
+            is_active=True,
+        )
         self.user = User.objects.create_user(
             email="handyman@example.com", password="testpass123"
         )
@@ -388,6 +399,7 @@ class HomeownerHandymanPublicSerializersTests(TestCase):
             longitude=Decimal("-79.347015"),
             phone_number="+1234567890",
             address="789 Pine Rd",
+            current_city=self.city,
         )
 
     def test_homeowner_list_serializer_hides_sensitive_fields(self):
@@ -397,6 +409,21 @@ class HomeownerHandymanPublicSerializersTests(TestCase):
         self.assertNotIn("address", serializer.data)
         self.assertNotIn("latitude", serializer.data)
         self.assertNotIn("longitude", serializer.data)
+
+    def test_homeowner_list_serializer_includes_canonical_city_summary(self):
+        """Homeowner list serializer includes canonical city summary when present."""
+        serializer = HomeownerHandymanListSerializer(self.profile)
+        self.assertNotIn("current_city", serializer.data)
+        self.assertEqual(
+            serializer.data["city"],
+            {
+                "public_id": str(self.city.public_id),
+                "name": "Toronto",
+                "province": "Ontario",
+                "province_code": "ON",
+                "slug": "toronto-on",
+            },
+        )
 
     def test_homeowner_detail_serializer_hides_sensitive_fields(self):
         """Homeowner detail serializer must not expose phone/address/coordinates."""
@@ -567,6 +594,35 @@ class HandymanProfileUpdateSerializerValidationTests(TestCase):
             self.profile, data={"latitude": None, "longitude": None}, partial=True
         )
         self.assertTrue(serializer.is_valid())
+
+
+class ProfileLocationRefreshRequestSerializerTests(TestCase):
+    """Test cases for profile location refresh request validation."""
+
+    def setUp(self):
+        """Set up a handyman profile for shared validation checks."""
+        self.user = User.objects.create_user(
+            email="location-refresh@example.com", password="testpass123"
+        )
+        UserRole.objects.create(user=self.user, role="handyman")
+        self.profile = HandymanProfile.objects.create(
+            user=self.user,
+            display_name="Refresh Validation Handyman",
+            latitude=Decimal("43.651070"),
+            longitude=Decimal("-79.347015"),
+        )
+
+    def test_longitude_out_of_range_fails(self):
+        """Test refresh request rejects longitude values outside valid range."""
+        serializer = ProfileLocationRefreshRequestSerializer(
+            data={"latitude": "43.651070", "longitude": "181.0"}
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertEqual(
+            serializer.errors,
+            {"longitude": ["Longitude must be between -180 and 180."]},
+        )
 
     def test_update_serializer_latitude_out_of_range_branch_coverage(self):
         """Specifically target the latitude branch coverage."""

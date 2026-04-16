@@ -20,9 +20,19 @@ urlpatterns = [
         name="mobile_homeowner_profile",
     ),
     path(
+        "homeowner/profile/location/refresh/",
+        mobile_views.HomeownerProfileLocationRefreshView.as_view(),
+        name="mobile_homeowner_profile_location_refresh",
+    ),
+    path(
         "handyman/profile",
         mobile_views.HandymanProfileView.as_view(),
         name="mobile_handyman_profile",
+    ),
+    path(
+        "handyman/profile/location/refresh/",
+        mobile_views.HandymanProfileLocationRefreshView.as_view(),
+        name="mobile_handyman_profile_location_refresh",
     ),
     # Homeowner handyman browsing
     path(
@@ -45,6 +55,11 @@ urlpatterns = [
         "guest/handymen/",
         mobile_views.GuestHandymanListView.as_view(),
         name="mobile_guest_handymen",
+    ),
+    path(
+        "guest/location/refresh/",
+        mobile_views.GuestLocationRefreshView.as_view(),
+        name="mobile_guest_location_refresh",
     ),
     path(
         "guest/handymen/<uuid:public_id>/",
